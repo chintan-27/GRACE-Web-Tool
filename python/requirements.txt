@@ -1,0 +1,5 @@
+pytorch
+monai
+einops
+onnx
+onnxscript
