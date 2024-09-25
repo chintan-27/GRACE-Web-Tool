@@ -1,3 +1,6 @@
+# This scripts is tailored to MAC OS.
+# You can modify it to run on Linux or Windows. Also use GPU instead of CPU.
+
 from monai.networks.nets import UNETR
 from monai.losses import DiceCELoss
 from collections import defaultdict

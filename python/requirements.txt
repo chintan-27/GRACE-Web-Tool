@@ -1,4 +1,6 @@
 pytorch
+torchaudio
+torchvision
 monai
 einops
 onnx
