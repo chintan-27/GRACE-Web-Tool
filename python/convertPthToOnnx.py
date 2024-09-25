@@ -7,6 +7,7 @@ args.N_classes = 12
 args.spatial_size = 128
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
 
 model = UNETR(
       in_channels=1,
@@ -21,12 +22,18 @@ model = UNETR(
       res_block=True,
       dropout_rate=0.0,
     ).to(device)
+print("Model initialized.")
 
 loss_function = DiceCELoss(to_onehot_y=True, softmax=True)
 torch.backends.cudnn.benchmark = True
 optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)
+print("Optimizer created.")
+
 model.load_state_dict(torch.load("models/grace.pth"))
+print("Model weights loaded from 'models/grace.pth'.")
 
 dummy_input = torch.randn(1, 1, 128, 128, 128).to(device)
+print("Dummy input created.")
 
 torch.onnx.export(model, dummy_input, "models/grace.onnx", opset_version=11)
+print("Model exported to 'models/grace.onnx'.")
