@@ -38,3 +38,6 @@ next-env.d.ts
 python/models
 .venv
 public/grace.onnx
+
+temp
+grace.onnx

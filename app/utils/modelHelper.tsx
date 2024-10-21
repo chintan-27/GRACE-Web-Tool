@@ -2,8 +2,7 @@ import * as ort from 'onnxruntime-web';
 import { fileToTensor } from './fileHelper';
 import _ from 'lodash';
 
-const applySoftmax = (logits: Float32Array, shape: number[]): any => {
-    console.log(shape)
+const applySoftmax = (logits: Float32Array, shape: number[]): [Float32Array, number[]] => {
     const [batchSize, numClasses, ...spatialDims] = shape;
     const result = new Float32Array(logits.length);
     const spatialSize = _.reduce(spatialDims, (a, b) => a * b, 1);
@@ -34,14 +33,14 @@ const applySoftmax = (logits: Float32Array, shape: number[]): any => {
 const runModel = async (session: ort.InferenceSession, data: ort.Tensor) : Promise<[Float32Array, number]> => {
     const startTime = performance.now();
     // Add a batch dimension to the input tensor
-    const batchedData = new ort.Tensor('float32', new Float32Array(data.data), [1, ...data.dims]);
+    const batchedData = new ort.Tensor('float32', data.data, [1, ...data.dims]);
     const output = await session.run({ input: batchedData });
     const endTime = performance.now();
     const timeTaken = endTime - startTime;
-    const [softmaxOutput, dims] = applySoftmax(output.output.data as Float32Array, output.output.dims);
-    console.log(data.dims)
-    console.log(output.output.dims)
-    console.log(dims)
+    const [softmaxOutput, dims] = applySoftmax(output.output.data as Float32Array, output.output.dims as number[]);
+    console.log(data.dims);
+    console.log(output.output.dims);
+    console.log(dims);
 
     // Convert softmaxOutput from [1, 12, 64, 64, 64] to [64, 64, 64]
     const [, numClasses, ...spatialDims] = output.output.dims;
@@ -71,7 +70,7 @@ const runModel = async (session: ort.InferenceSession, data: ort.Tensor) : Promi
 
 const infer = async (file: File): Promise<[Float32Array, number]> => {
     console.log("Starting inference");
-    const session = await ort.InferenceSession.create('grace.onnx', { 
+    const session = await ort.InferenceSession.create("grace.onnx", { 
         executionProviders: ['wasm'],
         graphOptimizationLevel: 'all',
         enableCpuMemArena: true,

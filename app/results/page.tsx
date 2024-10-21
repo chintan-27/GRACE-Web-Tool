@@ -20,10 +20,8 @@ const Results = () => {
             const response = await fetch(fileUrl);
             const blob = await response.blob();
             const file = new File([blob], "uploaded_image.nii.gz");
-            const nvImage = await NVImage.loadFromFile({ file });
+            const nvImage = await NVImage.loadFromFile({ file, colormap:'ge_color'});
             console.log(nvImage.getImageMetadata());
-            // Set dimensions to 64, 64, 64
-            nvImage.dims = [64, 64, 64];
             setImage(nvImage);
             setLoading(false);
         };
