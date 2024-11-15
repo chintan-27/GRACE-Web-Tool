@@ -3,33 +3,54 @@
 import { useRef, useEffect } from "react";
 import { Niivue, NVImage } from "@niivue/niivue";
 
-const NiiVue = ({ image, inferred, inferredImage }: { image: NVImage, inferred:boolean, inferredImage: NVImage | null}) => {
+interface NiiVueProps {
+  image: NVImage;                 // The base image
+  inferredImage: NVImage | null;  // The overlay image
+}
 
-  const canvas = useRef<HTMLCanvasElement>(null);
+const NiiVueComponent = ({ image, inferredImage }: NiiVueProps) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const niivueRef = useRef<Niivue | null>(null);
+
+  // Initialize Niivue and attach to canvas
   useEffect(() => {
-    // const volumeList = [
-    //   {
-    //     url: imageUrl,
-    //   },
-    // ];
-    const nv = new Niivue();
-    if (canvas.current) {
-        nv.attachToCanvas(canvas.current);
-        // nv.loadVolumes(volumeList);
-        nv.addVolume(image);
-        if (inferred && inferredImage) {
-            nv.addVolume(inferredImage);
-        }
-        const gl = canvas.current.getContext("webgl2");
-        // if (gl) {
-        //     NVMesh.loadFromFile({file: blob, gl: gl, name: "image"}).then((m) => {
-        //         nv.addMesh(m);
-        //     });
-        // }
+    if (canvasRef.current && !niivueRef.current) {
+      const nv = new Niivue({
+        show3Dcrosshair: true,
+        isRadiologicalConvention: true,
+        backColor: [0, 0, 0, 1],
+      });
+      nv.attachToCanvas(canvasRef.current);
+      niivueRef.current = nv;
     }
-  }, [image, inferred, inferredImage]);
+  }, []);
 
-  return <canvas ref={canvas} className="w-50"/>;
+  // Add volumes when images change
+  useEffect(() => {
+    const nv = niivueRef.current;
+    if (nv) {
+      // Clear existing volumes
+      nv.volumes = [];
+      nv.updateGLVolume();
+
+      // Add the base image
+      nv.addVolume(image);
+      nv.setOpacity(0, 1.0);
+
+      // Add the inferred image if available
+      if (inferredImage) {
+        nv.removeVolume(image)
+        nv.addVolume(inferredImage);
+        const overlayIndex = nv.volumes.length - 1;
+        nv.setOpacity(overlayIndex, 1);
+      }
+
+      // Refresh the scene
+      nv.updateGLVolume();
+    }
+  }, [image, inferredImage]);
+
+  return <canvas ref={canvasRef} style={{ width: '800px', height: '600px' }} />;
 };
 
-export default NiiVue;
+export default NiiVueComponent;
