@@ -1,48 +1,87 @@
-import { Tensor } from 'onnxruntime-web';
+// filehelper.tsx
+
 import { NVImage } from "@niivue/niivue";
+import { Tensor } from "onnxruntime-web";
 
-async function fileToTensor(file: File): Promise<Tensor> {
-    try {
-        const nvImage = await NVImage.loadFromFile({ file });
-        const originalWidth = nvImage.dims?.[1] ?? 0;
-        const originalHeight = nvImage.dims?.[2] ?? 0;
-        const originalDepth = nvImage.dims?.[3] ?? 0;
-        const newWidth = 64;
-        const newHeight = 64;
-        const newDepth = 64;
+/**
+ * Converts an NVImage to an ONNX Runtime Tensor suitable for model inference.
+ * @param nvImage The NVImage instance containing the image data.
+ * @returns A promise that resolves to an ONNX Runtime Tensor.
+ */
 
-        const inputData = nvImage.toUint8Array();
+const normalizeToRange = (inputData: Float32Array) => {
+    const a_min = 0;
+    const a_max = 255;
+    const b_min = 0;
+    const b_max = 1;
+  
+    const normalizedData = new Float32Array(inputData.length);
+  
+    for (let i = 0; i < inputData.length; i++) {
+      // Scale value from [0, 255] to [0, 1]
+      let scaledValue = ((inputData[i] - a_min) / (a_max - a_min)) * (b_max - b_min) + b_min;
+  
+      // Clip the value to the range [0, 1]
+      scaledValue = Math.min(Math.max(scaledValue, b_min), b_max);
 
-        return new Promise((resolve, reject) => {
-            import("../webassembly/resize_nifti").then((Module) => {
-                // Ensure the WebAssembly module is loaded before using it
-                if (Module.resize_nifti) {
-                    const outputData = new Uint8Array(newWidth * newHeight * newDepth);
+  
+      normalizedData[i] = scaledValue;
 
-                    // Call the WebAssembly function to resize the NIfTI image
-                    Module.resize_nifti(inputData, originalWidth, originalHeight, originalDepth, outputData, newWidth, newHeight, newDepth);
-
-                    // Convert Uint8Array to Float32Array
-                    const float32Data = new Float32Array(outputData.length);
-                    for (let i = 0; i < outputData.length; i++) {
-                        float32Data[i] = outputData[i] / 255.0; // Normalize to [0, 1]
-                    }
-
-                    const dims = [1, newDepth, newHeight, newWidth]; // Shape of the tensor: [batch, depth, height, width]
-                    const inputTensor = new Tensor("float32", float32Data, dims);
-                    resolve(inputTensor);
-                } else {
-                    reject(new Error("WebAssembly module not loaded correctly"));
-                }
-            }).catch((error) => {
-                console.error("Failed to load WebAssembly module:", error);
-                reject(error);
-            });
-        });
-    } catch (error) {
-        console.error("Error in fileToTensor:", error);
-        throw error;
     }
+  
+    return normalizedData;
+  };
+  
+
+export async function fileToTensor(nvImage: NVImage): Promise<Tensor> {
+  // Extract image data from NVImage
+  const inputData = nvImage.img; // Image data as Float32Array or Uint8Array
+  if (!inputData) {
+    throw new Error("Input data is undefined");
+  }
+
+  // Normalize the data according to model requirements
+  // For example, normalize to [0, 1] by dividing by the maximum value
+  let maxVal = 0;
+  for (let i = 0; i < inputData.length; i++) {
+    if (inputData[i] > maxVal) {
+      maxVal = inputData[i];
+    }
+  }
+
+  if (maxVal === 0) {
+    throw new Error("Maximum value in input data is zero, cannot normalize");
+  }
+
+  const float32Data = new Float32Array(inputData.length);
+  for (let i = 0; i < inputData.length; i++) {
+    float32Data[i] = inputData[i];
+  }
+
+  const scaledData = normalizeToRange(float32Data);
+
+  // Get dimensions from NVImage
+  const dimsRAS = nvImage.dimsRAS; // [t, z, y, x]
+  if (!dimsRAS || dimsRAS.length < 4) {
+    throw new Error("Invalid image dimensions");
+  }
+
+  // Prepare tensor dimensions
+  // Model expects input shape: [N, C, D, H, W]
+  // We use dimsRAS to get [t, z, y, x] and map to [D, H, W]
+  const [t, z, y, x] = dimsRAS;
+
+  // Handle cases where time dimension 't' is undefined or zero
+  const depth = z || 1;
+  const height = y || 1;
+  const width = x || 1;
+
+  const dims = [1, 1, depth, height, width]; // [N, C, D, H, W]
+
+  // Create the input tensor
+  const inputTensor = new Tensor("float32", scaledData, dims);
+
+  return inputTensor;
 }
 
-export { fileToTensor };
+export default fileToTensor;

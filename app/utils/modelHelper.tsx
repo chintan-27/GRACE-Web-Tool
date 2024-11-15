@@ -1,96 +1,84 @@
+// modelhelper.tsx
+
 import * as ort from 'onnxruntime-web';
-import { fileToTensor } from './fileHelper';
-import _ from 'lodash';
 
-const applySoftmax = (logits: Float32Array, shape: number[]): [Float32Array, number[]] => {
-    const [batchSize, numClasses, ...spatialDims] = shape;
-    const result = new Float32Array(logits.length);
-    const spatialSize = _.reduce(spatialDims, (a, b) => a * b, 1);
+/**
+ * Processes the model's output to get class predictions.
+ * @param outputData The output data from the model as a Float32Array.
+ * @param outputDims The dimensions of the output tensor.
+ * @returns A Uint8Array containing the class predictions.
+ */
+const processModelOutput = (outputData: Float32Array, outputDims: readonly number[]): Uint8Array => {
+  const [batchSize, numClasses, ...spatialDims] = outputDims;
+  const spatialSize = spatialDims.reduce((a, b) => a * b, 1);
+  const predictions = new Uint8Array(spatialSize);
 
-    _.times(batchSize, (b) => {
-        _.times(spatialSize, (s) => {
-            const max = _.max(_.map(_.range(numClasses), (c) => 
-                logits[(b * numClasses * spatialSize) + (c * spatialSize) + s]
-            )) || 0;
+  for (let idx = 0; idx < spatialSize; idx++) {
+    let maxProb = outputData[idx];
+    let maxClass = 0;
 
-            const exps = _.map(_.range(numClasses), (c) => {
-                const index = (b * numClasses * spatialSize) + (c * spatialSize) + s;
-                return Math.exp(logits[index] - max);
-            });
+    for (let c = 1; c < numClasses; c++) {
+      const prob = outputData[c * spatialSize + idx];
+      if (prob > maxProb) {
+        maxProb = prob;
+        maxClass = c;
+      }
+    }
 
-            const sum = _.sum(exps);
+    predictions[idx] = maxClass * 1700;
+  }
 
-            _.forEach(_.range(numClasses), (c) => {
-                const index = (b * numClasses * spatialSize) + (c * spatialSize) + s;
-                result[index] = exps[c] / sum;
-            });
-        });
-    });
-
-    return [result, spatialDims];
+  return predictions;
 };
 
-const runModel = async (session: ort.InferenceSession, data: ort.Tensor) : Promise<[Float32Array, number]> => {
+/**
+ * Runs the ONNX model inference.
+ * @param inputTensor The input tensor to the model.
+ * @returns A promise that resolves to a tuple containing the class predictions and inference time.
+ */
+export const infer = async (inputTensor: ort.Tensor): Promise<[Uint8Array, number]> => {
+  try {
+    // Load the ONNX model
+    const session = await ort.InferenceSession.create('grace.onnx', {
+      executionProviders: ['wasm'],
+      graphOptimizationLevel: 'all',
+    });
+
     const startTime = performance.now();
-    // Add a batch dimension to the input tensor
-    const batchedData = new ort.Tensor('float32', data.data, [1, ...data.dims]);
-    const output = await session.run({ input: batchedData });
+
+    // Get the model's input and output names
+    const inputName = session.inputNames[0];
+    const outputName = session.outputNames[0];
+
+    // Prepare the feeds (inputs to the model)
+    const feeds: Record<string, ort.Tensor> = {};
+    feeds[inputName] = inputTensor;
+
+    // Run the model
+    const outputData = await session.run(feeds);
+
     const endTime = performance.now();
     const timeTaken = endTime - startTime;
-    const [softmaxOutput, dims] = applySoftmax(output.output.data as Float32Array, output.output.dims as number[]);
-    console.log(data.dims);
-    console.log(output.output.dims);
-    console.log(dims);
 
-    // Convert softmaxOutput from [1, 12, 64, 64, 64] to [64, 64, 64]
-    const [, numClasses, ...spatialDims] = output.output.dims;
-    const finalOutput = new Float32Array(spatialDims[0] * spatialDims[1] * spatialDims[2]);
+    // Get the output tensor
+    const outputTensor = outputData[outputName];
+    const outputArray = outputTensor.data as Float32Array;
+    const outputDims = outputTensor.dims;
     
-    for (let x = 0; x < spatialDims[0]; x++) {
-        for (let y = 0; y < spatialDims[1]; y++) {
-            for (let z = 0; z < spatialDims[2]; z++) {
-                let maxClass = 0;
-                let maxProb = softmaxOutput[x * spatialDims[1] * spatialDims[2] + y * spatialDims[2] + z];
-                
-                for (let c = 1; c < numClasses; c++) {
-                    const prob = softmaxOutput[c * spatialDims[0] * spatialDims[1] * spatialDims[2] + x * spatialDims[1] * spatialDims[2] + y * spatialDims[2] + z];
-                    if (prob > maxProb) {
-                        maxProb = prob;
-                        maxClass = c;
-                    }
-                }
-                
-                finalOutput[x * spatialDims[1] * spatialDims[2] + y * spatialDims[2] + z] = maxClass;
-            }
-        }
+    // Process the output to get class predictions
+    const predictions = processModelOutput(outputArray, outputDims);
+    const classCounts: Record<number, number> = {};
+    for (let i = 0; i < predictions.length; i++) {
+      const classId = predictions[i];
+      classCounts[classId] = (classCounts[classId] || 0) + 1;
     }
+    console.log('Number of pixels for each class:', classCounts);
 
-    return [finalOutput, timeTaken];
-}
+    return [predictions, timeTaken];
+  } catch (error) {
+    console.error('Model inference failed:', error);
+    throw error;
+  }
+};
 
-const infer = async (file: File): Promise<[Float32Array, number]> => {
-    console.log("Starting inference");
-    const session = await ort.InferenceSession.create("grace.onnx", { 
-        executionProviders: ['wasm'],
-        graphOptimizationLevel: 'all',
-        enableCpuMemArena: true,
-        enableMemPattern: true,
-        executionMode: 'sequential',
-        enableWebAssembly: true
-    });
-    console.log('Inference session created');
-    const data = await fileToTensor(file);
-    console.log(data)
-    let [results, time] = await runModel(session, data);
-    
-    // Normalize results to be between 0 and 1
-    const maxValue = _.max(results);
-    if (maxValue !== undefined && maxValue !== 0) {
-        results = _.map(results, (value : any) => value / maxValue);
-    }
-
-    console.log('Results converted to file');
-    return [results, time];
-}
-
-export { infer };
+export default infer;
