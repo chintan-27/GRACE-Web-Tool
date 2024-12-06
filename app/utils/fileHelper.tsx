@@ -1,87 +1,121 @@
-// filehelper.tsx
-
 import { NVImage } from "@niivue/niivue";
 import { Tensor } from "onnxruntime-web";
 
 /**
- * Converts an NVImage to an ONNX Runtime Tensor suitable for model inference.
- * @param nvImage The NVImage instance containing the image data.
- * @returns A promise that resolves to an ONNX Runtime Tensor.
+ * Normalizes the input data to a specified range.
+ * @param inputData The input data as a Float32Array.
+ * @returns A Float32Array with values normalized to [0, 1].
  */
-
 const normalizeToRange = (inputData: Float32Array) => {
-    const a_min = 0;
-    const a_max = 255;
-    const b_min = 0;
-    const b_max = 1;
-  
-    const normalizedData = new Float32Array(inputData.length);
-  
-    for (let i = 0; i < inputData.length; i++) {
-      // Scale value from [0, 255] to [0, 1]
-      let scaledValue = ((inputData[i] - a_min) / (a_max - a_min)) * (b_max - b_min) + b_min;
-  
-      // Clip the value to the range [0, 1]
-      scaledValue = Math.min(Math.max(scaledValue, b_min), b_max);
+  const a_min = 0;
+  const a_max = 255;
+  const b_min = 0;
+  const b_max = 1;
 
-  
-      normalizedData[i] = scaledValue;
+  const normalizedData = new Float32Array(inputData.length);
 
-    }
-  
-    return normalizedData;
-  };
-  
-
-export async function fileToTensor(nvImage: NVImage): Promise<Tensor> {
-  // Extract image data from NVImage
-  const inputData = nvImage.img; // Image data as Float32Array or Uint8Array
-  if (!inputData) {
-    throw new Error("Input data is undefined");
-  }
-
-  // Normalize the data according to model requirements
-  // For example, normalize to [0, 1] by dividing by the maximum value
-  let maxVal = 0;
   for (let i = 0; i < inputData.length; i++) {
-    if (inputData[i] > maxVal) {
-      maxVal = inputData[i];
+    let scaledValue =
+      ((inputData[i] - a_min) / (a_max - a_min)) * (b_max - b_min) + b_min;
+    scaledValue = Math.min(Math.max(scaledValue, b_min), b_max);
+    normalizedData[i] = scaledValue;
+  }
+
+  return normalizedData;
+};
+
+/**
+ * Crops a 3D volume of data to the specified dimensions starting from a given position.
+ */
+const cropData = (
+  inputData: Float32Array,
+  inputDims: [number, number, number],
+  start: [number, number, number],
+  cropDims: [number, number, number]
+): Float32Array => {
+  const [depth, height, width] = inputDims;
+  const [startZ, startY, startX] = start;
+  const [cropDepth, cropHeight, cropWidth] = cropDims;
+
+  const croppedData = new Float32Array(cropDepth * cropHeight * cropWidth);
+  let outputIndex = 0;
+
+  for (let z = 0; z < cropDepth; z++) {
+    const inputZ = startZ + z;
+    if (inputZ >= depth) continue;
+
+    for (let y = 0; y < cropHeight; y++) {
+      const inputY = startY + y;
+      if (inputY >= height) continue;
+
+      const inputIndex = inputZ * height * width + inputY * width + startX;
+      const sliceLength = Math.min(cropWidth, width - startX);
+      const inputSlice = inputData.subarray(inputIndex, inputIndex + sliceLength);
+
+      croppedData.set(inputSlice, outputIndex);
+      outputIndex += sliceLength;
     }
   }
 
-  if (maxVal === 0) {
-    throw new Error("Maximum value in input data is zero, cannot normalize");
+  return croppedData;
+};
+
+/**
+ * Generates sliding window positions for cropping a volume.
+ */
+const generateSlidingWindowPositions = (
+  dims: [number, number, number],
+  cropSize: number,
+  stepSize: number
+): [number, number, number][] => {
+  const [depth, height, width] = dims;
+  const positions: [number, number, number][] = [];
+
+  for (let z = 0; z <= depth - cropSize; z += stepSize) {
+    for (let y = 0; y <= height - cropSize; y += stepSize) {
+      for (let x = 0; x <= width - cropSize; x += stepSize) {
+        positions.push([z, y, x]);
+      }
+    }
   }
 
-  const float32Data = new Float32Array(inputData.length);
-  for (let i = 0; i < inputData.length; i++) {
-    float32Data[i] = inputData[i];
-  }
+  return positions;
+};
 
+/**
+ * Converts an NVImage to multiple ONNX Runtime Tensors for sliding window inference.
+ */
+export async function fileToTensor(nvImage: NVImage): Promise<{
+  inputTensors: Tensor[];
+  positions: [number, number, number][];
+  cropDims: [number, number, number];
+}> {
+  const inputData = nvImage.img;
+  if (!inputData) throw new Error("Input data is undefined");
+
+  const float32Data =
+    inputData instanceof Float32Array ? inputData : new Float32Array(inputData);
   const scaledData = normalizeToRange(float32Data);
 
-  // Get dimensions from NVImage
-  const dimsRAS = nvImage.dimsRAS; // [t, z, y, x]
-  if (!dimsRAS || dimsRAS.length < 4) {
-    throw new Error("Invalid image dimensions");
-  }
+  const dimsRAS = nvImage.dimsRAS;
+  if (!dimsRAS || dimsRAS.length < 4) throw new Error("Invalid image dimensions");
 
-  // Prepare tensor dimensions
-  // Model expects input shape: [N, C, D, H, W]
-  // We use dimsRAS to get [t, z, y, x] and map to [D, H, W]
   const [t, z, y, x] = dimsRAS;
+  const inputDims: [number, number, number] = [z || 1, y || 1, x || 1];
 
-  // Handle cases where time dimension 't' is undefined or zero
-  const depth = z || 1;
-  const height = y || 1;
-  const width = x || 1;
+  const cropSize = 64;
+  const stepSize = 32;
 
-  const dims = [1, 1, depth, height, width]; // [N, C, D, H, W]
+  const positions = generateSlidingWindowPositions(inputDims, cropSize, stepSize);
+  const cropDims: [number, number, number] = [cropSize, cropSize, cropSize];
 
-  // Create the input tensor
-  const inputTensor = new Tensor("float32", scaledData, dims);
+  const inputTensors = positions.map((start) => {
+    const croppedData = cropData(scaledData, inputDims, start, cropDims);
+    const dims = [1, 1, cropSize, cropSize, cropSize];
+    return new Tensor("float32", croppedData, dims);
+  });
 
-  return inputTensor;
+  return { inputTensors, positions, cropDims };
 }
 
 export default fileToTensor;

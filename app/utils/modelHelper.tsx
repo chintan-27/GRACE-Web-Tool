@@ -1,12 +1,7 @@
-// modelhelper.tsx
-
-import * as ort from 'onnxruntime-web';
+import * as ort from "onnxruntime-web";
 
 /**
  * Processes the model's output to get class predictions.
- * @param outputData The output data from the model as a Float32Array.
- * @param outputDims The dimensions of the output tensor.
- * @returns A Uint8Array containing the class predictions.
  */
 const processModelOutput = (outputData: Float32Array, outputDims: readonly number[]): Uint8Array => {
   const [batchSize, numClasses, ...spatialDims] = outputDims;
@@ -25,58 +20,66 @@ const processModelOutput = (outputData: Float32Array, outputDims: readonly numbe
       }
     }
 
-    predictions[idx] = maxClass * 1700;
+    predictions[idx] = maxClass;
   }
 
   return predictions;
 };
 
 /**
- * Runs the ONNX model inference.
- * @param inputTensor The input tensor to the model.
- * @returns A promise that resolves to a tuple containing the class predictions and inference time.
+ * Runs sliding window inference over an entire image.
  */
-export const infer = async (inputTensor: ort.Tensor): Promise<[Uint8Array, number]> => {
+export const infer = async (
+  inputTensors: ort.Tensor[],
+  positions: [number, number, number][],
+  cropDims: [number, number, number],
+  inputDims: [number, number, number],
+  onUpdateProgressiveResults?: (progressivePredictions: Uint8Array) => void
+): Promise<[Uint8Array, Uint8Array]> => {
   try {
-    // Load the ONNX model
-    const session = await ort.InferenceSession.create('grace.onnx', {
-      executionProviders: ['wasm'],
-      graphOptimizationLevel: 'all',
+    const executionProviders = ort.env.wasm.hasWebGPU ? ["webgpu"] : ["wasm"];
+    const session = await ort.InferenceSession.create("grace.onnx", {
+      executionProviders,
+      graphOptimizationLevel: "all",
     });
 
-    const startTime = performance.now();
+    const [depth, height, width] = inputDims;
+    const fullPredictions = new Uint8Array(depth * height * width);
 
-    // Get the model's input and output names
-    const inputName = session.inputNames[0];
-    const outputName = session.outputNames[0];
+    for (let i = 0; i < inputTensors.length; i++) {
+      const inputTensor = inputTensors[i];
+      const [startZ, startY, startX] = positions[i];
 
-    // Prepare the feeds (inputs to the model)
-    const feeds: Record<string, ort.Tensor> = {};
-    feeds[inputName] = inputTensor;
+      const outputData = await session.run({ [session.inputNames[0]]: inputTensor });
+      const outputArray = outputData[session.outputNames[0]].data as Float32Array;
+      const outputDims = outputData[session.outputNames[0]].dims;
 
-    // Run the model
-    const outputData = await session.run(feeds);
+      const predictions = processModelOutput(outputArray, outputDims);
 
-    const endTime = performance.now();
-    const timeTaken = endTime - startTime;
+      for (let dz = 0; dz < cropDims[0]; dz++) {
+        const inputZ = startZ + dz;
+        for (let dy = 0; dy < cropDims[1]; dy++) {
+          const inputY = startY + dy;
+          const baseInputIndex = inputZ * height * width + inputY * width + startX;
+          const baseOutputIndex = dz * cropDims[1] * cropDims[2] + dy * cropDims[2];
+          const sliceLength = Math.min(cropDims[2], width - startX);
 
-    // Get the output tensor
-    const outputTensor = outputData[outputName];
-    const outputArray = outputTensor.data as Float32Array;
-    const outputDims = outputTensor.dims;
-    
-    // Process the output to get class predictions
-    const predictions = processModelOutput(outputArray, outputDims);
-    const classCounts: Record<number, number> = {};
-    for (let i = 0; i < predictions.length; i++) {
-      const classId = predictions[i];
-      classCounts[classId] = (classCounts[classId] || 0) + 1;
+          fullPredictions.set(
+            predictions.subarray(baseOutputIndex, baseOutputIndex + sliceLength),
+            baseInputIndex
+          );
+        }
+      }
+
+      // Call the update callback after processing this window
+      if (onUpdateProgressiveResults) {
+        onUpdateProgressiveResults(new Uint8Array(fullPredictions));
+      }
     }
-    console.log('Number of pixels for each class:', classCounts);
 
-    return [predictions, timeTaken];
+    return [fullPredictions, fullPredictions]; // Return final predictions
   } catch (error) {
-    console.error('Model inference failed:', error);
+    console.error("Model inference failed:", error);
     throw error;
   }
 };

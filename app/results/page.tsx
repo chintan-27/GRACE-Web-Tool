@@ -1,10 +1,11 @@
 "use client";
+
 import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import NiiVue from "../components/niivue"; // Adjust the path as needed
+import NiiVue from "../components/niivue";
 import { NVImage } from "@niivue/niivue";
-import { infer } from "../utils/modelHelper"; // Corrected casing
-import fileToTensor from "../utils/fileHelper"; // Corrected casing
+import { infer } from "../utils/modelHelper"; // Fixed casing
+import fileToTensor from "../utils/fileHelper"; // Fixed casing
 import pako from "pako";
 
 const Results = () => {
@@ -15,6 +16,7 @@ const Results = () => {
   const [infLoading, setInfLoading] = useState<boolean>(false);
   const [inferred, setInferred] = useState<boolean>(false);
   const [inferenceResults, setInferenceResults] = useState<NVImage | null>(null);
+  const [progressivePredictions, setProgressivePredictions] = useState<Uint8Array | null>(null);
 
   useEffect(() => {
     const loadImage = async () => {
@@ -29,15 +31,13 @@ const Results = () => {
         const isGzipped = uint8Array[0] === 0x1f && uint8Array[1] === 0x8b;
 
         if (isGzipped) {
-          // Decompress the .nii.gz file
           const decompressedData = pako.inflate(uint8Array);
           file = new File([decompressedData], "uploaded_image.nii");
         } else {
-          // Use the blob directly for .nii files
           file = new File([blob], "uploaded_image.nii");
         }
 
-        const nvImage = await NVImage.loadFromFile({ file, colormap: 'gray' });
+        const nvImage = await NVImage.loadFromFile({ file, colormap: "gray" });
         setImage(nvImage);
       } catch (error) {
         console.error("Error loading image:", error);
@@ -51,68 +51,84 @@ const Results = () => {
     }
   }, [fileUrl]);
 
-  const convertUint8ArrayToNVImage = (predictions: Uint8Array, dimsRAS: number[]): NVImage => {
+  const convertUint8ArrayToNVImage = (
+    predictions: Uint8Array,
+    dimsRAS: number[],
+    image: NVImage
+  ): NVImage => {
     const [t, z, y, x] = dimsRAS;
     const dimensions = [x, y, z];
-    const pixDims = [
-      image?.getImageMetadata().dx ?? 1,
-      image?.getImageMetadata().dy ?? 1,
-      image?.getImageMetadata().dz ?? 1,
-      image?.getImageMetadata().dt ?? 1
-    ];
 
-    // Create NIfTI array
-    const niftiArray = NVImage.createNiftiArray(dimensions, pixDims, undefined, 2, predictions); // Data type 2 for Uint8
+    const niftiArray = NVImage.createNiftiArray(
+      dimensions,
+      image.pixDims,
+      undefined,
+      2,
+      predictions
+    );
 
-    // Convert the NIfTI array to base64
-    const base64Data = Buffer.from(niftiArray).toString('base64');
+    const base64Data = Buffer.from(niftiArray).toString("base64");
 
-    // Load NVImage from base64 data
-    const nvImage = NVImage.loadFromBase64({
+    return NVImage.loadFromBase64({
       base64: base64Data,
-      name: 'InferenceResult.nii.gz',
-      colormap: 'nih',
+      name: "InferenceResult.nii.gz",
+      colormap: "nih",
       opacity: 1,
     });
-
-    return nvImage;
-  };
-
-  // Copy spatial attributes to ensure correct overlay
-  const setSpatialAttributes = (outputImage: NVImage, inputImage: NVImage) => {
-    outputImage.frac2mm = inputImage.frac2mm;
-    outputImage.matRAS = inputImage.matRAS;
-    outputImage.pixDims = inputImage.pixDims;
-    outputImage.img2RASstart = inputImage.img2RASstart;
-    outputImage.img2RASstep = inputImage.img2RASstep;
-    // Copy other relevant attributes if necessary
   };
 
   const handleInference = async () => {
-    if (!image) return; // Ensure image is loaded before inference
+    if (!image) return;
     setInfLoading(true);
 
     try {
-      // Prepare the input tensor from the NVImage
-      const inputTensor = await fileToTensor(image);
+      const { inputTensors, positions, cropDims } = await fileToTensor(image);
+      if (!image.dimsRAS || image.dimsRAS.length < 4) {
+        throw new Error("Invalid image dimensions");
+      }
+      const inputDims: [number, number, number] = [
+        image.dimsRAS[1],
+        image.dimsRAS[2],
+        image.dimsRAS[3],
+      ];
 
-      // Run inference
-      const [predictions, timeTaken] = await infer(inputTensor);
-      console.log(`Inference completed in ${timeTaken.toFixed(2)} ms`);
-      const dimsRAS = image.dimsRAS || []; // Ensure dimsRAS is defined
-      const inferenceNVImage = convertUint8ArrayToNVImage(predictions, dimsRAS);
-      setSpatialAttributes(inferenceNVImage, image);
-      setInferenceResults(inferenceNVImage);
+      const [progressivePreds, finalPredictions] = await infer(
+        inputTensors,
+        positions,
+        cropDims,
+        inputDims,
+        (currentPredictions) => {
+          // Update the progressive predictions
+          if (image.dimsRAS) {
+            const progressiveNVImage = convertUint8ArrayToNVImage(
+              currentPredictions,
+              image.dimsRAS,
+              image
+            );
+            setInferenceResults(progressiveNVImage);
+          }
+        }
+      );
+
+      // Final result after full inference
+      const finalNVImage = convertUint8ArrayToNVImage(
+        finalPredictions,
+        image.dimsRAS,
+        image
+      );
+
+      setInferenceResults(finalNVImage);
+      setProgressivePredictions(finalPredictions);
       setInferred(true);
-    } catch (Error){
-      console.error("Inference error:", Error);
+    } catch (error) {
+      console.error("Inference error:", error);
     } finally {
       setInfLoading(false);
     }
   };
 
   return (
-    <div className="flex items-center justify-center w-screen h-screen">
+    <div className="flex flex-col items-center justify-center w-screen h-screen">
       {loading ? (
         <div className="flex items-center justify-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-lime-800"></div>
@@ -123,14 +139,13 @@ const Results = () => {
             {image && (
               <NiiVue
                 image={image}
-                inferred={inferred}
                 inferredImage={inferenceResults}
               />
             )}
           </div>
-          <div className="flex justify-center">
+          <div className="flex justify-center mt-4">
             <button
-              className="mt-4 bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
+              className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
               onClick={handleInference}
               disabled={infLoading}
             >
