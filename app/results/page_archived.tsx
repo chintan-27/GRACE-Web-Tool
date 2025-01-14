@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import NiiVue from "../components/niivue";
 import { NVImage } from "@niivue/niivue";
+import { infer } from "../utils/modelHelper"; // Fixed casing
+import fileToTensor from "../utils/fileHelper"; // Fixed casing
 import pako from "pako";
 
 const Results = () => {
@@ -12,7 +14,9 @@ const Results = () => {
   const [image, setImage] = useState<NVImage | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [infLoading, setInfLoading] = useState<boolean>(false);
+  const [inferred, setInferred] = useState<boolean>(false);
   const [inferenceResults, setInferenceResults] = useState<NVImage | null>(null);
+  const [progressivePredictions, setProgressivePredictions] = useState<Uint8Array | null>(null);
 
   useEffect(() => {
     const loadImage = async () => {
@@ -47,34 +51,75 @@ const Results = () => {
     }
   }, [fileUrl]);
 
+  const convertUint8ArrayToNVImage = (
+    predictions: Uint8Array,
+    dimsRAS: number[],
+    image: NVImage
+  ): NVImage => {
+    const [t, z, y, x] = dimsRAS;
+    const dimensions = [x, y, z];
+
+    const niftiArray = NVImage.createNiftiArray(
+      dimensions,
+      image.pixDims,
+      undefined,
+      2,
+      predictions
+    );
+
+    const base64Data = Buffer.from(niftiArray).toString("base64");
+
+    return NVImage.loadFromBase64({
+      base64: base64Data,
+      name: "InferenceResult.nii.gz",
+      colormap: "nih",
+      opacity: 1,
+    });
+  };
+
   const handleInference = async () => {
     if (!image) return;
     setInfLoading(true);
 
     try {
-      // Prepare the file to send to the API
-      const formData = new FormData();
-      const fileBlob = await fetch(fileUrl).then((res) => res.blob());
-      formData.append("file", fileBlob, "uploaded_image.nii.gz");
-
-      const response = await fetch("http://localhost:5500/predict", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch inference results from the API");
+      const { inputTensors, positions, cropDims } = await fileToTensor(image);
+      if (!image.dimsRAS || image.dimsRAS.length < 4) {
+        throw new Error("Invalid image dimensions");
       }
+      const inputDims: [number, number, number] = [
+        image.dimsRAS[1],
+        image.dimsRAS[2],
+        image.dimsRAS[3],
+      ];
 
-      const inferredBlob = await response.blob();
+      const [progressivePreds, finalPredictions] = await infer(
+        inputTensors,
+        positions,
+        cropDims,
+        inputDims,
+        (currentPredictions) => {
+          // Update the progressive predictions
+          if (image.dimsRAS) {
+            const progressiveNVImage = convertUint8ArrayToNVImage(
+              currentPredictions,
+              image.dimsRAS,
+              image
+            );
+            setInferenceResults(progressiveNVImage);
+          }
+        }
+      );
 
-      const inferredImage = await NVImage.loadFromFile({
-        file: new File([await inferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
-        // colormap:'jet',
-        opacity: 1,
-      });
+      // Final result after full inference
+      const finalNVImage = convertUint8ArrayToNVImage(
+        finalPredictions,
+        image.dimsRAS,
+        image
+      );
 
-      setInferenceResults(inferredImage);
+      setInferenceResults(finalNVImage);
+      setProgressivePredictions(finalPredictions);
+      setInferred(true);
     } catch (error) {
       console.error("Inference error:", error);
     } finally {
@@ -104,7 +149,7 @@ const Results = () => {
               onClick={handleInference}
               disabled={infLoading}
             >
-              {infLoading ? "Processing..." : "Inference Using API"}
+              {infLoading ? "Processing..." : "Inference Using GRACE"}
             </button>
           </div>
         </div>

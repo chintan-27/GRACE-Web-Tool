@@ -37,9 +37,9 @@ export const infer = async (
   onUpdateProgressiveResults?: (progressivePredictions: Uint8Array) => void
 ): Promise<[Uint8Array, Uint8Array]> => {
   try {
-    const executionProviders = ort.env.wasm.hasWebGPU ? ["webgpu"] : ["wasm"];
+    // const executionProviders = ort.env.wasm.hasWebGPU ? ["webgpu"] : ["wasm"];
     const session = await ort.InferenceSession.create("grace.onnx", {
-      executionProviders,
+      executionProviders: ["wasm"],
       graphOptimizationLevel: "all",
     });
 
@@ -54,6 +54,7 @@ export const infer = async (
       const outputArray = outputData[session.outputNames[0]].data as Float32Array;
       const outputDims = outputData[session.outputNames[0]].dims;
 
+      // const predictions = new Uint8Array(outputDims.reduce((a, b) => a * b, 1)).map(() => Math.floor(Math.random() * 256));
       const predictions = processModelOutput(outputArray, outputDims);
 
       for (let dz = 0; dz < cropDims[0]; dz++) {

@@ -78,7 +78,6 @@ const generateSlidingWindowPositions = (
       }
     }
   }
-
   return positions;
 };
 

@@ -39,9 +39,11 @@ const NiiVueComponent = ({ image, inferredImage }: NiiVueProps) => {
   
       // Add the inferred image if available
       if (inferredImage) {
+        // nv.volumes = []; // Remove existing volumes
         nv.addVolume(inferredImage);
         const overlayIndex = nv.volumes.length - 1;
-        nv.setOpacity(overlayIndex, 0.5); // Adjust opacity as needed
+        nv.setOpacity(0, 0.0)
+        // nv.setOpacity(overlayIndex, 0.5); // Adjust opacity as needed
       }
   
       // Refresh the scene
