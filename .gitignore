@@ -41,3 +41,10 @@ public/grace.onnx
 
 temp
 grace.onnx
+
+Grace-API/models/GRACE.pth
+Grace-API/outputs
+Grace-API/uploads
+Grace-API/1.nii.gz
+Grace-API/__pycache__
+Grace-API/core.*

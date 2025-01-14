@@ -1,0 +1,11 @@
+einops
+flask
+flask_cors
+monai
+nibabel
+numpy
+scipy
+torch
+torchaudio
+torchvision
+werkzeug
