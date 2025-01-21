@@ -70,7 +70,7 @@ const Results = () => {
 
       const inferredImage = await NVImage.loadFromFile({
         file: new File([await inferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
-        // colormap:'jet',
+        colormap:'jet',
         opacity: 1,
       });
 
