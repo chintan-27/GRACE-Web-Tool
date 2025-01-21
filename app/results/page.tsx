@@ -13,6 +13,10 @@ const Results = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [infLoading, setInfLoading] = useState<boolean>(false);
   const [inferenceResults, setInferenceResults] = useState<NVImage | null>(null);
+  const [progress, setProgress] = useState<{ message: string; progress: number }>({
+    message: "",
+    progress: 0,
+  });
 
   useEffect(() => {
     const loadImage = async () => {
@@ -50,12 +54,27 @@ const Results = () => {
   const handleInference = async () => {
     if (!image) return;
     setInfLoading(true);
+    setProgress({ message: "Starting inference...", progress: 0 });
 
     try {
       // Prepare the file to send to the API
       const formData = new FormData();
       const fileBlob = await fetch(fileUrl).then((res) => res.blob());
       formData.append("file", fileBlob, "uploaded_image.nii.gz");
+
+      // Create an EventSource to listen for progress updates
+      const eventSource = new EventSource("http://localhost:5500/predict");
+
+      eventSource.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        setProgress({ message: data.message, progress: data.progress });
+      };
+
+      eventSource.onerror = (error) => {
+        console.error("EventSource failed:", error);
+        eventSource.close();
+        setInfLoading(false);
+      };
 
       const response = await fetch("http://localhost:5500/predict", {
         method: "POST",
@@ -75,6 +94,7 @@ const Results = () => {
       });
 
       setInferenceResults(inferredImage);
+      eventSource.close();
     } catch (error) {
       console.error("Inference error:", error);
     } finally {
@@ -104,7 +124,7 @@ const Results = () => {
               onClick={handleInference}
               disabled={infLoading}
             >
-              {infLoading ? "Processing..." : "Inference Using API"}
+              {infLoading ? progress.message : "Inference Using API"}
             </button>
           </div>
         </div>

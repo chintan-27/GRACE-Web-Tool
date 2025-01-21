@@ -7,12 +7,19 @@ from monai.networks.nets import UNETR
 from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize
 from monai.data import MetaTensor
 from scipy.io import savemat
+from flask import Response
+import json
+
+def send_progress(message, progress):
+    """Helper function to send SSE progress updates"""
+    data = json.dumps({"message": message, "progress": progress})
+    return f"data: {data}\n\n"
 
 def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
     Load and configure the model for inference.
     """
-    print("Configuring model...")
+    yield send_progress("Configuring model...", 10)
     model = UNETR(
         in_channels=1,
         out_channels=num_classes,
@@ -28,31 +35,31 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     )
 
     if dataparallel:
-        print("Using DataParallel with multiple GPUs")
+        yield send_progress("Initializing DataParallel with multiple GPUs", 15)
         model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
 
     model = model.to(device)
-    print(f"Loading model weights from {model_path}...")
+    yield send_progress(f"Loading model weights from {model_path}...", 20)
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
     model.load_state_dict(state_dict, strict=False)
     model.eval()
-    print("Model loaded successfully.")
+    yield send_progress("Model loaded successfully.", 25)
     return model
-
 
 def preprocess_input(input_path, device, a_min_value, a_max_value):
     """
     Load and preprocess the input NIfTI image.
     """
-    print(f"Loading input image from {input_path}...")
+    yield send_progress(f"Loading input image from {input_path}...", 30)
     input_img = nib.load(input_path)
     image_data = input_img.get_fdata()
-    print(f"Input image shape: {image_data.shape}")
+    yield send_progress(f"Input image loaded. Shape: {image_data.shape}", 35)
 
     # Convert to MetaTensor for MONAI compatibility
     meta_tensor = MetaTensor(image_data, affine=input_img.affine)
 
+    yield send_progress("Applying preprocessing transforms...", 40)
     # Apply MONAI test transforms
     test_transforms = Compose(
         [
@@ -70,63 +77,68 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
     data = {"image": meta_tensor}
     transformed_data = test_transforms(data)
 
-    # Convert to PyTorch tensor with .clone().detach()
-    # image_tensor = torch.tensor(transformed_data["image"], dtype=torch.float32).clone().detach().unsqueeze(0).unsqueeze(0).to(device)
+    # Convert to PyTorch tensor
     image_tensor = transformed_data["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)
-    print(f"Model input shape: {image_tensor.shape}")
+    yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
 
 def save_predictions(predictions, input_img, output_dir, base_filename):
     """
     Save predictions as NIfTI and MAT files.
     """
-    # Post-process predictions
-    print("Post-processing predictions...")
+    yield send_progress("Post-processing predictions...", 80)
     processed_preds = torch.argmax(predictions, dim=1).detach().cpu().numpy().squeeze()
+    
     # Save as .nii.gz
+    yield send_progress("Saving NIfTI file...", 85)
     pred_img = nib.Nifti1Image(processed_preds, affine=input_img.affine, header=input_img.header)
     nii_save_path = os.path.join(output_dir, f"{base_filename}_pred.nii.gz")
     nib.save(pred_img, nii_save_path)
-    print(f"Saved predictions as NIfTI file: {nii_save_path}")
-
+    
     # Save as .mat
+    yield send_progress("Saving MAT file...", 90)
     mat_save_path = os.path.join(output_dir, f"{base_filename}_pred.mat")
     savemat(mat_save_path, {"testimage": processed_preds})
-    print(f"Saved predictions as MAT file: {mat_save_path}")
+    yield send_progress("Files saved successfully.", 95)
 
 def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
-                        spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
-                        a_min_value=0, a_max_value=255):
+                       spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
+                       a_min_value=0, a_max_value=255):
     """
-    Predict segmentation for a single NIfTI image and save the output as .nii.gz and .mat files.
+    Predict segmentation for a single NIfTI image with progress updates via SSE.
     """
-    os.makedirs(output_dir, exist_ok=True)
-    base_filename = os.path.basename(input_path).split(".nii")[0]
+    def generate():
+        os.makedirs(output_dir, exist_ok=True)
+        base_filename = os.path.basename(input_path).split(".nii")[0]
 
-    # Determine device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if torch.backends.mps.is_available() and not torch.cuda.is_available():
-        device = torch.device("cpu")  # Fall back to CPU for MPS due to ConvTranspose3d limitations
-        print("Using MPS backend (CPU due to ConvTranspose3d support limitations)")
+        # Determine device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if torch.backends.mps.is_available() and not torch.cuda.is_available():
+            device = torch.device("cpu")
+            yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
+        else:
+            yield send_progress(f"Using device: {device}", 5)
 
-    print(f"Using device: {device}")
+        # Load model
+        model = yield from load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
 
-    # Load model
-    model = load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
+        # Preprocess input
+        image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
 
-    # Preprocess input
-    image_tensor, input_img = preprocess_input(input_path, device, a_min_value, a_max_value)
+        # Perform inference
+        yield send_progress("Starting sliding window inference...", 50)
+        with torch.no_grad():
+            predictions = sliding_window_inference(
+                image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
+            )
+        yield send_progress("Inference completed successfully.", 75)
 
-    # Perform inference
-    print("Performing sliding window inference...")
-    with torch.no_grad():
-        predictions = sliding_window_inference(
-            image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
-        )
-    print(f"Inference completed. Output shape: {predictions.shape}")
+        # Save predictions
+        yield from save_predictions(predictions, input_img, output_dir, base_filename)
+        
+        yield send_progress("Processing completed successfully!", 100)
 
-    # Save predictions
-    save_predictions(predictions, input_img, output_dir, base_filename)
+    return Response(generate(), mimetype='text/event-stream')
 
 # Example usage
 # if __name__ == "__main__":
