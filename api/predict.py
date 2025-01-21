@@ -24,6 +24,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
         norm_name="instance",
         res_block=True,
         dropout_rate=0.0,
+        proj_type="perceptron",
     )
 
     if dataparallel:
