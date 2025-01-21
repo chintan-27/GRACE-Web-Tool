@@ -38,7 +38,7 @@ def predict():
     spatial_size = tuple(map(int, spatial_size.split(",")))
     num_classes = int(request.form.get("num_classes", 12))
     model_path = request.form.get("model_path", "models/GRACE.pth")
-    dataparallel = request.form.get("dataparallel", "False")
+    dataparallel = request.form.get("dataparallel", False)
     num_gpu = int(request.form.get("num_gpu", 1))
 
     try:
