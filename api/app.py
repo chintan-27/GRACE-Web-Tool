@@ -44,7 +44,7 @@ def predict():
     try:
         # Run prediction
         output_dir = app.config['OUTPUT_FOLDER']
-        predict_single_file(
+        yield from predict_single_file(
             input_path=input_path,
             output_dir=output_dir,
             model_path=model_path,
