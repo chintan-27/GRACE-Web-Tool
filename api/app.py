@@ -53,6 +53,8 @@ def predict():
     model_path = request.form.get("model_path", "models/GRACE.pth")
     dataparallel = request.form.get("dataparallel", False)
     num_gpu = int(request.form.get("num_gpu", 1))
+    return jsonify({"OK": "Done."}), 200
+
 
 @app.get("/events")
 def events():
