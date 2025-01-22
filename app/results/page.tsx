@@ -77,6 +77,9 @@ const Results = () => {
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         setProgress({ message: data.message, progress: data.progress });
+        if (data.message === "Processing completed successfully!") {
+          fetchOutput();
+        }
         
       };
 
@@ -86,6 +89,15 @@ const Results = () => {
         setInfLoading(false);
       };
 
+      
+      
+    } catch (error) {
+      console.error("Inference error:", error);
+    } finally {
+      setInfLoading(false);
+    }
+
+    async function fetchOutput() {
       const outputResponse = await fetch("http://localhost:5500/output")
       const inferredBlob = await outputResponse.blob();
       const inferredImage = await NVImage.loadFromFile({
@@ -95,12 +107,6 @@ const Results = () => {
       });
       
       setInferenceResults(inferredImage);
-      eventSource.close();
-      
-    } catch (error) {
-      console.error("Inference error:", error);
-    } finally {
-      setInfLoading(false);
     }
   };
 

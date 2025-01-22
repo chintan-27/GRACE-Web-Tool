@@ -84,7 +84,7 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
     yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
 
-async def save_predictions(predictions, input_img, output_dir, base_filename):
+def save_predictions(predictions, input_img, output_dir, base_filename):
     """
     Save predictions as NIfTI and MAT files.
     """
@@ -102,7 +102,7 @@ async def save_predictions(predictions, input_img, output_dir, base_filename):
     mat_save_path = os.path.join(output_dir, f"{base_filename}_pred.mat")
     savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
-    await sleep(1000)
+
 
 def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
                        spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
