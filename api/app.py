@@ -58,7 +58,7 @@ def predict():
 
 
 @app.get("/events")
-async def events():
+def events():
     # Run prediction
     output_dir = app.config['OUTPUT_FOLDER']
     return Response(
