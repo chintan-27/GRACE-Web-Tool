@@ -62,8 +62,6 @@ const Results = () => {
       const fileBlob = await fetch(fileUrl).then((res) => res.blob());
       formData.append("file", fileBlob, "uploaded_image.nii.gz");
 
-      
-
       const response = await fetch("http://localhost:5500/predict", {
         method: "POST",
         body: formData,
@@ -74,11 +72,12 @@ const Results = () => {
       }
 
       // Create an EventSource to listen for progress updates
-      const eventSource = new EventSource("http://localhost:5500/predict");
+      const eventSource = new EventSource("http://localhost:5500/events");
 
       eventSource.onmessage = (event) => {
         const data = JSON.parse(event.data);
         setProgress({ message: data.message, progress: data.progress });
+        
       };
 
       eventSource.onerror = (error) => {
@@ -87,16 +86,18 @@ const Results = () => {
         setInfLoading(false);
       };
 
-      const inferredBlob = await response.blob();
-
+      
+      const outputResponse = await fetch("http://localhost:5500/output")
+      const inferredBlob = await outputResponse.blob();
       const inferredImage = await NVImage.loadFromFile({
         file: new File([await inferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
         colormap:'jet',
         opacity: 1,
       });
-
+      
       setInferenceResults(inferredImage);
       eventSource.close();
+      
     } catch (error) {
       console.error("Inference error:", error);
     } finally {

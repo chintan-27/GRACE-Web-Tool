@@ -20,6 +20,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     Load and configure the model for inference.
     """
     yield send_progress("Configuring model...", 10)
+
     model = UNETR(
         in_channels=1,
         out_channels=num_classes,
@@ -138,7 +139,7 @@ def predict_single_file(input_path, output_dir="output", model_path="models/GRAC
         
         yield send_progress("Processing completed successfully!", 100)
 
-    return Response(generate(), mimetype='text/event-stream')
+    yield from generate()
 
 # Example usage
 # if __name__ == "__main__":
