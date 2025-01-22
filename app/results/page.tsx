@@ -86,7 +86,6 @@ const Results = () => {
         setInfLoading(false);
       };
 
-      
       const outputResponse = await fetch("http://localhost:5500/output")
       const inferredBlob = await outputResponse.blob();
       const inferredImage = await NVImage.loadFromFile({

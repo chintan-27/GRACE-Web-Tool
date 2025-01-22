@@ -1,3 +1,4 @@
+from asyncio import sleep
 import os
 import torch
 import nibabel as nib
@@ -15,7 +16,7 @@ def send_progress(message, progress):
     data = json.dumps({"message": message, "progress": progress})
     return f"data: {data}\n\n"
 
-def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
+async def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
     Load and configure the model for inference.
     """
@@ -46,9 +47,10 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     yield send_progress("Model loaded successfully.", 25)
+    await sleep(1000)
     return model
 
-def preprocess_input(input_path, device, a_min_value, a_max_value):
+async def preprocess_input(input_path, device, a_min_value, a_max_value):
     """
     Load and preprocess the input NIfTI image.
     """
@@ -81,9 +83,10 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
     # Convert to PyTorch tensor
     image_tensor = transformed_data["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)
     yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
+    await sleep(1000)
     return image_tensor, input_img
 
-def save_predictions(predictions, input_img, output_dir, base_filename):
+async def save_predictions(predictions, input_img, output_dir, base_filename):
     """
     Save predictions as NIfTI and MAT files.
     """
@@ -101,14 +104,15 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     mat_save_path = os.path.join(output_dir, f"{base_filename}_pred.mat")
     savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
+    await sleep(1000)
 
-def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
+async def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
                        spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
                        a_min_value=0, a_max_value=255):
     """
     Predict segmentation for a single NIfTI image with progress updates via SSE.
     """
-    def generate():
+    async def generate():
         os.makedirs(output_dir, exist_ok=True)
         base_filename = os.path.basename(input_path).split(".nii")[0]
 
@@ -121,10 +125,10 @@ def predict_single_file(input_path, output_dir="output", model_path="models/GRAC
             yield send_progress(f"Using device: {device}", 5)
 
         # Load model
-        model = yield from load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
+        model = await load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
 
         # Preprocess input
-        image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
+        image_tensor, input_img = await preprocess_input(input_path, device, a_min_value, a_max_value)
 
         # Perform inference
         yield send_progress("Starting sliding window inference...", 50)
@@ -135,11 +139,12 @@ def predict_single_file(input_path, output_dir="output", model_path="models/GRAC
         yield send_progress("Inference completed successfully.", 75)
 
         # Save predictions
-        yield from save_predictions(predictions, input_img, output_dir, base_filename)
+        await save_predictions(predictions, input_img, output_dir, base_filename)
         
         yield send_progress("Processing completed successfully!", 100)
+        await sleep(1000)
 
-    yield from generate()
+    await generate()
 
 # Example usage
 # if __name__ == "__main__":
