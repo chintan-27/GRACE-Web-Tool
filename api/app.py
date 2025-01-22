@@ -61,7 +61,7 @@ def predict():
 async def events():
     # Run prediction
     output_dir = app.config['OUTPUT_FOLDER']
-    await sleep(3000)
+    await sleep(1)
     return Response(
         predict_single_file(
             input_path=input_path,
