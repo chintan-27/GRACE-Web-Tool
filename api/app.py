@@ -1,3 +1,4 @@
+from asyncio import sleep
 import os
 from werkzeug.utils import secure_filename
 from predict import predict_single_file
@@ -60,7 +61,8 @@ def predict():
 async def events():
     # Run prediction
     output_dir = app.config['OUTPUT_FOLDER']
-    return await Response(
+    await sleep(3000)
+    return Response(
         predict_single_file(
             input_path=input_path,
             output_dir=output_dir,

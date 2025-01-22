@@ -16,7 +16,7 @@ def send_progress(message, progress):
     data = json.dumps({"message": message, "progress": progress})
     return f"data: {data}\n\n"
 
-async def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
+def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
     Load and configure the model for inference.
     """
@@ -47,10 +47,9 @@ async def load_model(model_path, spatial_size, num_classes, device, dataparallel
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     yield send_progress("Model loaded successfully.", 25)
-    await sleep(1000)
     return model
 
-async def preprocess_input(input_path, device, a_min_value, a_max_value):
+def preprocess_input(input_path, device, a_min_value, a_max_value):
     """
     Load and preprocess the input NIfTI image.
     """
@@ -83,7 +82,6 @@ async def preprocess_input(input_path, device, a_min_value, a_max_value):
     # Convert to PyTorch tensor
     image_tensor = transformed_data["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)
     yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
-    await sleep(1000)
     return image_tensor, input_img
 
 async def save_predictions(predictions, input_img, output_dir, base_filename):
@@ -106,45 +104,42 @@ async def save_predictions(predictions, input_img, output_dir, base_filename):
     yield send_progress("Files saved successfully.", 95)
     await sleep(1000)
 
-async def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
+def predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
                        spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
                        a_min_value=0, a_max_value=255):
     """
     Predict segmentation for a single NIfTI image with progress updates via SSE.
     """
-    async def generate():
-        os.makedirs(output_dir, exist_ok=True)
-        base_filename = os.path.basename(input_path).split(".nii")[0]
+    os.makedirs(output_dir, exist_ok=True)
+    base_filename = os.path.basename(input_path).split(".nii")[0]
 
-        # Determine device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        if torch.backends.mps.is_available() and not torch.cuda.is_available():
-            device = torch.device("cpu")
-            yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
-        else:
-            yield send_progress(f"Using device: {device}", 5)
+    # Determine device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.backends.mps.is_available() and not torch.cuda.is_available():
+        device = torch.device("cpu")
+        yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
+    else:
+        yield send_progress(f"Using device: {device}", 5)
 
-        # Load model
-        model = await load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
+    # Load model
+    model = yield from load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
 
-        # Preprocess input
-        image_tensor, input_img = await preprocess_input(input_path, device, a_min_value, a_max_value)
+    # Preprocess input
+    image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
 
-        # Perform inference
-        yield send_progress("Starting sliding window inference...", 50)
-        with torch.no_grad():
-            predictions = sliding_window_inference(
-                image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
-            )
-        yield send_progress("Inference completed successfully.", 75)
+    # Perform inference
+    yield send_progress("Starting sliding window inference...", 50)
+    with torch.no_grad():
+        predictions = sliding_window_inference(
+            image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
+        )
+    yield send_progress("Inference completed successfully.", 75)
 
-        # Save predictions
-        await save_predictions(predictions, input_img, output_dir, base_filename)
-        
-        yield send_progress("Processing completed successfully!", 100)
-        await sleep(1000)
+    # Save predictions
+    yield from save_predictions(predictions, input_img, output_dir, base_filename)
+    
+    yield send_progress("Processing completed successfully!", 100)
 
-    await generate()
 
 # Example usage
 # if __name__ == "__main__":
