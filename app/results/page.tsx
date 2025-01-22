@@ -62,6 +62,17 @@ const Results = () => {
       const fileBlob = await fetch(fileUrl).then((res) => res.blob());
       formData.append("file", fileBlob, "uploaded_image.nii.gz");
 
+      
+
+      const response = await fetch("http://localhost:5500/predict", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch inference results from the API");
+      }
+
       // Create an EventSource to listen for progress updates
       const eventSource = new EventSource("http://localhost:5500/predict");
 
@@ -75,15 +86,6 @@ const Results = () => {
         eventSource.close();
         setInfLoading(false);
       };
-
-      const response = await fetch("http://localhost:5500/predict", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch inference results from the API");
-      }
 
       const inferredBlob = await response.blob();
 
