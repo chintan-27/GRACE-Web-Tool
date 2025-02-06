@@ -28,7 +28,7 @@ const Results = () => {
 		if (model === "GRACE") {
 			setSpatialSize("64,64,64");
 		} else if (model === "DOMINO") {
-			setSpatialSize("128,128,128");
+			setSpatialSize("256,256,256");
 		} else if (model === "DOMINOPP") {
 			setSpatialSize("64,64,64");
 		}
@@ -172,7 +172,7 @@ const Results = () => {
 									>
 										<option value="GRACE">Grace</option>
 										<option value="DOMINO">Domino</option>
-										<option value="DOMINO++">Domino++</option>
+										<option value="DOMINOPP">Domino++</option>
 									</select>
 							</div>
 							<div className="mx-2">
