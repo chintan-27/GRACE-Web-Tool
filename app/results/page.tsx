@@ -152,19 +152,7 @@ const Results = () => {
 								/>
 							)}
 						</div>
-						<div className="mb-4">
-							<label htmlFor="model-select" className="mr-2">Select Model:</label>
-							<select
-								id="model-select"
-								value={selectedModel}
-								onChange={handleModelChange}
-								className="border rounded p-2"
-							>
-								<option value="GRACE">Grace</option>
-								<option value="DOMINO">Domino</option>
-								<option value="DOMINO++">Domino++</option>
-							</select>
-						</div>
+						
 						{infLoading ?
 							<div className="flex justify-center mt-4">
 								<div className="w-1/2 block bg-gray-200 rounded-full dark:bg-gray-700">
@@ -173,15 +161,29 @@ const Results = () => {
 							</div>
 							: <span></span>}
 						<br />
-						<div className="flex justify-center mt-4">
-							<button
-								className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
-								onClick={handleInference}
-								disabled={infLoading}
-							>
-								{infLoading ? progress.message : "Inference Using API"}
-							</button>
-
+						<div className="flex flex-nowrap justify-center mt-2">
+							<div className="mx-2">
+								<label htmlFor="model-select" className="mr-2">Select Model:</label>
+									<select
+										id="model-select"
+										value={selectedModel}
+										onChange={handleModelChange}
+										className="border bg-black text-white rounded p-2"
+									>
+										<option value="GRACE">Grace</option>
+										<option value="DOMINO">Domino</option>
+										<option value="DOMINO++">Domino++</option>
+									</select>
+							</div>
+							<div className="mx-2">
+								<button
+									className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
+									onClick={handleInference}
+									disabled={infLoading}
+								>
+									{infLoading ? progress.message : "Inference Using API"}
+								</button>
+							</div>
 
 
 						</div>
