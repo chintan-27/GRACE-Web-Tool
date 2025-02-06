@@ -1,26 +1,31 @@
-from asyncio import sleep
 import os
-from werkzeug.utils import secure_filename
-from predict import predict_single_file
-from flask import Flask, Response, request, jsonify, send_file
+from asyncio import sleep
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
+from grace import grace_predict_single_file
+from domino import domino_predict_single_file
+from dominoplusplus import dominoplusplus_predict_single_file
+from flask import Flask, Response, request, jsonify, send_file
 
 app = Flask(__name__)
 CORS(app)
 
-UPLOAD_FOLDER = "uploads"
-OUTPUT_FOLDER = "outputs"
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(OUTPUT_FOLDER, exist_ok=True)
+UPLOAD_FOLDER = "uploads"  # Directory for uploaded files
+OUTPUT_FOLDER = "outputs"  # Directory for output files
+
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Create upload folder if it doesn't exist
+os.makedirs(OUTPUT_FOLDER, exist_ok=True)  # Create output folder if it doesn't exist
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
-spatial_size = "64,64,64"
-num_classes = 12 
-model_path = "models/GRACE.pth"
-dataparallel = False
-num_gpu = 1
-input_path = ""
+
+num_gpu = 1  # Number of GPUs to use
+model = "GRACE" # Model to predict from
+input_path = ""  # Path for the input file
+dataparallel = False  # Flag for data parallelism
+model_path = "models/GRACE.pth"  # Path to the model file
+num_classes = 12  # Default number of classes for predictions
+spatial_size = "64,64,64"  # Default spatial size for predictions
 
 @app.get("/")
 def home():
@@ -46,6 +51,7 @@ def predict():
     global model_path
     global dataparallel
     global num_gpu
+    global model
 
     # Get additional parameters
     spatial_size = request.form.get("spatial_size", "64,64,64")
@@ -54,6 +60,8 @@ def predict():
     model_path = request.form.get("model_path", "models/GRACE.pth")
     dataparallel = request.form.get("dataparallel", False)
     num_gpu = int(request.form.get("num_gpu", 1))
+    model = request.form.get("model", "GRACE")
+    
     return jsonify({"OK": "Done."}), 200
 
 
@@ -61,26 +69,52 @@ def predict():
 def events():
     # Run prediction
     output_dir = app.config['OUTPUT_FOLDER']
-    return Response(
-        predict_single_file(
-            input_path=input_path,
-            output_dir=output_dir,
-            model_path=model_path,
-            spatial_size=spatial_size,
-            num_classes=num_classes,
-            dataparallel=dataparallel,
-            num_gpu=num_gpu
-            ), 
-        mimetype="text/event-stream")
+    if model == "GRACE":
+        return Response(
+            grace_predict_single_file(
+                input_path=input_path,
+                output_dir=output_dir,
+                model_path=model_path,
+                spatial_size=spatial_size,
+                num_classes=num_classes,
+                dataparallel=dataparallel,
+                num_gpu=num_gpu
+                ), 
+            mimetype="text/event-stream")
+    elif model == "DOMINO":
+        return Response(
+            domino_predict_single_file(
+                input_path=input_path,
+                output_dir=output_dir,
+                model_path=model_path,
+                spatial_size=spatial_size,
+                num_classes=num_classes,
+                dataparallel=dataparallel,
+                num_gpu=num_gpu
+                ), 
+            mimetype="text/event-stream")
+    else:
+        return Response(
+            dominoplusplus_predict_single_file(
+                input_path=input_path,
+                output_dir=output_dir,
+                model_path=model_path,
+                spatial_size=spatial_size,
+                num_classes=num_classes,
+                dataparallel=dataparallel,
+                num_gpu=num_gpu
+                ), 
+            mimetype="text/event-stream")
+
 
 @app.get("/output")
 def output():
     output_dir = app.config['OUTPUT_FOLDER']
     try:
         # Prepare output file paths
-        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred.nii.gz")
+        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".nii.gz")
         nii_filepath = os.path.join(output_dir, nii_filename)
-        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred.mat")
+        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".mat")
         mat_filepath = os.path.join(output_dir, mat_filename)
 
         if os.path.exists(nii_filepath):
