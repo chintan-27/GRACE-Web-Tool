@@ -48,9 +48,9 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
         proj_type="perceptron",
     )
 
-    if dataparallel:
-        yield send_progress("Initializing DataParallel with multiple GPUs", 15)
-        model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
+    # if dataparallel:
+    #     yield send_progress("Initializing DataParallel with multiple GPUs", 15)
+    #     model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
 
     model = model.to(device)
     yield send_progress(f"Loading model weights from {model_path}...", 20)

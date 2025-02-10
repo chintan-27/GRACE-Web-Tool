@@ -50,9 +50,9 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     )
 
     # Data Parallel ? Wrap with torch.nn.DataParallel : Nothing
-    if dataparallel:
-        yield send_progress("Initializing DataParallel with multiple GPUs", 15)
-        model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
+    # if dataparallel:
+    #     yield send_progress("Initializing DataParallel with multiple GPUs", 15)
+    #     model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
 
     # Device configured in the domino_predict_single_file function
     model = model.to(device)
