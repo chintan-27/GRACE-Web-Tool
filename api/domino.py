@@ -142,7 +142,7 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     yield send_progress("Files saved successfully.", 95)
 
 
-def domino_predict_single_file(input_path, output_dir="output", model_path="models/DOMINO.pth",
+def domino_predict_single_file(input_path, output_dir="output", model_path="models/DOMINO-HC.pth",
                        spatial_size=(256, 256, 256), num_classes=12, dataparallel=False, num_gpu=1,
                        a_min_value=0, a_max_value=255):
     """
