@@ -76,14 +76,33 @@ def events():
     )
 
 
-@app.get("/output")
-def output():
+# def output():
+#     output_dir = app.config['OUTPUT_FOLDER']
+#     try:
+#         # Prepare output file paths
+#         nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".nii.gz")
+#         nii_filepath = os.path.join(output_dir, nii_filename)
+#         mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".mat")
+#         mat_filepath = os.path.join(output_dir, mat_filename)
+
+#         if os.path.exists(nii_filepath):
+#             return send_file(nii_filepath, as_attachment=True)
+#         elif os.path.exists(mat_filepath):
+#             return send_file(mat_filepath, as_attachment=True)
+#         else:
+#             return jsonify({"error": "Prediction failed to generate output files."}), 500
+
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
+    
+@app.get("/goutput")
+def graceOutput():
     output_dir = app.config['OUTPUT_FOLDER']
     try:
         # Prepare output file paths
-        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".nii.gz")
+        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_GRACE.nii.gz")
         nii_filepath = os.path.join(output_dir, nii_filename)
-        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_"+model+".mat")
+        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_GRACE.mat")
         mat_filepath = os.path.join(output_dir, mat_filename)
 
         if os.path.exists(nii_filepath):
@@ -96,6 +115,45 @@ def output():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.get("/doutput")
+def dominoOutput():
+    output_dir = app.config['OUTPUT_FOLDER']
+    try:
+        # Prepare output file paths
+        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_DOMINO.nii.gz")
+        nii_filepath = os.path.join(output_dir, nii_filename)
+        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_DOMINO.mat")
+        mat_filepath = os.path.join(output_dir, mat_filename)
+
+        if os.path.exists(nii_filepath):
+            return send_file(nii_filepath, as_attachment=True)
+        elif os.path.exists(mat_filepath):
+            return send_file(mat_filepath, as_attachment=True)
+        else:
+            return jsonify({"error": "Prediction failed to generate output files."}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.get("/dppoutput")
+def dominoppOutput():
+    output_dir = app.config['OUTPUT_FOLDER']
+    try:
+        # Prepare output file paths
+        nii_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_DOMINOPP.nii.gz")
+        nii_filepath = os.path.join(output_dir, nii_filename)
+        mat_filename = os.path.basename(input_path).replace(".nii.gz", "_pred_DOMINOPP.mat")
+        mat_filepath = os.path.join(output_dir, mat_filename)
+
+        if os.path.exists(nii_filepath):
+            return send_file(nii_filepath, as_attachment=True)
+        elif os.path.exists(mat_filepath):
+            return send_file(mat_filepath, as_attachment=True)
+        else:
+            return jsonify({"error": "Prediction failed to generate output files."}), 500
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
