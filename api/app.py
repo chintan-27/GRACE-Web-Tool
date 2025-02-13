@@ -1,10 +1,8 @@
 import os
 from asyncio import sleep
 from flask_cors import CORS
+from predict import predict_single_file
 from werkzeug.utils import secure_filename
-from grace import grace_predict_single_file
-from domino import domino_predict_single_file
-from dominoplusplus import dominoplusplus_predict_single_file
 from flask import Flask, Response, request, jsonify, send_file
 
 app = Flask(__name__)
@@ -69,42 +67,13 @@ def predict():
 def events():
     # Run prediction
     output_dir = app.config['OUTPUT_FOLDER']
-    if model == "GRACE":
-        return Response(
-            grace_predict_single_file(
-                input_path=input_path,
-                output_dir=output_dir,
-                model_path=model_path,
-                spatial_size=spatial_size,
-                num_classes=num_classes,
-                dataparallel=dataparallel,
-                num_gpu=num_gpu
-                ), 
-            mimetype="text/event-stream")
-    elif model == "DOMINO":
-        return Response(
-            domino_predict_single_file(
-                input_path=input_path,
-                output_dir=output_dir,
-                model_path=model_path,
-                spatial_size=spatial_size,
-                num_classes=num_classes,
-                dataparallel=dataparallel,
-                num_gpu=num_gpu
-                ), 
-            mimetype="text/event-stream")
-    else:
-        return Response(
-            dominoplusplus_predict_single_file(
-                input_path=input_path,
-                output_dir=output_dir,
-                model_path=model_path,
-                spatial_size=spatial_size,
-                num_classes=num_classes,
-                dataparallel=dataparallel,
-                num_gpu=num_gpu
-                ), 
-            mimetype="text/event-stream")
+    return Response(
+        predict_single_file(
+            input_path=input_path,
+            output_dir=output_dir
+        ), 
+        mimetype="text/event-stream"
+    )
 
 
 @app.get("/output")
