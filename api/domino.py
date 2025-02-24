@@ -99,7 +99,7 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
                 pixdim=(1.0, 1.0, 1.0),
                 mode=("trilinear"),
             ),
-            Orientationd(keys=["image"], axcodes="RAS"),
+            Orientationd(keys=["image"], axcodes="RA"),
             ScaleIntensityRanged(keys=["image"], a_min=a_min_value, a_max=a_max_value, b_min=0.0, b_max=1.0, clip=True),
         ]
     )
