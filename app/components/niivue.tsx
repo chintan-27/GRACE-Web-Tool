@@ -51,7 +51,7 @@ const NiiVueComponent = ({ image, inferredImage }: NiiVueProps) => {
 		}
 	}, [image, inferredImage]);
 
-	return <canvas ref={canvasRef} style={{ width: '800px', height: '600px' }} />;
+	return <canvas ref={canvasRef} style={{ width: '600px', height: '600px' }} />;
 };
 
 export default NiiVueComponent;
