@@ -1,7 +1,7 @@
 "use client";
 
 
-import { useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import NiiVue from "../components/niivue";
 import { NVImage } from "@niivue/niivue";
@@ -15,25 +15,14 @@ const Results = () => {
 	const [spatialSize, setSpatialSize] = useState("64,64,64");
 	const [selectedModel, setSelectedModel] = useState("GRACE");
 	const [infLoading, setInfLoading] = useState<boolean>(false);
-	const [inferenceResults, setInferenceResults] = useState<NVImage | null>(null);
+	const [ginferenceResults, setgInferenceResults] = useState<NVImage | null>(null);
+	const [dinferenceResults, setdInferenceResults] = useState<NVImage | null>(null);
+	const [dppinferenceResults, setdppInferenceResults] = useState<NVImage | null>(null);
 	const [progress, setProgress] = useState<{ message: string; progress: number }>({
 		message: "",
 		progress: 0,
 	});
-
-	const handleModelChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-		const model = event.target.value;
-		setSelectedModel(model);
-
-		// Update spatial size based on selected model
-		if (model === "GRACE") {
-			setSpatialSize("64,64,64");
-		} else if (model === "DOMINO") {
-			setSpatialSize("256,256,256");
-		} else if (model === "DOMINOPP") {
-			setSpatialSize("64,64,64");
-		}
-	};
+	const [disabledButton, setDisabledButton] = useState<boolean>(true);
 
 	useEffect(() => {
 		const loadImage = async () => {
@@ -79,14 +68,6 @@ const Results = () => {
 			const fileBlob = await fetch(fileUrl).then((res) => res.blob());
 			formData.append("file", fileBlob, "uploaded_image.nii.gz");
 
-			// Add additional parameters
-			formData.append("spatial_size", spatialSize); // Use the updated spatial size
-			formData.append("num_classes", "12"); // Example value
-			formData.append("model_path", `models/${selectedModel}.pth`); // Example value
-			formData.append("dataparallel", "false"); // Example value
-			formData.append("num_gpu", "1"); // Example value
-			formData.append("model", selectedModel); // Use the selected model
-
 
 			const response = await fetch("http://localhost:5500/predict", {
 				method: "POST",
@@ -123,15 +104,31 @@ const Results = () => {
 
 		async function fetchOutput() {
 
-			const outputResponse = await fetch("http://localhost:5500/output")
-			const inferredBlob = await outputResponse.blob();
-			const inferredImage = await NVImage.loadFromFile({
-				file: new File([await inferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+			const goutputResponse = await fetch("http://localhost:5500/goutput")
+			const ginferredBlob = await goutputResponse.blob();
+			const ginferredImage = await NVImage.loadFromFile({
+				file: new File([await ginferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+				colormap: 'jet',
+				opacity: 1,
+			});
+
+			const doutputResponse = await fetch("http://localhost:5500/goutput")
+			const dinferredBlob = await doutputResponse.blob();
+			const dinferredImage = await NVImage.loadFromFile({
+				file: new File([await dinferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+				colormap: 'jet',
+				opacity: 1,
+			});
+
+			const dppoutputResponse = await fetch("http://localhost:5500/goutput")
+			const dppinferredBlob = await dppoutputResponse.blob();
+			const dppinferredImage = await NVImage.loadFromFile({
+				file: new File([await dppinferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
 				colormap: 'jet',
 				opacity: 1,
 			});
 			setInfLoading(true);
-			setInferenceResults(inferredImage);
+			setgInferenceResults(ginferredImage);
 		}
 	};
 
@@ -149,10 +146,34 @@ const Results = () => {
 							{image && (
 								<NiiVue
 									image={image}
-									inferredImage={inferenceResults}
+									inferredImage={ginferenceResults}
 								/>
 							)}
 						</div>
+
+						{
+							disabledButton ? 
+							<div>	
+								<div className="p-4 bg-white shadow-md m-10 w-50">
+									{image && (
+										<NiiVue
+										image={image}
+										inferredImage={dinferenceResults}
+										/>
+									)}
+								</div>
+								<div className="p-4 bg-white shadow-md m-10 w-50">
+									{image && (
+										<NiiVue
+										image={image}
+										inferredImage={dppinferenceResults}
+										/>
+									)}
+								</div>
+							</div>
+							
+							: <span></span>
+						}
 						
 						{infLoading ?
 							<div className="flex justify-center mt-4">
@@ -163,30 +184,15 @@ const Results = () => {
 							: <span></span>}
 						<br />
 						<div className="flex flex-nowrap justify-center mt-2">
-							<div className="mx-2">
-								<label htmlFor="model-select" className="mr-2">Select Model:</label>
-									<select
-										id="model-select"
-										value={selectedModel}
-										onChange={handleModelChange}
-										className="border bg-black text-white rounded p-2"
-									>
-										<option value="GRACE">Grace</option>
-										<option value="DOMINO">Domino</option>
-										<option value="DOMINOPP">Domino++</option>
-									</select>
-							</div>
-							<div className="mx-2">
-								<button
-									className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
-									onClick={handleInference}
-									disabled={infLoading}
-								>
-									{infLoading ? progress.message : "Inference Using API"}
-								</button>
-							</div>
-
-
+							{disabledButton ? 
+							<button
+								className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
+								onClick={handleInference}
+								disabled={infLoading}
+							>
+								{infLoading ? progress.message : "Inference Using API"}
+							</button> 
+							: <span></span>}
 						</div>
 					</div>
 				)}
