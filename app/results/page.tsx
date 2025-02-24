@@ -129,6 +129,9 @@ const Results = () => {
 			});
 			setInfLoading(true);
 			setgInferenceResults(ginferredImage);
+			setdInferenceResults(dinferenceResults);
+			setdppInferenceResults(dppinferenceResults);
+			setDisabledButton(false);
 		}
 	};
 
