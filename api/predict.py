@@ -275,4 +275,4 @@ def predict_single_file(input_path, output_dir="output"):
 
     yield from domino_predict_single_file(device, input_path, output_dir, base_filename, "models/DOMINO.pth", (256, 256, 256), 12, False, 1, 0, 255)
 
-    yield from dominoplusplus_predict_single_file(device, input_path, output_dir, base_filename, "models/DOMINOPP.pth", (64, 64, 64), 12, False, 1, 0, 255)
+    # yield from dominoplusplus_predict_single_file(device, input_path, output_dir, base_filename, "models/DOMINOPP.pth", (64, 64, 64), 12, False, 1, 0, 255)
