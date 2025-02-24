@@ -3,9 +3,9 @@
 
 import { use, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import NiiVue from "../components/niivue";
 import { NVImage } from "@niivue/niivue";
 import pako from "pako";
+import NiiVueComponent from "../components/niivue";
 
 const Results = () => {
 	const searchParams = useSearchParams();
@@ -108,15 +108,15 @@ const Results = () => {
 			const goutputResponse = await fetch("http://localhost:5500/goutput")
 			const ginferredBlob = await goutputResponse.blob();
 			const ginferredImage = await NVImage.loadFromFile({
-				file: new File([await ginferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+				file: new File([await ginferredBlob.arrayBuffer()], "GraceInferenceResult.nii.gz"),
 				colormap: 'jet',
 				opacity: 1,
 			});
 
-			const doutputResponse = await fetch("http://localhost:5500/goutput")
+			const doutputResponse = await fetch("http://localhost:5500/doutput")
 			const dinferredBlob = await doutputResponse.blob();
 			const dinferredImage = await NVImage.loadFromFile({
-				file: new File([await dinferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+				file: new File([await dinferredBlob.arrayBuffer()], "DominoInferenceResult.nii.gz"),
 				colormap: 'jet',
 				opacity: 1,
 			});
@@ -139,29 +139,43 @@ const Results = () => {
 	return (
 		<div>
 
-			<div className="flex flex-col items-center justify-center w-screen h-screen">
+			<div className="flex flex-col items-center justify-center w-screen">
 				{loading ? (
 					<div className="flex items-center justify-center">
 						<div className="animate-spin rounded-full h-32 w-32 border-b-2 border-lime-800"></div>
 					</div>
 				) : (
 					<div>
-						<div className="p-4 bg-white shadow-md m-10 w-50">
+						<div className="p-2 bg-white shadow-md">
 							{image && (
-								<NiiVue
-									image={image}
-									inferredImage={ginferenceResults}
+								<NiiVueComponent
+									image1={image}
+									image2={image}
+									inferredImage1={ginferenceResults}
+									inferredImage2={dinferenceResults}
 								/>
 							)}
-						</div>
-						<div className="p-4 bg-white shadow-md m-10 w-50">
-							{image && (
-								<NiiVue
-								image={image}
-								inferredImage={dinferenceResults}
-								/>
-							)}
-						</div>
+
+{infLoading ?
+							<div className="flex justify-center mt-4">
+								<div className="w-1/2 block bg-gray-200 rounded-full dark:bg-gray-700">
+									<div className="bg-blue-600 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-full" style={{ width: progress.progress.toString() + "%" }}>{progress.progress.toString() + "%"}</div>
+								</div>
+							</div>
+							: <span></span>}
+							<br />
+							<div className="flex flex-nowrap justify-center">
+								{disabledButton ? 
+								<button
+									className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
+									onClick={handleInference}
+									disabled={infLoading}
+								>
+									{infLoading ? progress.message : "Inference Using API"}
+								</button> 
+								: <span></span>}
+								</div>
+							</div>
 
 						{/* {
 							!disabledButton ? 
@@ -179,26 +193,6 @@ const Results = () => {
 							
 							: <span></span>
 						} */}
-						
-						{infLoading ?
-							<div className="flex justify-center mt-4">
-								<div className="w-1/2 block bg-gray-200 rounded-full dark:bg-gray-700">
-									<div className="bg-blue-600 text-xs font-medium text-blue-100 text-center p-0.5 leading-none rounded-full" style={{ width: progress.progress.toString() + "%" }}>{progress.progress.toString() + "%"}</div>
-								</div>
-							</div>
-							: <span></span>}
-						<br />
-						<div className="flex flex-nowrap justify-center mt-2">
-							{disabledButton ? 
-							<button
-								className="bg-lime-800 hover:bg-lime-950 duration-200 text-white font-bold py-2 px-4 rounded"
-								onClick={handleInference}
-								disabled={infLoading}
-							>
-								{infLoading ? progress.message : "Inference Using API"}
-							</button> 
-							: <span></span>}
-						</div>
 					</div>
 				)}
 

@@ -4,54 +4,94 @@ import { useRef, useEffect } from "react";
 import { Niivue, NVImage } from "@niivue/niivue";
 
 interface NiiVueProps {
-	image: NVImage;                 // The base image
-	inferredImage: NVImage | null;  // The overlay image
+	image1: NVImage;                 // First base image
+	image2: NVImage;                 // Second base image 
+	inferredImage1: NVImage | null;  // First overlay image
+	inferredImage2: NVImage | null;  // Second overlay image
 }
 
-const NiiVueComponent = ({ image, inferredImage }: NiiVueProps) => {
-	const canvasRef = useRef<HTMLCanvasElement>(null);
-	const niivueRef = useRef<Niivue | null>(null);
+const NiiVueComponent = ({ image1, image2, inferredImage1, inferredImage2 }: NiiVueProps) => {
+	const canvasRef1 = useRef<HTMLCanvasElement>(null);
+	const canvasRef2 = useRef<HTMLCanvasElement>(null);
+	const niivueRef1 = useRef<Niivue | null>(null);
+	const niivueRef2 = useRef<Niivue | null>(null);
 
-	// Initialize Niivue and attach to canvas
+	// Initialize Niivue instances and attach to canvases
 	useEffect(() => {
-		if (canvasRef.current && !niivueRef.current) {
-			const nv = new Niivue({
+		if (canvasRef1.current && !niivueRef1.current) {
+			const nv1 = new Niivue({
 				show3Dcrosshair: true,
 				isRadiologicalConvention: true,
 				backColor: [0, 0, 0, 1],
 			});
-			nv.attachToCanvas(canvasRef.current);
-			niivueRef.current = nv;
+			nv1.attachToCanvas(canvasRef1.current);
+			niivueRef1.current = nv1;
+		}
+
+		if (canvasRef2.current && !niivueRef2.current) {
+			const nv2 = new Niivue({
+				show3Dcrosshair: true,
+				isRadiologicalConvention: true,
+				backColor: [0, 0, 0, 1],
+			});
+			nv2.attachToCanvas(canvasRef2.current);
+			niivueRef2.current = nv2;
 		}
 	}, []);
 
-	// Add volumes when images change
+	// Add volumes when images change for first viewer
 	useEffect(() => {
-		const nv = niivueRef.current;
-		if (nv) {
-			// Clear existing volumes
-			nv.volumes = [];
-			nv.updateGLVolume();
+		const nv1 = niivueRef1.current;
+		const nv2 = niivueRef2.current;
 
-			// Add the base image
-			nv.addVolume(image);
-			nv.setOpacity(0, 1.0);
+		if (nv1) {
+			nv1.volumes = [];
+			nv1.updateGLVolume();
 
-			// Add the inferred image if available
-			if (inferredImage) {
-				// nv.volumes = []; // Remove existing volumes
-				nv.addVolume(inferredImage);
-				const overlayIndex = nv.volumes.length - 1;
-				nv.setOpacity(0, 0.0)
-				// nv.setOpacity(overlayIndex, 0.5); // Adjust opacity as needed
+			nv1.addVolume(image1);
+			nv1.setOpacity(0, 1.0);
+
+			if (inferredImage1) {
+				nv1.addVolume(inferredImage1);
+				const overlayIndex = nv1.volumes.length - 1;
+				nv1.setOpacity(0, 0.0);
 			}
 
-			// Refresh the scene
-			nv.updateGLVolume();
+			nv1.updateGLVolume();
 		}
-	}, [image, inferredImage]);
 
-	return <canvas ref={canvasRef} style={{ width: '600px', height: '600px' }} />;
+		if (nv2) {
+			nv2.volumes = [];
+			nv2.updateGLVolume();
+
+			nv2.addVolume(image2);
+			nv2.setOpacity(0, 1.0);
+
+			if (inferredImage2) {
+				nv2.addVolume(inferredImage2);
+				const overlayIndex = nv2.volumes.length - 1;
+				nv2.setOpacity(0, 0.0);
+			}
+
+			nv2.updateGLVolume();
+		}
+
+		if (nv1 && nv2) {
+			nv1.broadcastTo([nv2], { "2d": true, "3d": true });
+			nv2.broadcastTo([nv1], { "2d": true, "3d": true });
+		}
+	}, [image1, image2, inferredImage1, inferredImage2]);
+
+	return (
+		<div className="flex flex-row space-x-4">
+			<div className="w-1/2">
+				<canvas ref={canvasRef1} height={119} />
+			</div>
+			<div className="w-1/2">
+				<canvas ref={canvasRef2} height={119}/>
+			</div>
+		</div>
+	);
 };
 
 export default NiiVueComponent;
