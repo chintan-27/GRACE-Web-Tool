@@ -257,7 +257,7 @@ def dominoplusplus_predict_single_file(device, input_path, output_dir, base_file
     save_predictions(predictions, input_img, output_dir, base_filename, "DOMINOPP")
     yield send_progress("DOMINO++ Files saved successfully.", 95)
     
-    yield send_progress("Processing completed successfully!", 100)
+    
 
 def predict_single_file(input_path, output_dir="output"):
     os.makedirs(output_dir, exist_ok=True)
@@ -275,4 +275,5 @@ def predict_single_file(input_path, output_dir="output"):
 
     yield from domino_predict_single_file(device, input_path, output_dir, base_filename, "models/DOMINO.pth", (256, 256, 256), 12, False, 1, 0, 255)
 
+    yield send_progress("Processing completed successfully!", 100)
     # yield from dominoplusplus_predict_single_file(device, input_path, output_dir, base_filename, "models/DOMINOPP.pth", (64, 64, 64), 12, False, 1, 0, 255)

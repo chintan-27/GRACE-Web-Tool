@@ -85,6 +85,7 @@ const Results = () => {
 				const data = JSON.parse(event.data);
 				setProgress({ message: data.message, progress: data.progress });
 				if (data.message === "Processing completed successfully!") {
+					console.log("In here!! -- 2");
 					fetchOutput();
 				}
 
