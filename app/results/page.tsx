@@ -140,13 +140,17 @@ const Results = () => {
 		<div>
 
 			<div className="flex flex-col items-center justify-center w-screen">
+				<div className="flex justify-between w-full">
+					<div className="flex justify-center w-1/2 text-4xl font-bold">GRACE</div>
+					<div className="flex justify-center w-1/2 text-4xl font-bold">DOMINO</div>
+				</div>
 				{loading ? (
 					<div className="flex items-center justify-center">
 						<div className="animate-spin rounded-full h-32 w-32 border-b-2 border-lime-800"></div>
 					</div>
 				) : (
 					<div>
-						<div className="p-2 bg-white shadow-md">
+						<div className="p-2 bg-white">
 							{image && (
 								<NiiVueComponent
 									image1={image}
