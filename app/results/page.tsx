@@ -155,7 +155,7 @@ const Results = () => {
 						</div>
 
 						{
-							disabledButton ? 
+							!disabledButton ? 
 							<div>	
 								<div className="p-4 bg-white shadow-md m-10 w-50">
 									{image && (
