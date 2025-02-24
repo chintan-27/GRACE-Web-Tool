@@ -153,18 +153,19 @@ const Results = () => {
 								/>
 							)}
 						</div>
+						<div className="p-4 bg-white shadow-md m-10 w-50">
+							{image && (
+								<NiiVue
+								image={image}
+								inferredImage={dinferenceResults}
+								/>
+							)}
+						</div>
 
-						{
+						{/* {
 							!disabledButton ? 
 							<div>	
-								<div className="p-4 bg-white shadow-md m-10 w-50">
-									{image && (
-										<NiiVue
-										image={image}
-										inferredImage={dinferenceResults}
-										/>
-									)}
-								</div>
+								
 								<div className="p-4 bg-white shadow-md m-10 w-50">
 									{image && (
 										<NiiVue
@@ -176,7 +177,7 @@ const Results = () => {
 							</div>
 							
 							: <span></span>
-						}
+						} */}
 						
 						{infLoading ?
 							<div className="flex justify-center mt-4">
