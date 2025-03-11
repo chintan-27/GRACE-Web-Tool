@@ -23,6 +23,10 @@ app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 socketio = SocketIO(app)
 CORS(app)
 
+@socketio.on('connect')
+def handle_connect():
+    print("Client connected")
+
 @app.get("/")
 def home():
     return "<h1>GRACE Web Interface API</h1><p>send your input file to /predict </p>"
