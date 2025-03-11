@@ -1,6 +1,7 @@
 einops
 flask
 flask_cors
+python-socketio
 flask_socketio
 monai
 nibabel

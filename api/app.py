@@ -20,8 +20,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 
-CORS(app)
 socketio = SocketIO(app)
+CORS(app)
 
 @app.get("/")
 def home():
