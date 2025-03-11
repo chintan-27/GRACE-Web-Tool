@@ -1,10 +1,9 @@
 import os
-from asyncio import sleep
-from flask_socketio import SocketIO
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from predict import predict_single_file
 from werkzeug.utils import secure_filename
-from flask import Flask, Response, json, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file
 
 
 
@@ -20,8 +19,8 @@ app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 
-socketio = SocketIO(app)
 CORS(app)
+socketio = SocketIO(app)
 
 @socketio.on('connect')
 def handle_connect():
