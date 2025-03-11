@@ -1,4 +1,4 @@
-einops==0.8.0
+einops
 flask
 flask_cors
 python-socketio==5.12.1
