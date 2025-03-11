@@ -50,20 +50,20 @@ def send_progress_update(progress):
     socketio.emit('progress_update', {'progress': progress.progress, 'message': progress.message})
 
 
+# @app.get("/events")
+# def events():
+#     # Run prediction
+#     output_dir = app.config['OUTPUT_FOLDER']
+#     return Response(
+#         predict_single_file(
+#             input_path=input_path,
+#             output_dir=output_dir
+#         ), 
+#         mimetype="text/event-stream"
+#     )
+
 @app.get("/events")
 def events():
-    # Run prediction
-    output_dir = app.config['OUTPUT_FOLDER']
-    return Response(
-        predict_single_file(
-            input_path=input_path,
-            output_dir=output_dir
-        ), 
-        mimetype="text/event-stream"
-    )
-
-@app.get("/eventss")
-def eventss():
     output_dir = app.config['OUTPUT_FOLDER']
     prediction_generator = predict_single_file(
         input_path=input_path,
