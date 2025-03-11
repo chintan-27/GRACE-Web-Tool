@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { NVImage } from "@niivue/niivue";
 import pako from "pako";
 import NiiVueComponent from "../components/niivue";
+import socket from "./socket";
 
 const Results = () => {
 	const searchParams = useSearchParams();
@@ -78,25 +79,33 @@ const Results = () => {
 				throw new Error("Failed to fetch inference results from the API");
 			}
 
+			if(!socket.connected) socket.connect();
 			// Create an EventSource to listen for progress updates
-			const eventSource = new EventSource("http://localhost:5500/events");
+			// const eventSource = new EventSource("http://localhost:5500/events");
 
-			eventSource.onmessage = (event) => {
-				const data = JSON.parse(event.data);
+			// eventSource.onmessage = (event) => {
+			// 	const data = JSON.parse(event.data);
+			// 	setProgress({ message: data.message, progress: data.progress });
+			// 	if (data.message === "Processing completed successfully!") {
+			// 		console.log("In here!! -- 2");
+			// 		fetchOutput();
+			// 	}
+
+			// };
+
+			// eventSource.onerror = (error) => {
+			// 	console.error("EventSource failed:", error);
+			// 	eventSource.close();
+			// 	setInfLoading(false);
+			// };
+
+			socket.on("progress_update", (update) => {
+				const data = JSON.parse(update);
 				setProgress({ message: data.message, progress: data.progress });
 				if (data.message === "Processing completed successfully!") {
-					console.log("In here!! -- 2");
 					fetchOutput();
 				}
-
-			};
-
-			eventSource.onerror = (error) => {
-				console.error("EventSource failed:", error);
-				eventSource.close();
-				setInfLoading(false);
-			};
-
+			})
 
 
 		} catch (error) {

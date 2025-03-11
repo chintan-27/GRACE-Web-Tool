@@ -1,6 +1,7 @@
 einops
 flask
 flask_cors
+flask_socketio
 monai
 nibabel
 numpy

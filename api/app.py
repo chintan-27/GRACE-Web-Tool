@@ -1,12 +1,12 @@
 import os
 from asyncio import sleep
+from flask_socketio import SocketIO
 from flask_cors import CORS
 from predict import predict_single_file
 from werkzeug.utils import secure_filename
-from flask import Flask, Response, request, jsonify, send_file
+from flask import Flask, Response, json, request, jsonify, send_file
 
-app = Flask(__name__)
-CORS(app)
+
 
 UPLOAD_FOLDER = "uploads"  # Directory for uploaded files
 OUTPUT_FOLDER = "outputs"  # Directory for output files
@@ -14,16 +14,14 @@ OUTPUT_FOLDER = "outputs"  # Directory for output files
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Create upload folder if it doesn't exist
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)  # Create output folder if it doesn't exist
 
+app = Flask(__name__)
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
+app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 
-num_gpu = 1  # Number of GPUs to use
-model = "GRACE" # Model to predict from
-input_path = ""  # Path for the input file
-dataparallel = False  # Flag for data parallelism
-model_path = "models/GRACE.pth"  # Path to the model file
-num_classes = 12  # Default number of classes for predictions
-spatial_size = "64,64,64"  # Default spatial size for predictions
+CORS(app)
+socketio = SocketIO(app)
 
 @app.get("/")
 def home():
@@ -43,24 +41,13 @@ def predict():
     filename = secure_filename(file.filename)
     input_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(input_path)
-
-    global spatial_size
-    global num_classes
-    global model_path
-    global dataparallel
-    global num_gpu
-    global model
-
-    # Get additional parameters
-    spatial_size = request.form.get("spatial_size", "64,64,64")
-    spatial_size = tuple(map(int, spatial_size.split(",")))
-    num_classes = int(request.form.get("num_classes", 12))
-    model_path = request.form.get("model_path", "models/GRACE.pth")
-    dataparallel = request.form.get("dataparallel", False)
-    num_gpu = int(request.form.get("num_gpu", 1))
-    model = request.form.get("model", "GRACE")
     
     return jsonify({"OK": "Done."}), 200
+
+
+def send_progress_update(progress):
+    """Send a JSON progress message to the frontend."""
+    socketio.emit('progress_update', {'progress': progress.progress, 'message': progress.message})
 
 
 @app.get("/events")
@@ -74,6 +61,23 @@ def events():
         ), 
         mimetype="text/event-stream"
     )
+
+@app.get("/eventss")
+def eventss():
+    output_dir = app.config['OUTPUT_FOLDER']
+    prediction_generator = predict_single_file(
+        input_path=input_path,
+        output_dir=output_dir
+    )
+
+    try:
+        # Iterate through the generator to get progress updates
+        for progress in prediction_generator:
+            # Emit progress update
+            send_progress_update(progress)
+    except Exception as e:
+        send_progress_update({'error': str(e)})
+        return jsonify({"error": "An error occurred during prediction."}), 500
 
 
 # def output():
