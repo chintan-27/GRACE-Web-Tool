@@ -54,10 +54,10 @@ def test():
 
 def send_progress_update(progress):
     """Send a JSON progress message to the frontend."""
-    print(progress["message"])
-    print(progress["data"])
-    print(progress["progress"])
-    socketio.emit('progress_update', {'progress': progress["progress"], 'message': progress["message"]})
+    print(progress[1])
+    print(progress[0])
+    print(progress)
+    socketio.emit('progress_update', {'progress': progress[1], 'message': progress[0]})
 
 
 # @app.get("/events")
