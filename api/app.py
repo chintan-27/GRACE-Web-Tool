@@ -20,7 +20,7 @@ app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 
 CORS(app)
-socketio = SocketIO(app)
+socketio = SocketIO(app, cors_allowed_origins="*")
 
 @socketio.on('connect')
 def handle_connect():
@@ -47,6 +47,10 @@ def predict():
     
     return jsonify({"OK": "Done."}), 200
 
+@socketio.on("test")
+def test():
+    progress = {"message" : "This is a test", "progress" : "100"}
+    socketio.emit('progress_update', {'progress': progress["progress"], 'message': progress["message"]})
 
 def send_progress_update(progress):
     """Send a JSON progress message to the frontend."""
