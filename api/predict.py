@@ -13,17 +13,16 @@ from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRang
 
 def send_progress(message, progress):
     """
-    Helper function to send SSE progress updates.
+    Helper function to send progress updates.
     
     Args:
         message (str): Message about the current stage of model prediction.
         progress (int): Progress percentage.
     
     Returns:
-        str: JSON Data formatted as "data: {data}\n\n".
+        dict: Dictionary containing message and progress.
     """
-    data = json.dumps({"message": message, "progress": progress})
-    return f"data: {data}\n\n"
+    return {"message": message, "progress": progress}
 
 def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """

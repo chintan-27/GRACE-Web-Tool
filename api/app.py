@@ -56,12 +56,9 @@ def send_progress_update(progress):
     """Send a JSON progress message to the frontend."""
     print("-----------")
     print(progress)
-    print(isinstance(progress, str))
-    print(isinstance(progress, dict))
-    
     print("-----------")
     try:
-        socketio.emit('progress_update', {'progress': progress["data"]["progress"], 'message': progress["data"]["message"]})
+        socketio.emit('progress_update', {'progress': progress["progress"], 'message': progress["message"]})
     except KeyError as e:
         socketio.emit('error',{'error':progress["error"]})
 
