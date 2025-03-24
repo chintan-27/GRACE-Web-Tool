@@ -101,7 +101,9 @@ const Results = () => {
 			// };
 
 			socket.on("progress_update", (update) => {
+				console.log(update);
 				const data = JSON.parse(update);
+				console.log(data);
 				setProgress({ message: data.message, progress: data.progress });
 				if (data.message === "Processing completed successfully!") {
 					fetchOutput();

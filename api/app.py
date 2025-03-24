@@ -54,7 +54,9 @@ def test():
 
 def send_progress_update(progress):
     """Send a JSON progress message to the frontend."""
+    print("-----------")
     print(progress)
+    print("-----------")
     socketio.emit('progress_update', {'progress': progress[1], 'message': progress[0]})
 
 
