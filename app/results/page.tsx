@@ -58,6 +58,28 @@ const Results = () => {
 		}
 	}, [fileUrl]);
 
+	useEffect(() => {
+		socket.on("progress_update", (update) => {
+			console.log(update);
+			setProgress({ message: update.message, progress: update.progress });
+			if (update.message === "Processing completed successfully!") {
+				fetchOutput();
+			}
+		});
+	
+		socket.on("error", (update) => {
+			const data = JSON.parse(update);
+			console.log(data);
+		});
+	
+		// Cleanup function to remove event listeners when component unmounts
+		return () => {
+			socket.off("progress_update");
+			socket.off("error");
+		};
+	}, []); // Empty dependency array means this runs once on mount
+	
+
 	const handleInference = async () => {
 		if (!image) return;
 		setInfLoading(true);
@@ -68,7 +90,6 @@ const Results = () => {
 			const formData = new FormData();
 			const fileBlob = await fetch(fileUrl).then((res) => res.blob());
 			formData.append("file", fileBlob, "uploaded_image.nii.gz");
-
 
 			const response = await fetch("http://localhost:5500/predict", {
 				method: "POST",
@@ -101,22 +122,6 @@ const Results = () => {
 			// 	eventSource.close();
 			// 	setInfLoading(false);
 			// };
-
-			socket.on("progress_update", (update) => {
-				console.log(update);
-				const data = JSON.parse(update);
-				console.log(data);
-				setProgress({ message: data.message, progress: data.progress });
-				if (data.message === "Processing completed successfully!") {
-					fetchOutput();
-				}
-			})
-
-			socket.on("error", (update) => {
-				const data = JSON.parse(update);
-				console.log(data);
-			})
-
 			
 
 
@@ -124,37 +129,39 @@ const Results = () => {
 			console.error("Inference error:", error);
 		}
 
-		async function fetchOutput() {
+		
+	};
 
-			const goutputResponse = await fetch("http://localhost:5500/goutput")
-			const ginferredBlob = await goutputResponse.blob();
-			const ginferredImage = await NVImage.loadFromFile({
-				file: new File([await ginferredBlob.arrayBuffer()], "GraceInferenceResult.nii.gz"),
-				colormap: 'jet',
-				opacity: 1,
-			});
+	async function fetchOutput() {
 
-			const doutputResponse = await fetch("http://localhost:5500/doutput")
-			const dinferredBlob = await doutputResponse.blob();
-			const dinferredImage = await NVImage.loadFromFile({
-				file: new File([await dinferredBlob.arrayBuffer()], "DominoInferenceResult.nii.gz"),
-				colormap: 'jet',
-				opacity: 1,
-			});
+		const goutputResponse = await fetch("http://localhost:5500/goutput")
+		const ginferredBlob = await goutputResponse.blob();
+		const ginferredImage = await NVImage.loadFromFile({
+			file: new File([await ginferredBlob.arrayBuffer()], "GraceInferenceResult.nii.gz"),
+			colormap: 'jet',
+			opacity: 1,
+		});
 
-			const dppoutputResponse = await fetch("http://localhost:5500/goutput")
-			const dppinferredBlob = await dppoutputResponse.blob();
-			const dppinferredImage = await NVImage.loadFromFile({
-				file: new File([await dppinferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
-				colormap: 'jet',
-				opacity: 1,
-			});
-			setInfLoading(true);
-			setgInferenceResults(ginferredImage);
-			setdInferenceResults(dinferredImage);
-			setdppInferenceResults(dppinferredImage);
-			setDisabledButton(false);
-		}
+		const doutputResponse = await fetch("http://localhost:5500/doutput")
+		const dinferredBlob = await doutputResponse.blob();
+		const dinferredImage = await NVImage.loadFromFile({
+			file: new File([await dinferredBlob.arrayBuffer()], "DominoInferenceResult.nii.gz"),
+			colormap: 'jet',
+			opacity: 1,
+		});
+
+		const dppoutputResponse = await fetch("http://localhost:5500/goutput")
+		const dppinferredBlob = await dppoutputResponse.blob();
+		const dppinferredImage = await NVImage.loadFromFile({
+			file: new File([await dppinferredBlob.arrayBuffer()], "InferenceResult.nii.gz"),
+			colormap: 'jet',
+			opacity: 1,
+		});
+		setInfLoading(true);
+		setgInferenceResults(ginferredImage);
+		setdInferenceResults(dinferredImage);
+		setdppInferenceResults(dppinferredImage);
+		setDisabledButton(false);
 	};
 
 	return (
