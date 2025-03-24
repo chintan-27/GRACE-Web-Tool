@@ -57,7 +57,10 @@ def send_progress_update(progress):
     print("-----------")
     print(progress)
     print("-----------")
-    socketio.emit('progress_update', {'progress': progress[1], 'message': progress[0]})
+    if len(progress) < 2:
+        socketio.emit("error", {"error": progress[0]})
+    else:
+        socketio.emit('progress_update', {'progress': progress[1], 'message': progress[0]})
 
 
 # @app.get("/events")
