@@ -92,6 +92,8 @@ def events():
         send_progress_update({'error': str(e)})
         print(e)
         return jsonify({"error": "An error occurred during prediction."}), 500
+    
+    return jsonify({"OK": "Done."}), 200
 
 
 # def output():

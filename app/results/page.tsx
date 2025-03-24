@@ -80,7 +80,9 @@ const Results = () => {
 			}
 
 			if(!socket.connected) socket.connect();
-			const event_response = await fetch("http://localhost:5500/events");
+			await fetch("http://localhost:5500/events", {
+				mode: 'no-cors'  // Disable CORS checks
+			});
 			// Create an EventSource to listen for progress updates
 			// const eventSource = new EventSource("http://localhost:5500/events");
 
