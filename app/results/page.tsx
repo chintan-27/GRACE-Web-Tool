@@ -108,6 +108,13 @@ const Results = () => {
 				}
 			})
 
+			socket.on("error", (update) => {
+				const data = JSON.parse(update);
+				console.log(data);
+			})
+
+			
+
 
 		} catch (error) {
 			console.error("Inference error:", error);

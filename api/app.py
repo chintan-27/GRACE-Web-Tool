@@ -77,7 +77,7 @@ def events():
         input_path=input_path,
         output_dir=output_dir
     )
-
+    
     try:
         # Iterate through the generator to get progress updates
         for progress in prediction_generator:
@@ -85,6 +85,7 @@ def events():
             send_progress_update(progress)
     except Exception as e:
         send_progress_update({'error': str(e)})
+        print(e)
         return jsonify({"error": "An error occurred during prediction."}), 500
 
 
