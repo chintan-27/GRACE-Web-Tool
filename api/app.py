@@ -56,11 +56,13 @@ def send_progress_update(progress):
     """Send a JSON progress message to the frontend."""
     print("-----------")
     print(progress)
+    print(progress["data"])
     print("-----------")
-    if len(progress) < 2:
-        socketio.emit("error", {"error": progress[0]})
-    else:
-        socketio.emit('progress_update', {'progress': progress[1], 'message': progress[0]})
+    try:
+        socketio.emit('progress_update', {'progress': progress["data"]["progress"], 'message': progress["data"]["message"]})
+    except KeyError as e:
+        socketio.emit('error',{'error':progress["error"]})
+
 
 
 # @app.get("/events")
