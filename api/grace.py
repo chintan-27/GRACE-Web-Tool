@@ -18,8 +18,7 @@ def send_progress(message, progress):
         @param progress: Progress percentage (int)
         @return: JSON Data: {"message": message, "progress": progress}
     """
-    data = json.dumps({"message": message, "progress": progress})
-    return f"data: {data}\n\n"
+    return {"message": message, "progress": progress}   
 
 def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
