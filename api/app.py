@@ -42,10 +42,14 @@ def predict_grace():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
+    print("Received file for GRACE prediction:", file.filename)  # Verbose logging
     input_path = save_uploaded_file(file)
+    print("File saved to:", input_path)  # Verbose logging
     base_filename = os.path.splitext(os.path.basename(input_path))[0]
     device = get_device()
+    print("Using device for GRACE prediction:", device)  # Verbose logging
     for progress in grace_predict_single_file(input_path=input_path, output_dir=OUTPUT_FOLDER):
+        print("GRACE progress update:", progress)  # Verbose logging
         socketio.emit("progress_grace", progress)
     return jsonify({"status": "GRACE completed"}), 200
 
@@ -54,10 +58,14 @@ def predict_domino():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
+    print("Received file for DOMINO prediction:", file.filename)  # Verbose logging
     input_path = save_uploaded_file(file)
+    print("File saved to:", input_path)  # Verbose logging
     base_filename = os.path.splitext(os.path.basename(input_path))[0]
     device = get_device()
+    print("Using device for DOMINO prediction:", device)  # Verbose logging
     for progress in domino_predict_single_file(input_path=input_path, output_dir=OUTPUT_FOLDER):
+        print("DOMINO progress update:", progress)  # Verbose logging
         socketio.emit("progress_domino", progress)
     return jsonify({"status": "DOMINO completed"}), 200
 
@@ -66,10 +74,14 @@ def predict_dpp():
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
+    print("Received file for DOMINO++ prediction:", file.filename)  # Verbose logging
     input_path = save_uploaded_file(file)
+    print("File saved to:", input_path)  # Verbose logging
     base_filename = os.path.splitext(os.path.basename(input_path))[0]
     device = get_device()
+    print("Using device for DOMINO++ prediction:", device)  # Verbose logging
     for progress in dominoplusplus_predict_single_file(input_path=input_path, output_dir=OUTPUT_FOLDER):
+        print("DOMINO++ progress update:", progress)  # Verbose logging
         socketio.emit("progress_dpp", progress)
     return jsonify({"status": "DOMINO++ completed"}), 200
 
