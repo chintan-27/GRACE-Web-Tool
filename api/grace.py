@@ -63,61 +63,50 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     yield send_progress("Model loaded successfully.", 25)
     return model
 
-def preprocess_input(input_path, device, a_min_value, a_max_value):
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, CropForegroundd, ResizeWithPadOrCropd
+from monai.data import MetaTensor
+import nibabel as nib
+import torch
+import numpy as np
+
+def preprocess_input(input_path, device, a_min_value=0, a_max_value=255):
     """
-        Load and preprocess the input NIfTI image.
+        Load and preprocess the input NIfTI image to match the training pipeline.
+
         @param input_path: Path to the input NIfTI image file (str)
         @param device: Device to run the preprocessing on (str or torch.device)
         @param a_min_value: Minimum intensity value for scaling (int or float)
         @param a_max_value: Maximum intensity value for scaling (int or float)
+
+        @return: Tuple (preprocessed_image_tensor, original_input_nib)
     """
     yield send_progress(f"Loading input image from {input_path}...", 30)
     input_img = nib.load(input_path)
     image_data = input_img.get_fdata()
+
     yield send_progress(f"Input image loaded. Shape: {image_data.shape}", 35)
 
-    # Convert to MetaTensor for MONAI compatibility
-    meta_tensor = MetaTensor(image_data, affine=input_img.affine)
-
-    if meta_tensor.ndim == 3:
-        meta_tensor = meta_tensor.unsqueeze(0)
-
-    meta_tensor = spatial_resample(
-        img=meta_tensor,
-        dst_affine=None,
-        spatial_size=(176, 256, 256),  # Adjusted to match the required length of 2
-        mode='bilinear',
-        padding_mode='border',
-        align_corners=False,
-        dtype_pt=None,
-        lazy=False,
-        transform_info=None
-    )
-
-    meta_tensor = meta_tensor.squeeze()
+    # Wrap image in MetaTensor with affine
+    meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)
 
     yield send_progress("Applying preprocessing transforms...", 40)
-    
-    # Apply MONAI test transforms
-    test_transforms = Compose(
-        [
-            Spacingd(
-                keys=["image"],
-                pixdim=(1.0, 1.0, 1.0),
-                mode=("trilinear"),
-            ),
-            Orientationd(keys=["image"], axcodes="RAS"),
-            ScaleIntensityRanged(keys=["image"], a_min=a_min_value, a_max=a_max_value, b_min=0.0, b_max=1.0, clip=True),
-        ]
-    )
+
+    test_transforms = Compose([
+        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear")),
+        Orientationd(keys=["image"], axcodes="RAS"),
+        ScaleIntensityRanged(keys=["image"], a_min=a_min_value, a_max=a_max_value, b_min=0.0, b_max=1.0, clip=True),
+        CropForegroundd(keys=["image"], source_key="image"),
+        ResizeWithPadOrCropd(keys=["image"], spatial_size=(64, 64, 64)),  # Ensures shape is large enough for sliding window
+    ])
 
     data = {"image": meta_tensor}
     transformed_data = test_transforms(data)
 
-    # Convert to PyTorch tensor
-    image_tensor = transformed_data["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)
+    image_tensor = transformed_data["image"].unsqueeze(0).to(device)  # shape: (1, 1, H, W, D)
     yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
+
     return image_tensor, input_img
+
 
 def save_predictions(predictions, input_img, output_dir, base_filename):
     """
