@@ -81,7 +81,7 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
     meta_tensor = spatial_resample(
         img=meta_tensor,
         dst_affine=None,
-        spatial_size=(256, 256, 176),
+        spatial_size=(256, 176),  # Adjusted to match the required length of 2
         mode='bilinear',
         padding_mode='border',
         align_corners=False,
