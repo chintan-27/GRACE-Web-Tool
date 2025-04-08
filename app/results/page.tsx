@@ -16,6 +16,7 @@ const Results = () => {
 
   const [image, setImage] = useState<NVImage | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isGz, setIsGz] = useState(false);
 
   const [graceProgress, setGraceProgress] = useState({ message: "", progress: 0 });
   const [dominoProgress, setDominoProgress] = useState({ message: "", progress: 0 });
@@ -63,6 +64,7 @@ const Results = () => {
         const uint8Array = new Uint8Array(arrayBuffer);
 
         const isGzipped = uint8Array[0] === 0x1f && uint8Array[1] === 0x8b;
+        setIsGz(isGzipped);
         const file = isGzipped
           ? new File([pako.inflate(uint8Array)], "uploaded_image.nii")
           : new File([blob], "uploaded_image.nii");
@@ -160,7 +162,7 @@ const Results = () => {
   const createFormData = () => {
     const formData = new FormData();
     if (fileBlob) {
-      formData.append("file", fileBlob, "uploaded_image.nii.gz");
+      formData.append("file", fileBlob, isGz ? "uploaded_image.nii.gz" : "uploaded_image.nii");
     } else {
       console.error("File blob is not available for upload.");
     }
