@@ -10,6 +10,7 @@ from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
 from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize
+from monai.transforms.spatial.functional import spatial_resample
 
 def send_progress(message, progress):
     """
@@ -77,6 +78,7 @@ def preprocess_input(input_path, device, a_min_value, a_max_value):
 
     # Convert to MetaTensor for MONAI compatibility
     meta_tensor = MetaTensor(image_data, affine=input_img.affine)
+    meta_tensor = spatial_resample(meta_tensor, dst_affine=None, spatial_size=(256, 256, 176), lazy=False)
 
     yield send_progress("Applying preprocessing transforms...", 40)
     
