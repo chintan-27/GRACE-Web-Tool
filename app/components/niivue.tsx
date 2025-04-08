@@ -1,94 +1,207 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { Niivue, NVImage } from "@niivue/niivue";
 
 interface NiiVueProps {
-	image1: NVImage;                 // First base image
-	image2: NVImage;                 // Second base image 
-	inferredImage1: NVImage | null;  // First overlay image
-	inferredImage2: NVImage | null;  // Second overlay image
+	image: NVImage;
+	inferredImages: {
+		grace?: NVImage | null;
+		domino?: NVImage | null;
+		dominopp?: NVImage | null;
+	};
+	selectedModels: {
+		grace: boolean;
+		domino: boolean;
+		dominopp: boolean;
+	};
+	progressMap?: {
+		grace?: { progress: number; message: string };
+		domino?: { progress: number; message: string };
+		dominopp?: { progress: number; message: string };
+	};
 }
 
-const NiiVueComponent = ({ image1, image2, inferredImage1, inferredImage2 }: NiiVueProps) => {
-	const canvasRef1 = useRef<HTMLCanvasElement>(null);
-	const canvasRef2 = useRef<HTMLCanvasElement>(null);
-	const niivueRef1 = useRef<Niivue | null>(null);
-	const niivueRef2 = useRef<Niivue | null>(null);
+const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }: NiiVueProps) => {
+	const canvasRefs = {
+		grace: useRef<HTMLCanvasElement>(null),
+		domino: useRef<HTMLCanvasElement>(null),
+		dominopp: useRef<HTMLCanvasElement>(null),
+	};
 
-	// Initialize Niivue instances and attach to canvases
+	const nvRefs = {
+		grace: useRef<Niivue | null>(null),
+		domino: useRef<Niivue | null>(null),
+		dominopp: useRef<Niivue | null>(null),
+	};
+
+	const modelOrder = ["grace", "domino", "dominopp"] as const;
+	const activeModels = modelOrder.filter((model) => selectedModels[model]);
+
+	const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
+
+	const getWidthClass = (count: number) => {
+		if (count === 3) return "w-1/3";
+		if (count === 2) return "w-1/2";
+		return "w-full";
+	};
+
+	const getCanvasSize = (count: number) => {
+		if (count === 3) return { width: 512, height: 1024 };
+		if (count === 2) return { width: 120, height: 360 };
+		return { width: 720, height: 720 };
+	};
+
+	// Initialize Niivue instances
 	useEffect(() => {
-		if (canvasRef1.current && !niivueRef1.current) {
-			const nv1 = new Niivue({
-				show3Dcrosshair: true,
-				isRadiologicalConvention: true,
-				backColor: [0, 0, 0, 1],
-			});
-			nv1.attachToCanvas(canvasRef1.current);
-			niivueRef1.current = nv1;
-		}
+		modelOrder.forEach((key) => {
+			if (selectedModels[key] && canvasRefs[key].current && !nvRefs[key].current) {
+				const nv = new Niivue({
+					show3Dcrosshair: true,
+					isRadiologicalConvention: true,
+					backColor: [0, 0, 0, 1],
+				});
+				nv.attachToCanvas(canvasRefs[key].current!);
+				nvRefs[key].current = nv;
+			}
+		});
+	}, [selectedModels]);
 
-		if (canvasRef2.current && !niivueRef2.current) {
-			const nv2 = new Niivue({
-				show3Dcrosshair: true,
-				isRadiologicalConvention: true,
-				backColor: [0, 0, 0, 1],
-			});
-			nv2.attachToCanvas(canvasRef2.current);
-			niivueRef2.current = nv2;
-		}
-	}, []);
-
-	// Add volumes when images change for first viewer
+	// Add volumes + set view mode
 	useEffect(() => {
-		const nv1 = niivueRef1.current;
-		const nv2 = niivueRef2.current;
+		modelOrder.forEach((key) => {
+			if (selectedModels[key] && nvRefs[key].current) {
+				const nv = nvRefs[key].current!;
+				nv.volumes = [];
+				nv.updateGLVolume();
 
-		if (nv1) {
-			nv1.volumes = [];
-			nv1.updateGLVolume();
+				nv.addVolume(image);
+				nv.setOpacity(0, 1.0);
 
-			nv1.addVolume(image1);
-			nv1.setOpacity(0, 1.0);
+				if (inferredImages[key]) {
+					nv.addVolume(inferredImages[key]!);
+					nv.setOpacity(1, 0.5);
+				}
 
-			if (inferredImage1) {
-				nv1.addVolume(inferredImage1);
-				const overlayIndex = nv1.volumes.length - 1;
-				nv1.setOpacity(0, 0.0);
+				const sliceType =
+					viewMode === "3d" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar;
+
+				nv.setSliceType(sliceType);
+				nv.drawScene();
 			}
+		});
+	}, [image, inferredImages, selectedModels, viewMode]);
 
-			nv1.updateGLVolume();
+	// Synchronize views
+	useEffect(() => {
+		const activeInstances = modelOrder
+			.filter((key) => selectedModels[key] && nvRefs[key].current)
+			.map((key) => nvRefs[key].current!) as Niivue[];
+
+		activeInstances.forEach((nv, i) => {
+			const others = activeInstances.filter((_, j) => j !== i);
+			nv.broadcastTo(others, { "2d": true, "3d": true });
+		});
+	}, [selectedModels]);
+
+	// Toggle 2D/3D
+	const toggleGlobalView = () => {
+		setViewMode((prev) => (prev === "2d" ? "3d" : "2d"));
+	};
+
+	// Handle download from Niivue instance
+	const handleDownload = async (model: string) => {
+		const nv = nvRefs[model as keyof typeof nvRefs].current;
+		if (!nv) {
+			console.error(`❌ Niivue instance for ${model} not found.`);
+			return;
 		}
-
-		if (nv2) {
-			nv2.volumes = [];
-			nv2.updateGLVolume();
-
-			nv2.addVolume(image2);
-			nv2.setOpacity(0, 1.0);
-
-			if (inferredImage2) {
-				nv2.addVolume(inferredImage2);
-				const overlayIndex = nv2.volumes.length - 1;
-				nv2.setOpacity(0, 0.0);
+	
+		const filename = `uploaded_image_pred_${model.toUpperCase()}.nii.gz`;
+	
+		try {
+			const result = await nv.saveImage({
+				filename,
+				volumeByIndex: 1, // <- we want to save the inference volume
+				isSaveDrawing: false,
+			});
+	
+			if (result instanceof Uint8Array) {
+				const blob = new Blob([result], { type: "application/gzip" });
+				const url = URL.createObjectURL(blob);
+				const link = document.createElement("a");
+				link.href = url;
+				link.download = filename;
+				document.body.appendChild(link);
+				link.click();
+				document.body.removeChild(link);
+				URL.revokeObjectURL(url);
+				console.log(`✅ Downloaded: ${filename}`);
+			} else {
+				console.warn("⚠️ saveImage returned non-binary data:", result);
 			}
-
-			nv2.updateGLVolume();
+		} catch (err) {
+			console.error(`❌ Failed to save image for ${model}:`, err);
 		}
-
-		if (nv1 && nv2) {
-			nv1.broadcastTo([nv2], { "2d": true, "3d": true });
-			nv2.broadcastTo([nv1], { "2d": true, "3d": true });
-		}
-	}, [image1, image2, inferredImage1, inferredImage2]);
-
+	};
+	
 	return (
-		<div className="flex flex-row space-x-4">
-			<div className="w-1/2">
-				<canvas ref={canvasRef1} height={119} />
+		<div className="w-full bg-black">
+			<div className="flex justify-center mb-4">
+				<button
+					onClick={toggleGlobalView}
+					className="px-4 py-2 text-sm bg-gray-800 text-white rounded hover:bg-gray-700"
+				>
+					Switch to {viewMode === "2d" ? "3D" : "2D"} View
+				</button>
 			</div>
-			<div className="w-1/2">
-				<canvas ref={canvasRef2} height={119}/>
+			<div
+				className={`flex flex-row ${
+					activeModels.length === 1 ? "justify-center" : "justify-start"
+				} items-start space-x-4 w-full h-full`}
+			>
+				{activeModels.map((modelKey) => {
+					const { width, height } = getCanvasSize(activeModels.length);
+					const progress = progressMap?.[modelKey]?.progress || 0;
+					return (
+						<div
+							key={modelKey}
+							className={`${getWidthClass(
+								activeModels.length
+							)} flex flex-col items-center`}
+						>
+							<canvas ref={canvasRefs[modelKey]} width={width} height={height} />
+							<div className="text-center mt-2 font-semibold">
+								{modelKey.toUpperCase()}
+							</div>
+
+							{progress < 100 && (
+								<div className="w-full px-4 mt-2">
+									<div className="text-sm text-center text-white mb-1">
+										{progressMap?.[modelKey]?.message}
+									</div>
+									<div className="w-full h-3 bg-gray-700 rounded-full overflow-hidden">
+										<div
+											className="h-full bg-blue-500"
+											style={{ width: `${progress}%` }}
+										/>
+									</div>
+								</div>
+							)}
+
+							{progress === 100 && (
+								<button
+								onClick={(e) => {
+									handleDownload(modelKey);
+								}}
+								className="mt-2 px-3 py-1 bg-lime-600 text-white text-sm rounded hover:bg-lime-700"
+							  >
+								Download
+							  </button>
+							)}
+						</div>
+					);
+				})}
 			</div>
 		</div>
 	);
