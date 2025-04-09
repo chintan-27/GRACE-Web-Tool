@@ -80,7 +80,8 @@ const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }:
 
 				if (inferredImages[key]) {
 					nv.addVolume(inferredImages[key]!);
-					nv.setOpacity(1, 0.5);
+					nv.setOpacity(1, 0.0);
+					nv.setOpacity(1, 1.0);
 				}
 
 				const sliceType =
