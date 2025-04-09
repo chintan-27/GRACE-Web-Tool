@@ -68,43 +68,71 @@ from monai.data import MetaTensor
 import nibabel as nib
 import torch
 import numpy as np
-
-def preprocess_input(input_path, device, a_min_value=0, a_max_value=255):
+def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complexity_threshold=10000):
     """
-        Load and preprocess the input NIfTI image to match the training pipeline.
+    Load and preprocess the input NIfTI image to match training pipeline.
+    Applies percentile-based normalization only for complex images.
 
-        @param input_path: Path to the input NIfTI image file (str)
-        @param device: Device to run the preprocessing on (str or torch.device)
-        @param a_min_value: Minimum intensity value for scaling (int or float)
-        @param a_max_value: Maximum intensity value for scaling (int or float)
+    Args:
+        input_path (str): Path to input .nii.gz file.
+        device (torch.device): Torch device.
+        a_min_value (float): Default min intensity for training-based normalization.
+        a_max_value (float): Default max intensity for training-based normalization.
+        complexity_threshold (float): If image max > threshold, apply percentile normalization.
 
-        @return: Tuple (preprocessed_image_tensor, original_input_nib)
+    Returns:
+        image_tensor (torch.Tensor), input_img (nib.Nifti1Image)
     """
+    import torch
+    import numpy as np
+    import nibabel as nib
+    from monai.transforms import Compose, Spacingd, Orientationd, CropForegroundd, ResizeWithPadOrCropd
+    from monai.data import MetaTensor
+
+    def normalize_fixed(data, a_min, a_max):
+        data = np.clip(data, a_min, a_max)
+        return (data - a_min) / (a_max - a_min + 1e-8)
+
+    def normalize_percentile(data, lower=0.5, upper=99.5):
+        pmin, pmax = np.percentile(data, [lower, upper])
+        data = np.clip(data, pmin, pmax)
+        return (data - pmin) / (pmax - pmin + 1e-8)
+
     yield send_progress(f"Loading input image from {input_path}...", 30)
     input_img = nib.load(input_path)
-    image_data = input_img.get_fdata()
+    image_data = input_img.get_fdata().astype(np.float32)
 
-    yield send_progress(f"Input image loaded. Shape: {image_data.shape}", 35)
+    yield send_progress(f"Image shape: {image_data.shape}, dtype: {image_data.dtype}", 32)
+    image_max = np.max(image_data)
+    image_min = np.min(image_data)
+    image_mean = np.mean(image_data)
+    yield send_progress(f"Image stats — Min: {image_min:.2f}, Max: {image_max:.2f}, Mean: {image_mean:.2f}", 34)
 
-    # Wrap image in MetaTensor with affine
+    # 🧠 Smart normalization logic
+    if image_max > complexity_threshold:
+        image_data = normalize_percentile(image_data)
+        yield send_progress(f"Applied percentile normalization (due to max > {complexity_threshold})", 37)
+    else:
+        image_data = normalize_fixed(image_data, a_min_value, a_max_value)
+        yield send_progress(f"Applied fixed normalization: [{a_min_value}, {a_max_value}]", 37)
+
+    # Wrap in MetaTensor (MONAI-friendly) and add channel
     meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)
 
-    yield send_progress("Applying preprocessing transforms...", 40)
-
+    # Apply MONAI spatial transforms
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear")),
         Orientationd(keys=["image"], axcodes="RAS"),
-        ScaleIntensityRanged(keys=["image"], a_min=a_min_value, a_max=a_max_value, b_min=0.0, b_max=1.0, clip=True),
         CropForegroundd(keys=["image"], source_key="image"),
-        ResizeWithPadOrCropd(keys=["image"], spatial_size=(64, 64, 64)),  # Ensures shape is large enough for sliding window
+        ResizeWithPadOrCropd(keys=["image"], spatial_size=(64, 64, 64))
     ])
 
-    data = {"image": meta_tensor}
-    transformed_data = test_transforms(data)
+    yield send_progress("Applying spatial transforms...", 40)
+    transformed = test_transforms({"image": meta_tensor})
 
-    image_tensor = transformed_data["image"].unsqueeze(0).to(device)  # shape: (1, 1, H, W, D)
-    yield send_progress(f"Preprocessing complete. Model input shape: {image_tensor.shape}", 45)
+    image_tensor = transformed["image"].unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
 
+    yield send_progress(f"Preprocessing complete. Final shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
 
 
