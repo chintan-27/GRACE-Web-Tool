@@ -1,6 +1,9 @@
+import hashlib
+import hmac
 import os
+import time
 from flask_cors import CORS
-from flask_socketio import SocketIO
+from flask_socketio import SocketIO, disconnect
 from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, send_file
 
@@ -19,12 +22,38 @@ app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
+API_SECRET = os.environ["API_SECRET"]
 
 CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 @socketio.on('connect')
 def handle_connect():
+    ts = request.args.get('ts')
+    signature = request.args.get('signature')
+
+    if not ts or not signature:
+        print("⛔ Missing authentication parameters")
+        disconnect()
+        return
+
+    try:
+        ts_int = int(ts)
+        now_ms = int(time.time() * 1000)
+        if abs(now_ms - ts_int) > 60000:
+            print("⛔ Connection rejected: timestamp expired")
+            disconnect()
+            return
+    except Exception as e:
+        print("⛔ Invalid timestamp format:", e)
+        disconnect()
+        return
+    
+    expected_sig = hmac.new(API_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_sig, signature):
+        print("⛔ Invalid signature")
+        disconnect()
+        return
     print("Client connected")
 
 @app.route("/", methods=["GET"])
@@ -37,9 +66,34 @@ def save_uploaded_file(file):
     file.save(input_path)
     return input_path
 
+def check_signature(ts, signature):
+    if not ts or not signature:
+        return False
+    try:
+        ts_int = int(ts)
+        now_ms = int(time.time() * 1000)
+        if abs(now_ms - ts_int) > 60000:
+            print("⛔ Connection rejected: timestamp expired")
+            return False
+    except Exception as e:
+        print("⛔ Invalid timestamp format:", e)
+        return False
+    expected_sig = hmac.new(API_SECRET.encode(), ts.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected_sig, signature):
+        print("⛔ Invalid signature")
+        return False
+    return True
+
 @app.route("/predict_grace", methods=["POST"])
 def predict_grace():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
+
     file = request.files.get("file")
+
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
     print("Received file for GRACE prediction:", file.filename)  # Verbose logging
@@ -55,6 +109,12 @@ def predict_grace():
 
 @app.route("/predict_domino", methods=["POST"])
 def predict_domino():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
+
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
@@ -71,6 +131,12 @@ def predict_domino():
 
 @app.route("/predict_dpp", methods=["POST"])
 def predict_dpp():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+    
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
+
     file = request.files.get("file")
     if not file:
         return jsonify({"error": "No file uploaded"}), 400
@@ -87,14 +153,26 @@ def predict_dpp():
 
 @app.route("/goutput", methods=["GET"])
 def grace_output():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
     return send_output_file("_pred_GRACE")
 
 @app.route("/doutput", methods=["GET"])
 def domino_output():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
     return send_output_file("_pred_DOMINO")
 
 @app.route("/dppoutput", methods=["GET"])
 def dominopp_output():
+    ts = request.headers.get('X-Timestamp')
+    signature = request.headers.get('X-Signature')
+    if check_signature(ts, signature) is False:
+        return jsonify({"error": "Invalid signature"}), 403
     return send_output_file("_pred_DOMINOPP")
 
 def send_output_file(suffix):
