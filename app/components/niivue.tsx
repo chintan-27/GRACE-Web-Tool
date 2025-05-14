@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useRef, useEffect, useState } from "react";
@@ -151,7 +152,7 @@ const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }:
 			<div className="flex justify-center mb-4">
 				<button
 					onClick={toggleGlobalView}
-					className="px-4 py-2 text-sm bg-gray-800 text-white rounded hover:bg-gray-700"
+					className="px-4 py-2 text-sm bg-gray-800 text-white rounded-sm hover:bg-gray-700"
 				>
 					Switch to {viewMode === "2d" ? "3D" : "2D"} View
 				</button>
@@ -192,10 +193,10 @@ const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }:
 
 							{progress === 100 && (
 								<button
-								onClick={(e) => {
+								onClick={() => {
 									handleDownload(modelKey);
 								}}
-								className="mt-2 px-3 py-1 bg-lime-600 text-white text-sm rounded hover:bg-lime-700"
+								className="mt-2 px-3 py-1 bg-lime-600 text-white text-sm rounded-sm hover:bg-lime-700"
 							  >
 								Download
 							  </button>
