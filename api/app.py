@@ -1,27 +1,27 @@
-import hashlib
-import hmac
-import os
-import time
+import torch
 from flask_cors import CORS
-from flask_socketio import SocketIO, disconnect
+from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+from flask_socketio import SocketIO, disconnect
 from flask import Flask, request, jsonify, send_file
+
+import hashlib, hmac, os, time
 
 # Import your model-specific files
 from grace import grace_predict_single_file
 from domino import domino_predict_single_file
 from dominoplusplus import dominoplusplus_predict_single_file
-import torch
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
-
+load_dotenv()
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
+
 API_SECRET = os.environ["API_SECRET"]
 
 CORS(app)

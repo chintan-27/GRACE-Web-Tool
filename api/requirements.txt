@@ -11,3 +11,4 @@ torch>=2.6.0
 torchvision>=0.18.0
 torchaudio
 werkzeug
+python-dotenv
