@@ -1,8 +1,0 @@
-torch
-torchaudio
-torchvision
-monai
-einops
-onnx
-onnxscript
-onnxruntime

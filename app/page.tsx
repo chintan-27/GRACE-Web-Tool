@@ -33,7 +33,7 @@ export default function Home() {
 					<span className="text-lg font-medium">DOMINO</span>
 				</label>
 				<label className="flex items-center text-gray-500">
-					<input type="checkbox" disabled className="mr-2 h-5 w-5 text-gray-300 border-gray-300 rounded" />
+					<input type="checkbox" disabled checked={checkbox3} onChange={() => setCheckbox3(!checkbox3)} className="mr-2 h-5 w-5 text-gray-300 border-gray-300 rounded" />
 					<span className="text-lg font-medium">DOMINO++ (Model not available yet)</span>
 				</label>
 			</div>
