@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -5,7 +6,9 @@ import { useSearchParams } from "next/navigation";
 import { NVImage } from "@niivue/niivue";
 import pako from "pako";
 import NiiVueComponent from "../components/niivue";
-import socket from "./socket";
+import { createSocket } from "./socket";
+import crypto from "crypto";
+
 
 const Results = () => {
   const searchParams = useSearchParams();
@@ -32,6 +35,10 @@ const Results = () => {
   const hasStartedGrace = useRef(false);
   const hasStartedDomino = useRef(false);
   const hasStartedDpp = useRef(false);
+
+  const socket = createSocket();
+  const server = process.env.server || "http://localhost:5500";
+  const secret = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
 
   useEffect(() => {
     if (!socket.connected) socket.connect();
@@ -114,10 +121,23 @@ const Results = () => {
       if (update.progress === 100) fetchGraceOutput();
     });
 
-    await fetch("http://localhost:5500/predict_grace", {
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+
+    const response = await fetch(server + "/predict_grace", {
       method: "POST",
       body: createFormData(),
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
     });
+
+    if (!response.ok) {
+      console.error("Error in GRACE request:", response.statusText);
+      setGraceProgress({ message: "Error in GRACE request", progress: 0 });
+      return;
+    }
     console.log("GRACE request sent.");
   };
 
@@ -133,10 +153,23 @@ const Results = () => {
       if (update.progress === 100) fetchDominoOutput();
     });
 
-    await fetch("http://localhost:5500/predict_domino", {
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+
+    const response = await fetch(server + "/predict_domino", {
       method: "POST",
       body: createFormData(),
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
     });
+
+    if (!response.ok) {
+      console.error("Error in DOMINO request:", response.statusText);
+      setDominoProgress({ message: "Error in DOMINO request", progress: 0 });
+      return;
+    }
     console.log("DOMINO request sent.");
   };
 
@@ -152,10 +185,22 @@ const Results = () => {
       if (update.progress === 100) fetchDppOutput();
     });
 
-    await fetch("http://localhost:5500/predict_dpp", {
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+
+    const response = await fetch(server + "/predict_dpp", {
       method: "POST",
       body: createFormData(),
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
     });
+    if (!response.ok) {
+      console.error("Error in DOMINO++ request:", response.statusText);
+      setDppProgress({ message: "Error in DOMINO++ request", progress: 0 });
+      return;
+    }
     console.log("DOMINO++ request sent.");
   };
 
@@ -171,7 +216,22 @@ const Results = () => {
 
   const fetchGraceOutput = async () => {
     console.log("Fetching GRACE output...");
-    const blob = await (await fetch("http://localhost:5500/goutput")).blob();
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+
+    const response = await fetch(server + "/goutput", {
+      method: "GET",
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
+    });
+    if (!response.ok) {
+      console.error("Error in GRACE output request:", response.statusText);
+      setGraceProgress({ message: "Error in GRACE output request", progress: 0 });
+      return;
+    }
+    const blob = await (response).blob();
     const image = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "GraceInference.nii.gz"),
       colormap: "jet",
@@ -183,7 +243,21 @@ const Results = () => {
 
   const fetchDominoOutput = async () => {
     console.log("Fetching DOMINO output...");
-    const blob = await (await fetch("http://localhost:5500/doutput")).blob();
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const response = await fetch(server + "/doutput", {
+      method: "GET",
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
+    });
+    if (!response.ok) {
+      console.error("Error in DOMINO output request:", response.statusText);
+      setDominoProgress({ message: "Error in DOMINO output request", progress: 0 });
+      return;
+    }
+    const blob = await (response).blob();
     const image = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "DominoInference.nii.gz"),
       colormap: "jet",
@@ -195,7 +269,21 @@ const Results = () => {
 
   const fetchDppOutput = async () => {
     console.log("Fetching DOMINO++ output...");
-    const blob = await (await fetch("http://localhost:5500/dppoutput")).blob();
+    const ts = Date.now().toString();
+    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const response = await fetch(server + "/dppoutput", {
+      method: "GET",
+      headers: {
+        "X-Signature": signature,
+        "X-Timestamp": ts,
+      },
+    });
+    if (!response.ok) {
+      console.error("Error in DOMINO++ output request:", response.statusText);
+      setDppProgress({ message: "Error in DOMINO++ output request", progress: 0 });
+      return;
+    }
+    const blob = await (response).blob();
     const image = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "DominoPPInference.nii.gz"),
       colormap: "jet",
