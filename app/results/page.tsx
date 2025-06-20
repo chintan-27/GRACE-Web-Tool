@@ -111,6 +111,10 @@ const Results = () => {
 
   const handleGrace = async () => {
     if (!fileBlob) return console.error("No fileBlob for GRACE");
+    if (!socketReady) {
+      console.error("Socket not ready for GRACE, trying to connect...");
+      socket.connect();
+    }
     setGraceProgress({ message: "Starting GRACE...", progress: 0 });
 
     socket.off("progress_grace");
@@ -143,6 +147,10 @@ const Results = () => {
 
   const handleDomino = async () => {
     if (!fileBlob) return console.error("No fileBlob for DOMINO");
+    if (!socketReady) {
+      console.error("Socket not ready for DOMINO, trying to connect...");
+      socket.connect();
+    }
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
     socket.off("progress_domino");
@@ -175,6 +183,10 @@ const Results = () => {
 
   const handleDpp = async () => {
     if (!fileBlob) return console.error("No fileBlob for DOMINO++");
+    if (!socketReady) {
+      console.error("Socket not ready for DOMINO++, trying to connect...");
+      socket.connect();
+    }
     setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
 
     socket.off("progress_dpp");
