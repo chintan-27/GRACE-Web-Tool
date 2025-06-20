@@ -153,8 +153,9 @@ const Results = () => {
     }
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
-    socket.off("progress_domino");
+    // socket.off("progress_domino");
     socket.on("progress_domino", (update) => {
+      console.log("In here");
       console.log("DOMINO Progress:", update);
       console.log("Updating DOMINO progress:", update.message, update.progress);
       setDominoProgress({ message: update.message, progress: update.progress });

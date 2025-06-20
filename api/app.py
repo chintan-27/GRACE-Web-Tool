@@ -24,7 +24,17 @@ app.config['SECRET_KEY'] = 'THIS_IS_SUPPOSED_TO_BE_SECRET!!!!'
 
 API_SECRET = os.environ["API_SECRET"]
 
-CORS(app)
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+]
+
+CORS(app,
+    resources={r"/predict_(domino|grace|dominopp)": {"origins": ALLOWED_ORIGINS}},
+    methods=["POST"],                      # Allow only what you need
+    allow_headers=["Content-Type", "X-Signature", "X-Timestamp"],
+    supports_credentials=False,            # Flip to True only if you send cookies
+    max_age=600,    )
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 @socketio.on('connect')
