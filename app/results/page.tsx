@@ -53,6 +53,29 @@ const Results = () => {
       setSocketReady(false);
     });
 
+    socket.on("progress_grace", (update) => {
+      console.log("GRACE Progress:", update);
+      console.log("Updating GRACE progress:", update.message, update.progress);
+      setGraceProgress({ message: update.message, progress: update.progress });
+      if (update.progress === 100) fetchGraceOutput();
+    });
+
+    socket.on("progress_domino", (update) => {
+      console.log("In here");
+      console.log("DOMINO Progress:", update);
+      console.log("Updating DOMINO progress:", update.message, update.progress);
+      setDominoProgress({ message: update.message, progress: update.progress });
+      if (update.progress === 100) fetchDominoOutput();
+    });
+
+    socket.on("progress_dpp", (update) => {
+      console.log("DOMINO++ Progress:", update);
+      console.log("Updating DOMINO++ progress:", update.message, update.progress);
+      setDppProgress({ message: update.message, progress: update.progress });
+      if (update.progress === 100) fetchDppOutput();
+    });
+
+
     return () => {
       socket.off("connect");
       socket.off("disconnect");
@@ -117,14 +140,6 @@ const Results = () => {
     }
     setGraceProgress({ message: "Starting GRACE...", progress: 0 });
 
-    socket.off("progress_grace");
-    socket.on("progress_grace", (update) => {
-      console.log("GRACE Progress:", update);
-      console.log("Updating GRACE progress:", update.message, update.progress);
-      setGraceProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchGraceOutput();
-    });
-
     const ts = Date.now().toString();
     const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
 
@@ -154,13 +169,7 @@ const Results = () => {
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
     // socket.off("progress_domino");
-    socket.on("progress_domino", (update) => {
-      console.log("In here");
-      console.log("DOMINO Progress:", update);
-      console.log("Updating DOMINO progress:", update.message, update.progress);
-      setDominoProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchDominoOutput();
-    });
+    
 
     const ts = Date.now().toString();
     const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
@@ -189,15 +198,7 @@ const Results = () => {
       socket.connect();
     }
     setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
-
-    socket.off("progress_dpp");
-    socket.on("progress_dpp", (update) => {
-      console.log("DOMINO++ Progress:", update);
-      console.log("Updating DOMINO++ progress:", update.message, update.progress);
-      setDppProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchDppOutput();
-    });
-
+    
     const ts = Date.now().toString();
     const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
 

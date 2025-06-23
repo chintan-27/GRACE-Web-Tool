@@ -30,8 +30,8 @@ ALLOWED_ORIGINS = [
 ]
 
 CORS(app,
-    resources={r"/predict_(domino|grace|dominopp)": {"origins": ALLOWED_ORIGINS}},
-    methods=["POST"],                      # Allow only what you need
+    resources={r"/predict_(domino|grace|dominopp)": {"origins": ALLOWED_ORIGINS}, r"/(d|g|dpp)output": {"origins": ALLOWED_ORIGINS}},
+    methods=["POST", "GET"],                      # Allow only what you need
     allow_headers=["Content-Type", "X-Signature", "X-Timestamp"],
     supports_credentials=False,            # Flip to True only if you send cookies
     max_age=600,    )
