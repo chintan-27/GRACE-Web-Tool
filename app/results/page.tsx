@@ -7,7 +7,7 @@ import pako from "pako";
 import NiiVueComponent from "../components/niivue";
 import { createSocket } from "./socket";
 import crypto from "crypto";
-
+import { Socket } from "socket.io-client";
 import { encode } from "next-auth/jwt";
 
 
@@ -37,7 +37,7 @@ const Results = () => {
   const hasStartedGrace = useRef(false);
   const hasStartedDomino = useRef(false);
   const hasStartedDpp = useRef(false);
-  const socket = createSocket();
+  const [socket, setSocket] = useState<Socket>(null);
   const server = process.env.server || "http://localhost:5500";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
   const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
@@ -45,6 +45,7 @@ const Results = () => {
   useEffect(() => {
     const connectSocket = async () => {
       const socket = await createSocket();
+      setSocket(socket);
       if (!socket.connected) socket.connect();
 
     socket.on("connect", () => {
