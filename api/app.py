@@ -54,7 +54,7 @@ def handle_connect():
         payload = jwt.decode(
             token,
             JWT_SECRET,
-            algorithms=['HS256']
+            algorithms=['A256GCM']
         )
 
         ts = payload.get('ts')
