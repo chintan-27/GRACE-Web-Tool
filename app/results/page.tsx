@@ -9,9 +9,6 @@ import { createSocket } from "./socket";
 import crypto from "crypto";
 import { Socket } from "socket.io-client";
 import { encode } from "next-auth/jwt";
-import { get } from "http";
-
-
 
 const Results = () => {
   const searchParams = useSearchParams();
