@@ -13,3 +13,4 @@ torchaudio
 werkzeug
 python-dotenv
 jwt
+eventlet

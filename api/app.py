@@ -39,7 +39,7 @@ CORS(app,
     supports_credentials=False,            # Flip to True only if you send cookies
     max_age=600,
 )
-socketio = SocketIO(app, cors_allowed_origins="*")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 @socketio.on('connect')
 def handle_connect():
