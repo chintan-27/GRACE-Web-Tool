@@ -71,6 +71,7 @@ def handle_connect():
         now_ms = int(time.time() * 1000)
         if now_ms - ts_ms > 15 * 60 * 1000:
             disconnect()
+            print("⛔ Stale token")
             return jsonify({"error": "stale token"}), 401
         
         expected_sig = hmac.new(API_SECRET,
@@ -78,16 +79,13 @@ def handle_connect():
                             hashlib.sha256
                            ).hexdigest()
         if not hmac.compare_digest(signature, expected_sig):
+            disconnect()
+            print("⛔ Invalid payload signature")
             return jsonify({"error": "invalid payload signature"}), 401
 
-    except jwt.ExpiredSignatureError:
-        disconnect()
-        return jsonify({"error": "token expired"}), 401
-    except jwt.InvalidTokenError:
-        disconnect()
-        return jsonify({"error": "invalid token"}), 401
     except Exception as e:
         print("⛔ Invalid timestamp format:", e)
+        print("⛔ Invalid token:", e)
         disconnect()
         return
     
