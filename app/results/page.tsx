@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -44,7 +43,9 @@ const Results = () => {
   const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
   useEffect(() => {
-    if (!socket.connected) socket.connect();
+    const connectSocket = async () => {
+      const socket = await createSocket();
+      if (!socket.connected) socket.connect();
 
     socket.on("connect", () => {
       console.log("✅ Socket connected:", socket.id);
@@ -83,6 +84,11 @@ const Results = () => {
       socket.off("connect");
       socket.off("disconnect");
     };
+    }
+
+    connectSocket().catch((err) => {
+      console.error("Error connecting to socket:", err);
+    });
   }, []);
 
   useEffect(() => {
