@@ -8,6 +8,8 @@ import pako from "pako";
 import NiiVueComponent from "../components/niivue";
 import { createSocket } from "./socket";
 import crypto from "crypto";
+import jwt from "jsonwebtoken";
+
 
 
 const Results = () => {
@@ -38,7 +40,8 @@ const Results = () => {
 
   const socket = createSocket();
   const server = process.env.server || "http://localhost:5500";
-  const secret = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
+  const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
+  const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
   useEffect(() => {
     if (!socket.connected) socket.connect();
@@ -132,6 +135,13 @@ const Results = () => {
     }
   }, [socketReady, fileBlob]);
 
+  const getToken = () => {
+    const ts = (Date.now() + 15 * 60 * 1000).toString();
+    const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
+    const token = jwt.sign({ ts, signature }, secret2, { algorithm: 'HS256', expiresIn: '1h' });
+    return token;
+  }
+
   const handleGrace = async () => {
     if (!fileBlob) return console.error("No fileBlob for GRACE");
     if (!socketReady) {
@@ -140,15 +150,13 @@ const Results = () => {
     }
     setGraceProgress({ message: "Starting GRACE...", progress: 0 });
 
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
 
     const response = await fetch(server + "/predict_grace", {
       method: "POST",
       body: createFormData(),
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token
       },
     });
 
@@ -168,18 +176,13 @@ const Results = () => {
     }
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
-    // socket.off("progress_domino");
-    
-
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
 
     const response = await fetch(server + "/predict_domino", {
       method: "POST",
       body: createFormData(),
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token,
       },
     });
 
@@ -199,15 +202,13 @@ const Results = () => {
     }
     setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
     
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
 
     const response = await fetch(server + "/predict_dpp", {
       method: "POST",
       body: createFormData(),
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token,
       },
     });
     if (!response.ok) {
@@ -230,14 +231,12 @@ const Results = () => {
 
   const fetchGraceOutput = async () => {
     console.log("Fetching GRACE output...");
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
 
     const response = await fetch(server + "/goutput", {
       method: "GET",
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token,
       },
     });
     if (!response.ok) {
@@ -257,13 +256,11 @@ const Results = () => {
 
   const fetchDominoOutput = async () => {
     console.log("Fetching DOMINO output...");
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
     const response = await fetch(server + "/doutput", {
       method: "GET",
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token,
       },
     });
     if (!response.ok) {
@@ -283,13 +280,11 @@ const Results = () => {
 
   const fetchDppOutput = async () => {
     console.log("Fetching DOMINO++ output...");
-    const ts = Date.now().toString();
-    const signature = crypto.createHmac("sha256", secret).update(ts).digest("hex");
+    const token = getToken();
     const response = await fetch(server + "/dppoutput", {
       method: "GET",
       headers: {
-        "X-Signature": signature,
-        "X-Timestamp": ts,
+        "X-Signature": token,
       },
     });
     if (!response.ok) {
