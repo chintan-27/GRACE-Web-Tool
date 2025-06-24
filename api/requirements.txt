@@ -12,5 +12,5 @@ torchvision>=0.18.0
 torchaudio
 werkzeug
 python-dotenv
-jwt
+pyjwt
 eventlet

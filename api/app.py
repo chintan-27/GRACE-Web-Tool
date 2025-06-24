@@ -31,13 +31,12 @@ ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
 ]
-
 CORS(app,
-    resources={r"/predict_(domino|grace|dominopp)": {"origins": ALLOWED_ORIGINS}, r"/(d|g|dpp)output": {"origins": ALLOWED_ORIGINS}},
-    methods=["POST", "GET"],                      # Allow only what you need
-    allow_headers=["Content-Type", "X-Signature"],
-    supports_credentials=False,            # Flip to True only if you send cookies
-    max_age=600,
+     resources={r"/predict_(domino|grace|dominopp)": {"origins": ALLOWED_ORIGINS}, r"/(d|g|dpp)output": {"origins": ALLOWED_ORIGINS}},
+     methods=["POST", "GET", "OPTIONS", "FETCH"],                      # Allow only what you need
+     allow_headers=["Content-Type", "X-Signature"],
+     supports_credentials=False,            # Flip to True only if you send cookies
+     max_age=600,
 )
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
@@ -51,10 +50,13 @@ def handle_connect():
         return
 
     try:
+        algorithms = ['HS256']
+        print(f"using algorithms {algorithms}")
+        print(f"token : {token}")
         payload = jwt.decode(
             token,
             JWT_SECRET,
-            algorithms=['A256GCM']
+            algorithms=algorithms
         )
 
         ts = payload.get('ts')
@@ -74,7 +76,7 @@ def handle_connect():
             print("⛔ Stale token")
             return jsonify({"error": "stale token"}), 401
         
-        expected_sig = hmac.new(API_SECRET,
+        expected_sig = hmac.new(API_SECRET.encode('utf-8'),
                             ts.encode('utf-8'),
                             hashlib.sha256
                            ).hexdigest()
