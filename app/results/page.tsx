@@ -8,7 +8,9 @@ import NiiVueComponent from "../components/niivue";
 import { createSocket } from "./socket";
 import crypto from "crypto";
 import { Socket } from "socket.io-client";
-import { encode } from "next-auth/jwt";
+// import { encode } from "next-auth/jwt";
+import { SignJWT } from 'jose';
+
 
 const Results = () => {
   const searchParams = useSearchParams();
@@ -37,15 +39,40 @@ const Results = () => {
   const hasStartedDpp = useRef(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [token, setToken] = useState<string>("");
-  const server = process.env.server || "http://localhost:5500";
+  const server = process.env.server || "https://flask.thecka.tech";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
   const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
-  useEffect(() => {
-    const connectSocket = async () => {
-      const socket = await createSocket();
-      setSocket(socket);
-      if (!socket.connected) socket.connect();
+// 1. Generate token ONCE on mount
+useEffect(() => {
+  const getToken = async () => {
+    const ts = (Date.now() + 15 * 60 * 1000).toString();
+    const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
+
+    const secretKey = new TextEncoder().encode(secret2); // HS256 shared secret
+
+    const token = await new SignJWT({ ts, signature })
+      .setProtectedHeader({ alg: "HS256" })
+      .setExpirationTime("15m")
+      .sign(secretKey);
+
+    console.log("✅ Generated token:", token);
+    setToken(token);
+  };
+
+  getToken().catch((err) => {
+    console.error("❌ Error generating token:", err);
+  });
+}, [secret1, secret2]);
+
+// 2. Connect socket ONCE when token is ready
+useEffect(() => {
+  if (!token) return;
+
+  const connectSocket = async () => {
+    const socket = await createSocket(token);
+    setSocket(socket);
+    if (!socket.connected) socket.connect();
 
     socket.on("connect", () => {
       console.log("✅ Socket connected:", socket.id);
@@ -59,37 +86,35 @@ const Results = () => {
 
     socket.on("progress_grace", (update) => {
       console.log("GRACE Progress:", update);
-      console.log("Updating GRACE progress:", update.message, update.progress);
       setGraceProgress({ message: update.message, progress: update.progress });
       if (update.progress === 100) fetchGraceOutput();
     });
 
     socket.on("progress_domino", (update) => {
-      console.log("In here");
       console.log("DOMINO Progress:", update);
-      console.log("Updating DOMINO progress:", update.message, update.progress);
       setDominoProgress({ message: update.message, progress: update.progress });
       if (update.progress === 100) fetchDominoOutput();
     });
 
     socket.on("progress_dpp", (update) => {
       console.log("DOMINO++ Progress:", update);
-      console.log("Updating DOMINO++ progress:", update.message, update.progress);
       setDppProgress({ message: update.message, progress: update.progress });
       if (update.progress === 100) fetchDppOutput();
     });
 
-
     return () => {
       socket.off("connect");
       socket.off("disconnect");
+      // socket.off("progress_grace");
+      // socket.off("progress_domino");
+      // socket.off("progress_dpp");
     };
-    }
+  };
 
-    connectSocket().catch((err) => {
-      console.error("Error connecting to socket:", err);
-    });
-  }, []);
+  connectSocket().catch((err) => {
+    console.error("❌ Error connecting to socket:", err);
+  });
+}, [token]);
 
   useEffect(() => {
     const loadImage = async () => {
@@ -141,22 +166,20 @@ const Results = () => {
     }
   }, [socketReady, fileBlob]);
 
-  const getToken = async () => {
-    const ts = (Date.now() + 15 * 60 * 1000).toString();
-    const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
+  // const getToken = async () => {
+  //   const ts = (Date.now() + 15 * 60 * 1000).toString();
+  //   const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
     
-    const token = await encode({
-      token: { ts, signature },
-      secret: secret2,
-      maxAge: 15 * 60, // 15 minutes
-    });
+  //   const token = await encode({
+  //     token: { ts, signature },
+  //     secret: secret2,
+  //     maxAge: 15 * 60, // 15 minutes
+  //   });
 
-    setToken(token);
-    // return token;
-  }
-  getToken().catch((err) => {
-    console.error("Error generating token:", err);
-  });
+  //   setToken(token);
+  //   // return token;
+  // }
+
 
   const handleGrace = async () => {
     if (!fileBlob) return console.error("No fileBlob for GRACE");

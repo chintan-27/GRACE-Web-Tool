@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@niivue/niivue": "^0.44.2",
+    "jose": "^6.0.11",
     "lodash": "^4.17.21",
     "next-auth": "^4.24.11",
     "onnxruntime-web": "^1.21.0-dev.20241214-3a0b958586",

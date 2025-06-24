@@ -10,15 +10,16 @@ const SOCKET_URL = server;
 const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
 const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
-export const createSocket = async (): Promise<Socket> => {
-  const ts = (Date.now() + 15 * 60 * 1000).toString()
-  const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
+export const createSocket = async (token : string): Promise<Socket> => {
+  // const ts = (Date.now() + 15 * 60 * 1000).toString()
+  // const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
   // 3) Build & sign the JWT
-  const token = await encode({
-    token: { ts, signature },
-    secret: secret2,
-    maxAge: 15 * 60, // 15 minutes
-  });
+  // const token = await encode({
+  //   token: { ts, signature },
+  //   secret: secret2,
+  //   maxAge: 15 * 60, // 15 minutes
+  // });
+  // console.log("Token:", token);
 
   return io(SOCKET_URL, {
     autoConnect: false, // Important: connect manually later
