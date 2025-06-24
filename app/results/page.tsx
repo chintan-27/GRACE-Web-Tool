@@ -9,6 +9,7 @@ import { createSocket } from "./socket";
 import crypto from "crypto";
 import { Socket } from "socket.io-client";
 import { encode } from "next-auth/jwt";
+import { get } from "http";
 
 
 
@@ -37,7 +38,8 @@ const Results = () => {
   const hasStartedGrace = useRef(false);
   const hasStartedDomino = useRef(false);
   const hasStartedDpp = useRef(false);
-  const [socket, setSocket] = useState<Socket>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [token, setToken] = useState<string>("");
   const server = process.env.server || "http://localhost:5500";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
   const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
@@ -152,18 +154,21 @@ const Results = () => {
       maxAge: 15 * 60, // 15 minutes
     });
 
-    return token;
+    setToken(token);
+    // return token;
   }
+  getToken().catch((err) => {
+    console.error("Error generating token:", err);
+  });
 
   const handleGrace = async () => {
     if (!fileBlob) return console.error("No fileBlob for GRACE");
     if (!socketReady) {
       console.error("Socket not ready for GRACE, trying to connect...");
-      socket.connect();
+      if (socket) socket.connect();
     }
     setGraceProgress({ message: "Starting GRACE...", progress: 0 });
 
-    const token = await getToken();
 
     const response = await fetch(server + "/predict_grace", {
       method: "POST",
@@ -185,11 +190,10 @@ const Results = () => {
     if (!fileBlob) return console.error("No fileBlob for DOMINO");
     if (!socketReady) {
       console.error("Socket not ready for DOMINO, trying to connect...");
-      socket.connect();
+      if (socket) socket.connect();
     }
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
-    const token = await getToken();
 
     const response = await fetch(server + "/predict_domino", {
       method: "POST",
@@ -211,11 +215,10 @@ const Results = () => {
     if (!fileBlob) return console.error("No fileBlob for DOMINO++");
     if (!socketReady) {
       console.error("Socket not ready for DOMINO++, trying to connect...");
-      socket.connect();
+      if (socket) socket.connect();
     }
     setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
 
-    const token = await getToken();
 
     const response = await fetch(server + "/predict_dpp", {
       method: "POST",
@@ -244,7 +247,6 @@ const Results = () => {
 
   const fetchGraceOutput = async () => {
     console.log("Fetching GRACE output...");
-    const token = getToken();
 
     const response = await fetch(server + "/goutput", {
       method: "GET",
@@ -269,7 +271,6 @@ const Results = () => {
 
   const fetchDominoOutput = async () => {
     console.log("Fetching DOMINO output...");
-    const token = getToken();
     const response = await fetch(server + "/doutput", {
       method: "GET",
       headers: {
@@ -293,7 +294,6 @@ const Results = () => {
 
   const fetchDppOutput = async () => {
     console.log("Fetching DOMINO++ output...");
-    const token = getToken();
     const response = await fetch(server + "/dppoutput", {
       method: "GET",
       headers: {
