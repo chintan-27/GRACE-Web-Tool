@@ -8,7 +8,8 @@ import pako from "pako";
 import NiiVueComponent from "../components/niivue";
 import { createSocket } from "./socket";
 import crypto from "crypto";
-import jwt from "jsonwebtoken";
+
+import { encode } from "next-auth/jwt";
 
 
 
@@ -37,7 +38,6 @@ const Results = () => {
   const hasStartedGrace = useRef(false);
   const hasStartedDomino = useRef(false);
   const hasStartedDpp = useRef(false);
-
   const socket = createSocket();
   const server = process.env.server || "http://localhost:5500";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
@@ -135,10 +135,16 @@ const Results = () => {
     }
   }, [socketReady, fileBlob]);
 
-  const getToken = () => {
+  const getToken = async () => {
     const ts = (Date.now() + 15 * 60 * 1000).toString();
     const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
-    const token = jwt.sign({ ts, signature }, secret2, { algorithm: 'HS256', expiresIn: '1h' });
+    
+    const token = await encode({
+      token: { ts, signature },
+      secret: secret2,
+      maxAge: 15 * 60, // 15 minutes
+    });
+
     return token;
   }
 
@@ -150,7 +156,7 @@ const Results = () => {
     }
     setGraceProgress({ message: "Starting GRACE...", progress: 0 });
 
-    const token = getToken();
+    const token = await getToken();
 
     const response = await fetch(server + "/predict_grace", {
       method: "POST",
@@ -176,7 +182,7 @@ const Results = () => {
     }
     setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
 
-    const token = getToken();
+    const token = await getToken();
 
     const response = await fetch(server + "/predict_domino", {
       method: "POST",
@@ -201,8 +207,8 @@ const Results = () => {
       socket.connect();
     }
     setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
-    
-    const token = getToken();
+
+    const token = await getToken();
 
     const response = await fetch(server + "/predict_dpp", {
       method: "POST",

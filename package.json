@@ -11,6 +11,7 @@
   "dependencies": {
     "@niivue/niivue": "^0.44.2",
     "lodash": "^4.17.21",
+    "next-auth": "^4.24.11",
     "onnxruntime-web": "^1.21.0-dev.20241214-3a0b958586",
     "pako": "^2.1.0",
     "react": "19.1.0",
@@ -27,7 +28,6 @@
     "@types/react-dom": "19.1.5",
     "eslint": "^8",
     "eslint-config-next": "15.3.2",
-    "jsonwebtoken": "^9.0.2",
     "next": "15.3.2",
     "postcss": "^8",
     "tailwindcss": "^4.1.6",
