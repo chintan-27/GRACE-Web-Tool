@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -39,7 +40,7 @@ const Results = () => {
   const [dppinferenceResults, setdppInferenceResults] = useState<NVImage | null>(null);
 
   // Socket + auth
-  const [socketReady, setSocketReady] = useState(false);
+  // const [socketReady, setSocketReady] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const [token, setToken] = useState<string>("");
 
@@ -112,7 +113,7 @@ const Results = () => {
 
       sock.on("connect", () => {
         console.log("✅ Socket connected:", sock.id);
-        setSocketReady(true);
+        // setSocketReady(true);
 
         // fire endpoints
         if (grace && !graceDone) {

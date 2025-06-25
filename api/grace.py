@@ -1,16 +1,11 @@
 import os
-import json
 import torch
 import numpy as np
 import nibabel as nib
-from asyncio import sleep
-from flask import Response
-from scipy.io import savemat
-from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize
-from monai.transforms.spatial.functional import spatial_resample
+from monai.transforms import Compose, Spacingd, Orientationd, CropForegroundd
+from monai.data import MetaTensor
 
 def send_progress(message, progress):
     """
@@ -63,11 +58,6 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     yield send_progress("Model loaded successfully.", 25)
     return model
 
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, CropForegroundd, ResizeWithPadOrCropd
-from monai.data import MetaTensor
-import nibabel as nib
-import torch
-import numpy as np
 def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complexity_threshold=10000):
     """
     Load and preprocess the input NIfTI image to match training pipeline.
@@ -83,12 +73,6 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     Returns:
         image_tensor (torch.Tensor), input_img (nib.Nifti1Image)
     """
-    import torch
-    import numpy as np
-    import nibabel as nib
-    from monai.transforms import Compose, Spacingd, Orientationd, CropForegroundd, ResizeWithPadOrCropd
-    from monai.data import MetaTensor
-
     def normalize_fixed(data, a_min, a_max):
         data = np.clip(data, a_min, a_max)
         return (data - a_min) / (a_max - a_min + 1e-8)
@@ -152,10 +136,10 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     nii_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.nii.gz")
     nib.save(pred_img, nii_save_path)
     
-    # Save as .mat
-    yield send_progress("Saving MAT file...", 90)
-    mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.mat")
-    savemat(mat_save_path, {"testimage": processed_preds})
+    # # Save as .mat
+    # yield send_progress("Saving MAT file...", 90)
+    # mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.mat")
+    # savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
 
 def grace_predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
