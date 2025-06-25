@@ -7,359 +7,258 @@ import pako from "pako";
 import NiiVueComponent from "../components/niivue";
 import { createSocket } from "./socket";
 import crypto from "crypto";
+import { SignJWT } from "jose";
 import { Socket } from "socket.io-client";
-// import { encode } from "next-auth/jwt";
-import { SignJWT } from 'jose';
-
 
 const Results = () => {
+  // URL params
   const searchParams = useSearchParams();
-  const fileUrl = searchParams.get("file") || "";
-  const grace = searchParams.get("grace") === "true";
-  const domino = searchParams.get("domino") === "true";
-  const dominopp = searchParams.get("dominopp") === "true";
+  const fileUrl   = searchParams.get("file")     || "";
+  const grace     = searchParams.get("grace")   === "true";
+  const domino    = searchParams.get("domino")  === "true";
+  const dominopp  = searchParams.get("dominopp")==="true";
 
+  // Image + loading state
   const [image, setImage] = useState<NVImage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isGz, setIsGz] = useState(false);
+  const [isGz, setIsGz]   = useState(false);
+  const [fileBlob, setFileBlob] = useState<Blob | null>(null);
 
-  const [graceProgress, setGraceProgress] = useState({ message: "", progress: 0 });
+  // Progress state
+  const [graceProgress, setGraceProgress]   = useState({ message: "", progress: 0 });
   const [dominoProgress, setDominoProgress] = useState({ message: "", progress: 0 });
-  const [dppProgress, setDppProgress] = useState({ message: "", progress: 0 });
+  const [dppProgress,    setDppProgress]    = useState({ message: "", progress: 0 });
 
-  const [ginferenceResults, setgInferenceResults] = useState<NVImage | null>(null);
-  const [dinferenceResults, setdInferenceResults] = useState<NVImage | null>(null);
+  // Inference results
+  const [ginferenceResults,   setgInferenceResults]   = useState<NVImage | null>(null);
+  const [dinferenceResults,   setdInferenceResults]   = useState<NVImage | null>(null);
   const [dppinferenceResults, setdppInferenceResults] = useState<NVImage | null>(null);
 
-  const [fileBlob, setFileBlob] = useState<Blob | null>(null);
+  // Socket + auth
   const [socketReady, setSocketReady] = useState(false);
-
-  const hasStartedGrace = useRef(false);
-  const hasStartedDomino = useRef(false);
-  const hasStartedDpp = useRef(false);
-  const [socket, setSocket] = useState<Socket | null>(null);
+  const socketRef = useRef<Socket | null>(null);
   const [token, setToken] = useState<string>("");
-  const server = process.env.server || "https://flask.thecka.tech";
+
+  // Env
+  const server  = process.env.server                 || "https://flask.thecka.tech";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
-  const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
+  const secret2 = process.env.NEXT_JWT_SECRET       || "default_secret";
 
-// 1. Generate token ONCE on mount
-useEffect(() => {
-  const getToken = async () => {
-    const ts = (Date.now() + 15 * 60 * 1000).toString();
-    const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
-
-    const secretKey = new TextEncoder().encode(secret2); // HS256 shared secret
-
-    const token = await new SignJWT({ ts, signature })
-      .setProtectedHeader({ alg: "HS256" })
-      .setExpirationTime("15m")
-      .sign(secretKey);
-
-    console.log("✅ Generated token:", token);
-    setToken(token);
-  };
-
-  getToken().catch((err) => {
-    console.error("❌ Error generating token:", err);
-  });
-}, [secret1, secret2]);
-
-// 2. Connect socket ONCE when token is ready
-useEffect(() => {
-  if (!token) return;
-
-  const connectSocket = async () => {
-    const socket = await createSocket(token);
-    setSocket(socket);
-    if (!socket.connected) socket.connect();
-
-    socket.on("connect", () => {
-      console.log("✅ Socket connected:", socket.id);
-      setSocketReady(true);
-    });
-
-    socket.on("disconnect", () => {
-      console.log("⚠️ Socket disconnected");
-      setSocketReady(false);
-    });
-
-    socket.on("progress_grace", (update) => {
-      console.log("GRACE Progress:", update);
-      setGraceProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchGraceOutput();
-    });
-
-    socket.on("progress_domino", (update) => {
-      console.log("DOMINO Progress:", update);
-      setDominoProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchDominoOutput();
-    });
-
-    socket.on("progress_dpp", (update) => {
-      console.log("DOMINO++ Progress:", update);
-      setDppProgress({ message: update.message, progress: update.progress });
-      if (update.progress === 100) fetchDppOutput();
-    });
-
-    return () => {
-      socket.off("connect");
-      socket.off("disconnect");
-      // socket.off("progress_grace");
-      // socket.off("progress_domino");
-      // socket.off("progress_dpp");
-    };
-  };
-
-  connectSocket().catch((err) => {
-    console.error("❌ Error connecting to socket:", err);
-  });
-}, [token]);
-
+  // 1️⃣ Generate JWT on mount
   useEffect(() => {
-    const loadImage = async () => {
-      try {
-        console.log("Fetching file from:", fileUrl);
-        setLoading(true);
-        const response = await fetch(fileUrl);
-        const blob = await response.blob();
+    (async () => {
+      const ts = (Date.now() + 15 * 60 * 1000).toString();
+      const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
+      const key = new TextEncoder().encode(secret2);
+
+      const jwt = await new SignJWT({ ts, signature })
+        .setProtectedHeader({ alg: "HS256" })
+        .setExpirationTime("15m")
+        .sign(key);
+
+      console.log("✅ Generated token:", jwt);
+      setToken(jwt);
+    })().catch(err => console.error("❌ JWT error:", err));
+  }, [secret1, secret2]);
+
+  // 2️⃣ Load image
+  useEffect(() => {
+    if (!fileUrl) return;
+    setLoading(true);
+
+    fetch(fileUrl)
+      .then(res => res.blob())
+      .then(async blob => {
         setFileBlob(blob);
-        const arrayBuffer = await blob.arrayBuffer();
-        const uint8Array = new Uint8Array(arrayBuffer);
+        const arr = new Uint8Array(await blob.arrayBuffer());
+        const gzipped = arr[0] === 0x1f && arr[1] === 0x8b;
+        setIsGz(gzipped);
 
-        const isGzipped = uint8Array[0] === 0x1f && uint8Array[1] === 0x8b;
-        setIsGz(isGzipped);
-        const file = isGzipped
-          ? new File([pako.inflate(uint8Array)], "uploaded_image.nii")
+        const file = gzipped
+          ? new File([pako.inflate(arr)], "uploaded_image.nii")
           : new File([blob], "uploaded_image.nii");
+        
+          setFileBlob(file);
 
-        const nvImage = await NVImage.loadFromFile({ file, colormap: "gray" });
-        setImage(nvImage);
-        console.log("Image loaded successfully");
-      } catch (err) {
-        console.error("Error loading image:", err);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (fileUrl) loadImage();
+        const nv = await NVImage.loadFromFile({ file, colormap: "gray" });
+        setImage(nv);
+        console.log("✅ Image loaded");
+      })
+      .catch(err => console.error("❌ Load image error:", err))
+      .finally(() => setLoading(false));
   }, [fileUrl]);
 
+  // 3️⃣ Socket lifecycle + listeners + REST + cleanup
   useEffect(() => {
-    if (!fileBlob || !socketReady) return;
+    if (!token || !fileBlob) return;
+    let finished = 0;
+    const total = [grace, domino, dominopp].filter(x => x).length;
 
-    if (grace && !hasStartedGrace.current) {
-      hasStartedGrace.current = true;
-      console.log("Calling GRACE endpoint...");
-      handleGrace();
-    }
-    if (domino && !hasStartedDomino.current) {
-      hasStartedDomino.current = true;
-      console.log("Calling DOMINO endpoint...");
-      handleDomino();
-    }
-    if (dominopp && !hasStartedDpp.current) {
-      hasStartedDpp.current = true;
-      console.log("Calling DOMINO++ endpoint...");
-      handleDpp();
-    }
-  }, [socketReady, fileBlob]);
+    const cleanup = () => {
+      const sock = socketRef.current;
+      if (!sock) return;
+      sock.off();
+      sock.disconnect();
+      console.log("🚪 Socket disconnected");
+    };
 
-  // const getToken = async () => {
-  //   const ts = (Date.now() + 15 * 60 * 1000).toString();
-  //   const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
-    
-  //   const token = await encode({
-  //     token: { ts, signature },
-  //     secret: secret2,
-  //     maxAge: 15 * 60, // 15 minutes
-  //   });
+    (async () => {
+      const sock = await createSocket(token);
+      socketRef.current = sock;
 
-  //   setToken(token);
-  //   // return token;
-  // }
+      sock.on("connect", () => {
+        console.log("✅ Socket connected:", sock.id);
+        setSocketReady(true);
 
+        // fire endpoints
+        if (grace) {
+          setGraceProgress({ message: "Starting GRACE…", progress: 0 });
+          fetch(server + "/predict_grace", {
+            method: "POST",
+            headers: { "X-Signature": token },
+            body: createFormData()
+          })
+            .then(r => { if (!r.ok) throw new Error(r.statusText) })
+            .catch(err => setGraceProgress({ message: err.message, progress: 0 }));
+        }
+        if (domino) {
+          setDominoProgress({ message: "Starting DOMINO…", progress: 0 });
+          fetch(server + "/predict_domino", {
+            method: "POST",
+            headers: { "X-Signature": token },
+            body: createFormData()
+          })
+            .then(r => { if (!r.ok) throw new Error(r.statusText) })
+            .catch(err => setDominoProgress({ message: err.message, progress: 0 }));
+        }
+        if (dominopp) {
+          setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
+          fetch(server + "/predict_dpp", {
+            method: "POST",
+            headers: { "X-Signature": token },
+            body: createFormData()
+          })
+            .then(r => { if (!r.ok) throw new Error(r.statusText) })
+            .catch(err => setDppProgress({ message: err.message, progress: 0 }));
+        }
+      });
 
-  const handleGrace = async () => {
-    if (!fileBlob) return console.error("No fileBlob for GRACE");
-    if (!socketReady) {
-      console.error("Socket not ready for GRACE, trying to connect...");
-      if (socket) socket.connect();
-    }
-    setGraceProgress({ message: "Starting GRACE...", progress: 0 });
+      const makeHandler = (
+        setFn: typeof setGraceProgress | typeof setDominoProgress | typeof setDppProgress,
+        fetchOut: () => Promise<void>
+      ) => (upd: { message: string; progress: number }) => {
+        setFn({ message: upd.message, progress: upd.progress });
+        if (upd.progress === 100) {
+          fetchOut().finally(() => {
+            finished += 1;
+            if (finished === total) cleanup();
+          });
+        }
+      };
 
+      sock.on("progress_grace",  makeHandler(setGraceProgress,  fetchGraceOutput));
+      sock.on("progress_domino", makeHandler(setDominoProgress, fetchDominoOutput));
+      sock.on("progress_dpp",    makeHandler(setDppProgress,    fetchDppOutput));
 
-    const response = await fetch(server + "/predict_grace", {
-      method: "POST",
-      body: createFormData(),
-      headers: {
-        "X-Signature": token
-      },
-    });
+      if (!sock.connected) sock.connect();
+    })().catch(err => console.error("❌ Socket setup error:", err));
 
-    if (!response.ok) {
-      console.error("Error in GRACE request:", response.statusText);
-      setGraceProgress({ message: "Error in GRACE request", progress: 0 });
-      return;
-    }
-    console.log("GRACE request sent.");
-  };
+    return cleanup;
+  }, [token, fileBlob, grace, domino, dominopp]);
 
-  const handleDomino = async () => {
-    if (!fileBlob) return console.error("No fileBlob for DOMINO");
-    if (!socketReady) {
-      console.error("Socket not ready for DOMINO, trying to connect...");
-      if (socket) socket.connect();
-    }
-    setDominoProgress({ message: "Starting DOMINO...", progress: 0 });
-
-
-    const response = await fetch(server + "/predict_domino", {
-      method: "POST",
-      body: createFormData(),
-      headers: {
-        "X-Signature": token,
-      },
-    });
-
-    if (!response.ok) {
-      console.error("Error in DOMINO request:", response.statusText);
-      setDominoProgress({ message: "Error in DOMINO request", progress: 0 });
-      return;
-    }
-    console.log("DOMINO request sent.");
-  };
-
-  const handleDpp = async () => {
-    if (!fileBlob) return console.error("No fileBlob for DOMINO++");
-    if (!socketReady) {
-      console.error("Socket not ready for DOMINO++, trying to connect...");
-      if (socket) socket.connect();
-    }
-    setDppProgress({ message: "Starting DOMINO++...", progress: 0 });
-
-
-    const response = await fetch(server + "/predict_dpp", {
-      method: "POST",
-      body: createFormData(),
-      headers: {
-        "X-Signature": token,
-      },
-    });
-    if (!response.ok) {
-      console.error("Error in DOMINO++ request:", response.statusText);
-      setDppProgress({ message: "Error in DOMINO++ request", progress: 0 });
-      return;
-    }
-    console.log("DOMINO++ request sent.");
-  };
-
+  // Helpers
   const createFormData = () => {
-    const formData = new FormData();
+    const fd = new FormData();
     if (fileBlob) {
-      formData.append("file", fileBlob, isGz ? "uploaded_image.nii.gz" : "uploaded_image.nii");
-    } else {
-      console.error("File blob is not available for upload.");
+      fd.append("file", fileBlob, isGz ? "uploaded_image.nii.gz" : "uploaded_image.nii");
     }
-    return formData;
+    return fd;
   };
 
   const fetchGraceOutput = async () => {
-    console.log("Fetching GRACE output...");
-
-    const response = await fetch(server + "/goutput", {
+    console.log("Fetching GRACE output…");
+    const res = await fetch(server + "/goutput", {
       method: "GET",
-      headers: {
-        "X-Signature": token,
-      },
+      headers: { "X-Signature": token },
     });
-    if (!response.ok) {
-      console.error("Error in GRACE output request:", response.statusText);
-      setGraceProgress({ message: "Error in GRACE output request", progress: 0 });
+    if (!res.ok) {
+      setGraceProgress({ message: res.statusText, progress: 0 });
       return;
     }
-    const blob = await (response).blob();
-    const image = await NVImage.loadFromFile({
+    const blob = await res.blob();
+    const img = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "GraceInference.nii.gz"),
       colormap: "jet",
       opacity: 1,
     });
-    setgInferenceResults(image);
-    console.log("GRACE output loaded.");
+    setgInferenceResults(img);
+    console.log("✅ GRACE output loaded");
   };
 
   const fetchDominoOutput = async () => {
-    console.log("Fetching DOMINO output...");
-    const response = await fetch(server + "/doutput", {
+    console.log("Fetching DOMINO output…");
+    const res = await fetch(server + "/doutput", {
       method: "GET",
-      headers: {
-        "X-Signature": token,
-      },
+      headers: { "X-Signature": token },
     });
-    if (!response.ok) {
-      console.error("Error in DOMINO output request:", response.statusText);
-      setDominoProgress({ message: "Error in DOMINO output request", progress: 0 });
+    if (!res.ok) {
+      setDominoProgress({ message: res.statusText, progress: 0 });
       return;
     }
-    const blob = await (response).blob();
-    const image = await NVImage.loadFromFile({
+    const blob = await res.blob();
+    const img = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "DominoInference.nii.gz"),
       colormap: "jet",
       opacity: 1,
     });
-    setdInferenceResults(image);
-    console.log("DOMINO output loaded.");
+    setdInferenceResults(img);
+    console.log("✅ DOMINO output loaded");
   };
 
   const fetchDppOutput = async () => {
-    console.log("Fetching DOMINO++ output...");
-    const response = await fetch(server + "/dppoutput", {
+    console.log("Fetching DOMINO++ output…");
+    const res = await fetch(server + "/dppoutput", {
       method: "GET",
-      headers: {
-        "X-Signature": token,
-      },
+      headers: { "X-Signature": token },
     });
-    if (!response.ok) {
-      console.error("Error in DOMINO++ output request:", response.statusText);
-      setDppProgress({ message: "Error in DOMINO++ output request", progress: 0 });
+    if (!res.ok) {
+      setDppProgress({ message: res.statusText, progress: 0 });
       return;
     }
-    const blob = await (response).blob();
-    const image = await NVImage.loadFromFile({
+    const blob = await res.blob();
+    const img = await NVImage.loadFromFile({
       file: new File([await blob.arrayBuffer()], "DominoPPInference.nii.gz"),
       colormap: "jet",
       opacity: 1,
     });
-    setdppInferenceResults(image);
-    console.log("DOMINO++ output loaded.");
+    setdppInferenceResults(img);
+    console.log("✅ DOMINO++ output loaded");
   };
 
+  // Render
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-white">
       {loading ? (
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-lime-800"></div>
       ) : (
-        <>
-          <div className="w-full p-4">
-            {image && (
-              <NiiVueComponent
-                image={image}
-                inferredImages={{
-                  grace: ginferenceResults,
-                  domino: dinferenceResults,
-                  dominopp: dppinferenceResults,
-                }}
-                selectedModels={{ grace, domino, dominopp }}
-                progressMap={{
-                  grace: graceProgress,
-                  domino: dominoProgress,
-                  dominopp: dppProgress,
-                }}
-              />
-            )}
-          </div>
-        </>
+        <div className="w-full p-4">
+          {image && (
+            <NiiVueComponent
+              image={image}
+              inferredImages={{
+                grace: ginferenceResults,
+                domino: dinferenceResults,
+                dominopp: dppinferenceResults,
+              }}
+              selectedModels={{ grace, domino, dominopp }}
+              progressMap={{
+                grace: graceProgress,
+                domino: dominoProgress,
+                dominopp: dppProgress,
+              }}
+            />
+          )}
+        </div>
       )}
     </div>
   );
