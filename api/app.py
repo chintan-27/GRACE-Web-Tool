@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify, send_file
 import hashlib, hmac, os, time
 import jwt
 from datetime import datetime, timedelta
+import gc
 
 # Import your model-specific files
 from grace import grace_predict_single_file
@@ -216,7 +217,20 @@ def dominopp_output():
         return jsonify({"error": "Invalid signature"}), 403
     return send_output_file("_pred_DOMINOPP")
 
+def cleanup_gpu():
+    # This runs after every request, successful or not.
+    # Delete any lingering tensors in local scope
+    # (Flask should drop local variables anyway, but this is extra safe):
+    for var in ['tensor', 'output']:
+        if var in globals():
+            del globals()[var]
+
+    # 4) Clear PyTorch’s cache and python garbage
+    torch.cuda.empty_cache()
+    gc.collect()
+
 def send_output_file(suffix):
+    cleanup_gpu()
     try:
         for file in os.listdir(OUTPUT_FOLDER):
             if file.endswith(f"{suffix}.nii.gz"):

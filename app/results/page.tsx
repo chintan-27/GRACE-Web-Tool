@@ -24,6 +24,10 @@ const Results = () => {
   const [isGz, setIsGz]   = useState(false);
   const [fileBlob, setFileBlob] = useState<Blob | null>(null);
 
+  const [graceDone, setGraceDone]       = useState(false);
+  const [dominoDone, setDominoDone]     = useState(false);
+  const [dominoppDone, setDominoppDone] = useState(false);
+
   // Progress state
   const [graceProgress, setGraceProgress]   = useState({ message: "", progress: 0 });
   const [dominoProgress, setDominoProgress] = useState({ message: "", progress: 0 });
@@ -111,7 +115,7 @@ const Results = () => {
         setSocketReady(true);
 
         // fire endpoints
-        if (grace) {
+        if (grace && !graceDone) {
           setGraceProgress({ message: "Starting GRACE…", progress: 0 });
           fetch(server + "/predict_grace", {
             method: "POST",
@@ -121,7 +125,7 @@ const Results = () => {
             .then(r => { if (!r.ok) throw new Error(r.statusText) })
             .catch(err => setGraceProgress({ message: err.message, progress: 0 }));
         }
-        if (domino) {
+        if (domino && !dominoDone) {
           setDominoProgress({ message: "Starting DOMINO…", progress: 0 });
           fetch(server + "/predict_domino", {
             method: "POST",
@@ -131,7 +135,7 @@ const Results = () => {
             .then(r => { if (!r.ok) throw new Error(r.statusText) })
             .catch(err => setDominoProgress({ message: err.message, progress: 0 }));
         }
-        if (dominopp) {
+        if (dominopp && !dominoppDone) {
           setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
           fetch(server + "/predict_dpp", {
             method: "POST",
@@ -176,6 +180,7 @@ const Results = () => {
   };
 
   const fetchGraceOutput = async () => {
+    setGraceDone(true);
     console.log("Fetching GRACE output…");
     const res = await fetch(server + "/goutput", {
       method: "GET",
@@ -196,6 +201,7 @@ const Results = () => {
   };
 
   const fetchDominoOutput = async () => {
+    setDominoDone(true);
     console.log("Fetching DOMINO output…");
     const res = await fetch(server + "/doutput", {
       method: "GET",
@@ -216,6 +222,7 @@ const Results = () => {
   };
 
   const fetchDppOutput = async () => {
+    setDominoppDone(true);
     console.log("Fetching DOMINO++ output…");
     const res = await fetch(server + "/dppoutput", {
       method: "GET",
