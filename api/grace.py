@@ -37,10 +37,10 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
         hidden_size=768,
         mlp_dim=3072,
         num_heads=12,
+        proj_type="perceptron",
         norm_name="instance",
         res_block=True,
         dropout_rate=0.0,
-        proj_type="perceptron",
     )
 
     # if dataparallel:
@@ -107,7 +107,7 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear")),
         Orientationd(keys=["image"], axcodes="RAS"),
-        CropForegroundd(keys=["image"], source_key="image"),
+        CropForegroundd(keys=["image"], source_key="image", allow_smaller=True),
     ])
 
     yield send_progress("Applying spatial transforms...", 40)

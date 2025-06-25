@@ -11,6 +11,7 @@ import crypto from "crypto";
 import { SignJWT } from "jose";
 import { Socket } from "socket.io-client";
 
+
 const Results = () => {
   // URL params
   const searchParams = useSearchParams();
@@ -22,7 +23,7 @@ const Results = () => {
   // Image + loading state
   const [image, setImage] = useState<NVImage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isGz, setIsGz]   = useState(false);
+  const [isGz, setIsGz]   = useState<boolean | null>(null);
   const [fileBlob, setFileBlob] = useState<Blob | null>(null);
 
   const [graceDone, setGraceDone]       = useState(false);
@@ -40,7 +41,7 @@ const Results = () => {
   const [dppinferenceResults, setdppInferenceResults] = useState<NVImage | null>(null);
 
   // Socket + auth
-  // const [socketReady, setSocketReady] = useState(false);
+  const [socketReady, setSocketReady] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const [token, setToken] = useState<string>("");
 
@@ -80,10 +81,10 @@ const Results = () => {
         setIsGz(gzipped);
 
         const file = gzipped
-          ? new File([pako.inflate(arr)], "uploaded_image.nii")
+          ? new File([blob], "uploaded_image.nii.gz")
           : new File([blob], "uploaded_image.nii");
         
-          setFileBlob(file);
+        setFileBlob(file);
 
         const nv = await NVImage.loadFromFile({ file, colormap: "gray" });
         setImage(nv);
@@ -91,29 +92,33 @@ const Results = () => {
       })
       .catch(err => console.error("❌ Load image error:", err))
       .finally(() => setLoading(false));
-  }, [fileUrl]);
+  }, [fileUrl, setIsGz, isGz]);
 
+
+  const cleanup = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    sock.off();
+    sock.disconnect();
+    setSocketReady(false);
+    console.log("🚪 Socket disconnected");
+  };
   // 3️⃣ Socket lifecycle + listeners + REST + cleanup
   useEffect(() => {
     if (!token || !fileBlob) return;
     let finished = 0;
     const total = [grace, domino, dominopp].filter(x => x).length;
 
-    const cleanup = () => {
-      const sock = socketRef.current;
-      if (!sock) return;
-      sock.off();
-      sock.disconnect();
-      console.log("🚪 Socket disconnected");
-    };
+    
 
     (async () => {
+      if (socketReady) return;
       const sock = await createSocket(token);
       socketRef.current = sock;
 
       sock.on("connect", () => {
         console.log("✅ Socket connected:", sock.id);
-        // setSocketReady(true);
+        setSocketReady(true);
 
         // fire endpoints
         if (grace && !graceDone) {
