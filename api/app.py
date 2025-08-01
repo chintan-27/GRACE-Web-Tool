@@ -14,6 +14,11 @@ import gc
 from grace import grace_predict_single_file
 from domino import domino_predict_single_file
 from dominoplusplus import dominoplusplus_predict_single_file
+import torch
+import warnings
+warnings.filterwarnings("ignore")
+
+
 
 UPLOAD_FOLDER = "uploads"
 OUTPUT_FOLDER = "outputs"

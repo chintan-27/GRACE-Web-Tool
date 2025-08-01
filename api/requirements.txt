@@ -14,3 +14,4 @@ werkzeug
 python-dotenv
 pyjwt
 eventlet
+redis

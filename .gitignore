@@ -48,7 +48,10 @@ api/outputs
 api/uploads
 api/1.nii.gz
 api/__pycache__
-api/core.
 *.log
 logs*
 .env
+api/core.*
+api/models/*.pth
+._.DS_Store
+*/._.DS_Store
