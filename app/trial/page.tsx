@@ -22,7 +22,7 @@ const Trial = () => {
     const [fileBlob, setFileBlob] = useState<Blob | null>(null);
 
     // Progress state
-    const [graceProgress, setGraceProgress] = useState({ message: "", progress: 0 });
+    const [graceProgress, setGraceProgress] = useState({ message: "Setting up the connection to the server", progress: 0 });
     const [dominoProgress, setDominoProgress] = useState({ message: "", progress: 0 });
     const [dppProgress, setDppProgress] = useState({ message: "", progress: 0 });
 
