@@ -38,7 +38,7 @@ const Trial = () => {
     const startedRef = useRef(false)
     const esRef = useRef<EventSource | null>(null);
 
-    const server = process.env.server || "http://localhost:5000";
+    const server = process.env.server || "https://flask.thecka.tech";
     const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
     const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
@@ -104,9 +104,13 @@ const Trial = () => {
             // parse & log each event as soon as it arrives
             try {
                 const { message, progress } = JSON.parse(e.data);
-                console.log("SSE:", message, progress);
-            } catch {
-                console.log("SSE (raw):", e.data);
+                setGraceProgress({message: message, progress: progress});
+                if(progress === 100) {
+                    fetchGraceOutput();
+                }
+            } catch (err) {
+                console.error("SSE error:", err);
+                setGraceProgress({ message: e.data, progress: 0 });
             }
             if (e.data.includes("All done")) {
                 setStatus("done");
@@ -131,7 +135,7 @@ const Trial = () => {
         if (status === 'connected') {
             if (grace) {
                 setGraceProgress({ message: "Starting GRACE…", progress: 0 });
-                fetch(server + "/predict_grace", {
+                fetch(server + "/grace/predict", {
                     method: "POST",
                     headers: { "X-Signature": token },
                     body: createFormData()
@@ -174,7 +178,7 @@ const Trial = () => {
 
     const fetchGraceOutput = async () => {
         console.log("Fetching GRACE output…");
-        const res = await fetch(server + "/goutput", {
+        const res = await fetch(server + "/grace/output", {
             method: "GET",
             headers: { "X-Signature": token },
         });
