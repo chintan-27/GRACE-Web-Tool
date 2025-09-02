@@ -1,10 +1,12 @@
 import os
+import gc
 from typing import Annotated
 
 import asyncio
 from fastapi import FastAPI, Request, BackgroundTasks, File, UploadFile, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse
 from werkzeug.utils import secure_filename
 from sse_starlette.sse import EventSourceResponse
 from typing import AsyncGenerator
@@ -29,7 +31,7 @@ clients = {}  # Dictionary to hold client queues
 # CORS middleware setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], 
+    allow_origins=["http://localhost:3000", "https://grace-web-tool.vercel.app"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,11 +82,18 @@ def save_uploaded_file(file: UploadFile):
 
     return path
 
-@app.route("/output/{model}", methods=["GET"])
-def grace_output(model: str):
-    token = request.headers.get('X-Signature')
-    if check_signature(token) is False:
-        return jsonify({"error": "Invalid signature"}), 403
+def check_signature(token):
+    # Implement your signature validation logic here
+    if not token:
+        return False
+    # Add your actual validation logic
+    return True  # or False based on validation
+
+@app.get("/output/{model}")
+async def grace_output(model: str, request: Request):  # Add request parameter
+    token = request.headers.get('x-signature')  # Use lowercase
+    if check_signature(token) is False:  # This function doesn't exist
+        return JSONResponse({"error": "Invalid signature"}, status_code=403)
     return send_output_file(f"_pred_{model.upper()}")
 
 def cleanup_gpu():
@@ -104,10 +113,14 @@ def send_output_file(suffix):
     try:
         for file in os.listdir(OUTPUT_FOLDER):
             if file.endswith(f"{suffix}.nii.gz"):
-                return send_file(os.path.join(OUTPUT_FOLDER, file), as_attachment=True)
-        return jsonify({"error": f"Output file for {suffix} not found"}), 404
+                return FileResponse(
+                    path=os.path.join(OUTPUT_FOLDER, file),
+                    filename=file,
+                    media_type='application/gzip'
+                )
+        return JSONResponse({"error": f"Output file for {suffix} not found"}, status_code=404)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 def get_device():
     if torch.cuda.is_available():
@@ -142,8 +155,7 @@ async def predict_grace(model: str, request: Request, file: UploadFile = File(..
         asyncio.run_coroutine_threadsafe(queue.put("__CLOSE__"), loop)
 
     # ✅ run sync function in thread and don't await it
-    asyncio.create_task(asyncio.to_thread(run_and_stream))
+    asyncio.create_task(asyncio.to_thread(run_and_stream, model))
 
     return {"status": f"{model} started"}
-
 

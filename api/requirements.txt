@@ -1,8 +1,4 @@
 einops
-flask
-flask_cors
-python-socketio>=5.12.1
-flask_socketio
 monai>=1.4.0
 nibabel>=5.3.2
 numpy>=1.26.4
@@ -16,3 +12,6 @@ pyjwt
 eventlet
 redis
 uvicorn
+python-multipart
+fastapi
+sse-starlette
