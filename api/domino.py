@@ -18,7 +18,7 @@ def send_progress(message, progress):
         @param progess: Progress percentage: (int)
         @return: JSON Data: {"message": message, "progress":progress}
     """
-    return {"message": message, "progress": progress}  
+    return {"model": "domino", "message": message, "progress": progress}  
 
 def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
@@ -142,7 +142,7 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
 
 
 def domino_predict_single_file(input_path, output_dir="output", model_path="models/DOMINO.pth",
-                       spatial_size=(256, 256, 256), num_classes=12, dataparallel=False, num_gpu=1,
+                       spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
                        a_min_value=0, a_max_value=255):
     """
         Predict segmentation for a single NIfTI image with progress updates via SSE.

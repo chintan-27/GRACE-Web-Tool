@@ -9,6 +9,8 @@ from werkzeug.utils import secure_filename
 from sse_starlette.sse import EventSourceResponse
 from typing import AsyncGenerator
 from grace import grace_predict_single_file
+from domino import domino_predict_single_file
+from dominopp import dominopp_predict_single_file
 import uuid
 import shutil
 import torch
@@ -78,6 +80,35 @@ def save_uploaded_file(file: UploadFile):
 
     return path
 
+@app.route("/output/{model}", methods=["GET"])
+def grace_output(model: str):
+    token = request.headers.get('X-Signature')
+    if check_signature(token) is False:
+        return jsonify({"error": "Invalid signature"}), 403
+    return send_output_file(f"_pred_{model.upper()}")
+
+def cleanup_gpu():
+    # This runs after every request, successful or not.
+    # Delete any lingering tensors in local scope
+    # (Flask should drop local variables anyway, but this is extra safe):
+    for var in ['tensor', 'output']:
+        if var in globals():
+            del globals()[var]
+
+    # 4) Clear PyTorch’s cache and python garbage
+    torch.cuda.empty_cache()
+    gc.collect()
+
+def send_output_file(suffix):
+    cleanup_gpu()
+    try:
+        for file in os.listdir(OUTPUT_FOLDER):
+            if file.endswith(f"{suffix}.nii.gz"):
+                return send_file(os.path.join(OUTPUT_FOLDER, file), as_attachment=True)
+        return jsonify({"error": f"Output file for {suffix} not found"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 def get_device():
     if torch.cuda.is_available():
         return torch.device("cuda")
@@ -85,9 +116,10 @@ def get_device():
         return torch.device("cpu")  # Replace with MPS if needed
     return torch.device("cpu")
 
-@app.post("/predict_grace")
-async def predict_grace(request: Request, file: UploadFile = File(...)):
+@app.post("/predict/{model}")
+async def predict_grace(model: str, request: Request, file: UploadFile = File(...)):
     client_id = request.headers.get("x-signature")
+
     queue = clients.get(client_id)
     if not queue:
         return {"error": "Stream not established"}, 400
@@ -98,8 +130,13 @@ async def predict_grace(request: Request, file: UploadFile = File(...)):
     # ✅ capture the event loop in the main thread
     loop = asyncio.get_event_loop()
 
-    def run_and_stream():
-        for progress in grace_predict_single_file(input_path=input_path, output_dir=OUTPUT_FOLDER):
+    def run_and_stream(model: str):
+        func = grace_predict_single_file
+        if model == "domino":
+            func = domino_predict_single_file
+        elif model == "dominopp":
+            func = dominopp_predict_single_file
+        for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
             # ✅ use the captured loop
             asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
         asyncio.run_coroutine_threadsafe(queue.put("__CLOSE__"), loop)
@@ -107,32 +144,6 @@ async def predict_grace(request: Request, file: UploadFile = File(...)):
     # ✅ run sync function in thread and don't await it
     asyncio.create_task(asyncio.to_thread(run_and_stream))
 
-    return {"status": "GRACE started"}
+    return {"status": f"{model} started"}
 
 
-
-@app.post("/process/{client_id}")
-async def process(client_id: str):
-    queue = clients.get(client_id)
-    if not queue:
-        return {"error": "Stream not established"}
-
-    # Simulated step-by-step updates
-    await queue.put("Starting task...")
-    await asyncio.sleep(1)
-
-    await queue.put("Step 1 complete...")
-    await asyncio.sleep(1)
-
-    await queue.put("Step 2 complete...")
-    await asyncio.sleep(1)
-
-    await queue.put("Finalizing...")
-    await asyncio.sleep(1)
-
-    await queue.put("All done!")
-
-    # Signal stream to close
-    await queue.put("__CLOSE__")
-
-    return {"status": "Completed"}
