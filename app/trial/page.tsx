@@ -23,7 +23,7 @@ const Trial = () => {
 
     // Progress state
     const [graceProgress, setGraceProgress] = useState({ message: "Setting up the connection to the server", progress: 0 });
-    const [dominoProgress, setDominoProgress] = useState({ message: "", progress: 0 });
+    const [dominoProgress, setDominoProgress] = useState({ message: "Setting up the connection to the server", progress: 0 });
     const [dppProgress, setDppProgress] = useState({ message: "", progress: 0 });
 
     // Inference results
@@ -103,14 +103,22 @@ const Trial = () => {
         es.onmessage = (e) => {
             // parse & log each event as soon as it arrives
             try {
-                const { message, progress } = JSON.parse(e.data);
-                setGraceProgress({message: message, progress: progress});
-                if(progress === 100) {
-                    fetchGraceOutput();
-                }
+                const { model, message, progress } = JSON.parse(e.data);
+		if(model == "grace"){
+                	setGraceProgress({message: message, progress: progress});
+                	if(progress === 100) {
+                    		fetchGraceOutput();
+                	}
+		} else if (model == "domino"){
+                	setDominoProgress({message: message, progress: progress});
+                	if(progress === 100) {
+                    		fetchDominoOutput();
+			}
+		}
             } catch (err) {
                 console.error("SSE error:", err);
-                setGraceProgress({ message: e.data, progress: 0 });
+                if(grace) setGraceProgress({ message: e.data, progress: 0 });
+                if(domino) setDominoProgress({ message: e.data, progress: 0 });
             }
             if (e.data.includes("All done")) {
                 setStatus("done");
@@ -135,7 +143,7 @@ const Trial = () => {
         if (status === 'connected') {
             if (grace) {
                 setGraceProgress({ message: "Starting GRACE…", progress: 0 });
-                fetch(server + "/grace/predict", {
+                fetch(server + "/predict/grace", {
                     method: "POST",
                     headers: { "X-Signature": token },
                     body: createFormData()
@@ -145,7 +153,7 @@ const Trial = () => {
             }
             if (domino) {
                 setDominoProgress({ message: "Starting DOMINO…", progress: 0 });
-                fetch(server + "/predict_domino", {
+                fetch(server + "/predict/domino", {
                     method: "POST",
                     headers: { "X-Signature": token },
                     body: createFormData()
@@ -178,7 +186,7 @@ const Trial = () => {
 
     const fetchGraceOutput = async () => {
         console.log("Fetching GRACE output…");
-        const res = await fetch(server + "/grace/output", {
+        const res = await fetch(server + "/output/grace", {
             method: "GET",
             headers: { "X-Signature": token },
         });
@@ -196,6 +204,25 @@ const Trial = () => {
         console.log("✅ GRACE output loaded");
     };
 
+    const fetchDominoOutput = async () => {
+        console.log("Fetching DOMINO output…");
+        const res = await fetch(server + "/output/domino", {
+            method: "GET",
+            headers: { "X-Signature": token },
+        });
+        if (!res.ok) {
+            setGraceProgress({ message: res.statusText, progress: 0 });
+            return;
+        }
+        const blob = await res.blob();
+        const img = await NVImage.loadFromFile({
+            file: new File([await blob.arrayBuffer()], "DominoInference.nii.gz"),
+            colormap: "jet",
+            opacity: 1,
+        });
+        setgInferenceResults(img);
+        console.log("✅ DOMINO output loaded");
+    };
     // const startProcessing = async () => {
     //     setStatus('processing')
     //     const res = await fetch(`http://localhost:5500/process/${clientId}`, {
