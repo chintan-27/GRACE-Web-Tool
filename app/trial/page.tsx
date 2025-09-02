@@ -220,7 +220,7 @@ const Trial = () => {
             colormap: "jet",
             opacity: 1,
         });
-        setgInferenceResults(img);
+        setdInferenceResults(img);
         console.log("✅ DOMINO output loaded");
     };
     // const startProcessing = async () => {
