@@ -7,6 +7,8 @@ from fastapi import FastAPI, Request, BackgroundTasks, File, UploadFile, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel
+
 from werkzeug.utils import secure_filename
 from sse_starlette.sse import EventSourceResponse
 from typing import AsyncGenerator
@@ -37,12 +39,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class Client(BaseModel):
+    client_id: str
+    grace: bool
+    domino: bool
+    dominopp: bool
+
 # SSE stream setup
-async def sse_stream(client_id: str, queue: asyncio.Queue):
+async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
     try:
         while True:
             data = await asyncio.wait_for(queue.get(), timeout=100)
-            if data == "__CLOSE__":
+            if data == "__CLOSE__GRACE":
+                models.remove("GRACE")
+            elif data == "__CLOSE__DOMINO":
+                models.remove("DOMINO")
+            elif data == "__CLOSE__DOMINOPP":
+                models.remove("DOMINOPP")
+
+            if len(models) == 0:
                 break
 
             # turn your dict into a JSON string
@@ -60,11 +75,19 @@ async def sse_stream(client_id: str, queue: asyncio.Queue):
 async def root():
     return {"message": "Welcome to the SSE FastAPI server!"}
 
-@app.get("/stream/{client_id}")
-async def stream(client_id: str):
+@app.post("/stream/{grace}/{domino}/{dominopp}/{client_id}")
+async def stream(grace: str, domino: str, dominopp: str, client_id: str):
     queue = asyncio.Queue()
     clients[client_id] = queue
-    return EventSourceResponse(sse_stream(client_id, queue))
+    models = []
+    print(grace, domino, dominopp)
+#    if client.grace:
+#        models.append("GRACE")
+#    if client.domino:
+#        models.append("DOMINO")
+#    if clients.dominopp:
+#        models.append("DOMINOPP")
+    return EventSourceResponse(sse_stream(client_id, queue, models))
 
 def save_uploaded_file(file: UploadFile):
     filename = secure_filename(file.filename)
@@ -152,7 +175,7 @@ async def predict_grace(model: str, request: Request, file: UploadFile = File(..
         for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
             # ✅ use the captured loop
             asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
-        asyncio.run_coroutine_threadsafe(queue.put("__CLOSE__"), loop)
+        asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
 
     # ✅ run sync function in thread and don't await it
     asyncio.create_task(asyncio.to_thread(run_and_stream, model))
