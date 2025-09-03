@@ -117,6 +117,7 @@ const Trial = () => {
 			}
 		}
             } catch (err) {
+		console.log("in on message")
                 console.error("SSE error:", err);
                 if(grace) setGraceProgress({ message: e.data, progress: 0 });
                 if(domino) setDominoProgress({ message: e.data, progress: 0 });
@@ -128,6 +129,7 @@ const Trial = () => {
         };
 
         es.onerror = (err) => {
+	    console.log("In error")
             if (es.readyState !== EventSource.CLOSED) {
                 console.error("SSE error:", err);
                 setStatus("error");
