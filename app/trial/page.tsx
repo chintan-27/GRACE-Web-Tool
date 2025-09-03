@@ -102,7 +102,8 @@ const Trial = () => {
 
         es.onmessage = (e) => {
             // parse & log each event as soon as it arrives
-            try {
+            console.log(e)
+	    try {
                 const { model, message, progress } = JSON.parse(e.data);
 		if(model == "grace"){
                 	setGraceProgress({message: message, progress: progress});
