@@ -74,7 +74,7 @@ const Trial = () => {
                 setIsGz(gzipped);
 
                 const file = gzipped
-                    ? new File([pako.inflate(arr)], "uploaded_image.nii")
+                    ? new File([Uint8Array.from(pako.inflate(arr))], "uploaded_image.nii")
                     : new File([blob], "uploaded_image.nii");
 
                 setFileBlob(file);
