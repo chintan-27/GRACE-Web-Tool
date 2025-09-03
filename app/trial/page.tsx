@@ -93,7 +93,7 @@ const Trial = () => {
         if (esRef.current) return;
 
         setStatus("connecting");
-        const es = new EventSource(`${server}/stream/${token}`);
+        const es = new EventSource(`${server}/stream/${grace}/${domino}/${dominopp}/${token}`);
         esRef.current = es;
 
         es.onopen = () => {
