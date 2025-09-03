@@ -7,7 +7,6 @@ from fastapi import FastAPI, Request, BackgroundTasks, File, UploadFile, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel
 
 from werkzeug.utils import secure_filename
 from sse_starlette.sse import EventSourceResponse
@@ -39,12 +38,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-class Client(BaseModel):
-    client_id: str
-    grace: bool
-    domino: bool
-    dominopp: bool
-
 # SSE stream setup
 async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
     try:
@@ -56,18 +49,28 @@ async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
                 models.remove("DOMINO")
             elif data == "__CLOSE__DOMINOPP":
                 models.remove("DOMINOPP")
-
+            
             if len(models) == 0:
+                # Send a final completion message before closing
+                completion_message = json.dumps({
+                    "message": "All models completed successfully", 
+                    "progress": 100,
+                    "complete": True
+                })
+                yield f"{completion_message}\n\n"
                 break
-
-            # turn your dict into a JSON string
-            payload = json.dumps(data)
-            # **two newlines** mark the end of one event
+            
+            # Format the data properly for SSE
+            if isinstance(data, dict):
+                payload = json.dumps(data)
+            else:
+                payload = json.dumps({"message": str(data), "progress": 0})
+            
             print(f"{payload} from sse_stream")
-            yield payload
+            yield f"{payload}\n\n"
+            
     except asyncio.TimeoutError:
-        # keep‐alive
-        yield "event: ping\ndata: keep-alive\n\n"
+        yield "data: {\"message\": \"keep-alive\"}\n\n"
     finally:
         clients.pop(client_id, None)
 
@@ -75,18 +78,17 @@ async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
 async def root():
     return {"message": "Welcome to the SSE FastAPI server!"}
 
-@app.post("/stream/{grace}/{domino}/{dominopp}/{client_id}")
+@app.get("/stream/{grace}/{domino}/{dominopp}/{client_id}")
 async def stream(grace: str, domino: str, dominopp: str, client_id: str):
     queue = asyncio.Queue()
     clients[client_id] = queue
     models = []
-    print(grace, domino, dominopp)
-#    if client.grace:
-#        models.append("GRACE")
-#    if client.domino:
-#        models.append("DOMINO")
-#    if clients.dominopp:
-#        models.append("DOMINOPP")
+    if grace == "true":
+        models.append("GRACE")
+    if domino == "true":
+        models.append("DOMINO")
+    if dominopp == "true":
+        models.append("DOMINOPP")
     return EventSourceResponse(sse_stream(client_id, queue, models))
 
 def save_uploaded_file(file: UploadFile):
