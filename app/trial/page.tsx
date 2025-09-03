@@ -14,6 +14,8 @@ const Trial = () => {
     const grace = searchParams.get("grace") === "true";
     const domino = searchParams.get("domino") === "true";
     const dominopp = searchParams.get("dominopp") === "true";
+    let modelCount = [grace, domino, dominopp].filter(Boolean).length;
+
 
     // Image + loading state
     const [image, setImage] = useState<NVImage | null>(null);
@@ -101,36 +103,51 @@ const Trial = () => {
         };
 
         es.onmessage = (e) => {
-            // parse & log each event as soon as it arrives
-            console.log(e)
-	    try {
-                const { model, message, progress } = JSON.parse(e.data);
-		if(model == "grace"){
-                	setGraceProgress({message: message, progress: progress});
-                	if(progress === 100) {
-                    		fetchGraceOutput();
-                	}
-		} else if (model == "domino"){
-                	setDominoProgress({message: message, progress: progress});
-                	if(progress === 100) {
-                    		fetchDominoOutput();
-			}
-		}
+            try {
+                const { model, message, progress, complete } = JSON.parse(e.data);
+
+                // Check if this is the completion message
+                if (complete) {
+                    setStatus("done");
+                    es.close();
+                    return;
+                }
+
+                if (model == "grace") {
+                    setGraceProgress({ message: message, progress: progress });
+                    if (progress === 100) {
+                        fetchGraceOutput();
+                    }
+                } else if (model == "domino") {
+                    setDominoProgress({ message: message, progress: progress });
+                    if (progress === 100) {
+                        fetchDominoOutput();
+                    }
+                } else if (model == "dominopp") {
+                    setDppProgress({ message: message, progress: progress });
+                    if (progress === 100) {
+                        // Add fetchDominoPPOutput() when you implement it
+                    }
+                }
             } catch (err) {
-		console.log("in on message")
+                console.log("in on message")
                 console.error("SSE error:", err);
-                if(grace) setGraceProgress({ message: e.data, progress: 0 });
-                if(domino) setDominoProgress({ message: e.data, progress: 0 });
+                if (grace) setGraceProgress({ message: e.data, progress: 0 });
+                if (domino) setDominoProgress({ message: e.data, progress: 0 });
+                if (dominopp) setDppProgress({ message: e.data, progress: 0 });
             }
-            if (e.data.includes("All done")) {
-                setStatus("done");
-                es.close();
-            }
+
+            // Remove this check since we handle completion above
+            // if (e.data.includes("All done")) {
+            //     setStatus("done");
+            //     es.close();
+            // }
         };
 
         es.onerror = (err) => {
-	    console.log("In error")
-            if (es.readyState !== EventSource.CLOSED) {
+            console.log("EventSource error occurred");
+            // Only treat it as an error if we're not already done
+            if (status !== "done") {
                 console.error("SSE error:", err);
                 setStatus("error");
             }
