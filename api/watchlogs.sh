@@ -13,4 +13,4 @@ echo "Watching uvicorn logs with watch command..."
 echo "Press Ctrl+C to stop"
 
 # Use watch to continuously display the last 20 lines of the log
-watch -n 1 "tail -20 $LOG_FILE"
+watch -n 1 "tail -50 $LOG_FILE"

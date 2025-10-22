@@ -1,20 +1,25 @@
 import os
+import json
 import torch
 import numpy as np
 import nibabel as nib
+from asyncio import sleep
+from flask import Response
+from scipy.io import savemat
+from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, CropForegroundd
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd, ResizeWithPadOrCropd
 from monai.data import MetaTensor
 
 def send_progress(message, progress):
     """
         Helper function to send SSE progress updates
         @param message: Message about current stage of model prediction (str)
-        @param progress: Progress percentage (int)
-        @return: JSON Data: {"message": message, "progress": progress}
+        @param progess: Progress percentage: (int)
+        @return: JSON Data: {"message": message, "progress":progress}
     """
-    return {"model": "grace", "message": message, "progress": progress}   
+    return {"model": "grace", "message": message, "progress": progress}  
 
 def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
     """
@@ -29,6 +34,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     """
     yield send_progress("Configuring model...", 10)
 
+    # Domino Model source: https://github.com/lab-smile/GRACE/blob/main/test_grace.py
     model = UNETR(
         in_channels=1,
         out_channels=num_classes,
@@ -43,15 +49,20 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
         dropout_rate=0.0,
     )
 
+    # Data Parallel ? Wrap with torch.nn.DataParallel : Nothing
     # if dataparallel:
     #     yield send_progress("Initializing DataParallel with multiple GPUs", 15)
     #     model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
 
+    # Device configured in the grace_predict_single_file function
     model = model.to(device)
+
     yield send_progress(f"Loading model weights from {model_path}...", 20)
     
+    # Load weights
     state_dict = torch.load(model_path, map_location=device, weights_only=True)
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
+    
     model.load_state_dict(state_dict, strict=False)
     model.eval()
     
@@ -96,6 +107,8 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     if image_max > complexity_threshold:
         image_data = normalize_percentile(image_data)
         yield send_progress(f"Applied percentile normalization (due to max > {complexity_threshold})", 37)
+    elif image_max <= 255.0:
+        yield send_progress("Continued without normalization" , 37)
     else:
         image_data = normalize_fixed(image_data, a_min_value, a_max_value)
         yield send_progress(f"Applied fixed normalization: [{a_min_value}, {a_max_value}]", 37)
@@ -107,7 +120,7 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear")),
         Orientationd(keys=["image"], axcodes="RAS"),
-        CropForegroundd(keys=["image"], source_key="image", allow_smaller=True),
+#        CropForegroundd(keys=["image"], source_key="image"),
     ])
 
     yield send_progress("Applying spatial transforms...", 40)
@@ -118,7 +131,6 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     yield send_progress(f"Preprocessing complete. Final shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
 
-
 def save_predictions(predictions, input_img, output_dir, base_filename):
     """
         Save predictions as NIfTI and MAT files.
@@ -127,6 +139,7 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
         @param output_dir: Directory to save the output files (str)
         @param base_filename: Base filename for the saved output files (str)
     """
+    
     yield send_progress("Post-processing predictions...", 80)
     processed_preds = torch.argmax(predictions, dim=1).detach().cpu().numpy().squeeze()
     
@@ -136,11 +149,12 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     nii_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.nii.gz")
     nib.save(pred_img, nii_save_path)
     
-    # # Save as .mat
-    # yield send_progress("Saving MAT file...", 90)
-    # mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.mat")
-    # savemat(mat_save_path, {"testimage": processed_preds})
+    # Save as .mat
+    yield send_progress("Saving MAT file...", 90)
+    mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_GRACE.mat")
+    savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
+
 
 def grace_predict_single_file(input_path, output_dir="output", model_path="models/GRACE.pth",
                        spatial_size=(64, 64, 64), num_classes=12, dataparallel=False, num_gpu=1,
@@ -176,10 +190,12 @@ def grace_predict_single_file(input_path, output_dir="output", model_path="model
 
     # Perform inference
     yield send_progress("Starting sliding window inference...", 50)
+    
     with torch.no_grad():
         predictions = sliding_window_inference(
             image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
         )
+    
     yield send_progress("Inference completed successfully.", 75)
 
     # Save predictions
