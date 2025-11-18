@@ -23,7 +23,7 @@ export default function Home() {
 				<FileInput onFileChange={handleFileChange} />
 			</div>
 			<div className="flex flex-row mt-4 space-x-4">
-				
+
 				<label className={`flex items-center ${checkbox1 ? 'text-lime-600' : 'text-gray-500'}`}>
 					<input type="checkbox" checked={checkbox1} onChange={() => setCheckbox1(!checkbox1)} className="mr-2 h-5 w-5 text-lime-600 border-gray-300 rounded-sm focus:ring-lime-500" />
 					<span className="text-lg font-medium">GRACE</span>
@@ -37,18 +37,19 @@ export default function Home() {
 					<span className="text-lg font-medium">DOMINO++ (Model not available yet)</span>
 				</label>
 			</div>
-//			<Link 
-//			href={{
-//				pathname: '/results',
-//				query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
-//			}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
-//				Submit</Link>
+			{/* <Link
+				href={{
+					pathname: '/results',
+					query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
+				}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
+				Submit</Link> */}
+
 			<Link
 				href={{
-				pathname: '/trial', 
-				query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
-			}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
-				Results</Link>
+					pathname: '/trial',
+					query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
+				}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
+				Submit</Link>
 		</div>
 	);
 };
