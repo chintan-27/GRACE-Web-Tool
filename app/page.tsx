@@ -37,18 +37,18 @@ export default function Home() {
 					<span className="text-lg font-medium">DOMINO++ (Model not available yet)</span>
 				</label>
 			</div>
-			<Link 
-			href={{
-				pathname: '/results',
-				query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
-			}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
-				Submit</Link>
+//			<Link 
+//			href={{
+//				pathname: '/results',
+//				query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
+//			}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
+//				Submit</Link>
 			<Link
 				href={{
 				pathname: '/trial', 
 				query: { file: fileUrl, grace: checkbox1, domino: checkbox2, dominopp: checkbox3 } // Pass the checkbox states here
 			}} className={`font-bold py-2 px-4 rounded-sm mt-10 ${!isAnyCheckboxChecked ? 'pointer-events-none bg-lime-950 text-gray' : 'bg-lime-700 hover:bg-lime-800 duration-200 text-white'}`}>
-				Trial</Link>
+				Results</Link>
 		</div>
 	);
 };
