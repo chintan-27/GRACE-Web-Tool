@@ -177,7 +177,7 @@ const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }:
 								{modelKey.toUpperCase()}
 							</div>
 
-							{progress < 100 && (
+							{/* {progress < 100 && (
 								<div className="w-full px-4 mt-2">
 									<div className="text-sm text-center text-white mb-1">
 										{progressMap?.[modelKey]?.message}
@@ -189,7 +189,7 @@ const NiiVueComponent = ({ image, inferredImages, selectedModels, progressMap }:
 										/>
 									</div>
 								</div>
-							)}
+							)} */}
 
 							{progress === 100 && (
 								<button

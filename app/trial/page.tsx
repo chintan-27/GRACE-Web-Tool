@@ -1,4 +1,5 @@
 "use client";
+
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState, useRef } from "react";
 import { NVImage } from "@niivue/niivue";
@@ -7,8 +8,11 @@ import crypto from "crypto";
 import { SignJWT } from "jose";
 import NiiVueComponent from "../components/niivue";
 
+type Status = "idle" | "connecting" | "streaming" | "done" | "error";
+
 const Trial = () => {
   const searchParams = useSearchParams();
+
   const fileUrl = searchParams.get("file") || "";
   const grace = searchParams.get("grace") === "true";
   const domino = searchParams.get("domino") === "true";
@@ -18,13 +22,12 @@ const Trial = () => {
 
   const modelCount = [grace, domino, dominopp].filter(Boolean).length;
 
-  // Image + loading state
+  // Image + loading
   const [image, setImage] = useState<NVImage | null>(null);
   const [loading, setLoading] = useState(true);
-  const [isGz, setIsGz] = useState(false);
   const [fileBlob, setFileBlob] = useState<Blob | null>(null);
 
-  // Progress state
+  // Per-model progress
   const [graceProgress, setGraceProgress] = useState({
     message: "Setting up the connection to the server",
     progress: 0,
@@ -38,7 +41,7 @@ const Trial = () => {
     progress: 0,
   });
 
-  // Inference results
+  // Inference images
   const [ginferenceResults, setgInferenceResults] = useState<NVImage | null>(
     null,
   );
@@ -48,35 +51,49 @@ const Trial = () => {
   const [dppinferenceResults, setdppInferenceResults] =
     useState<NVImage | null>(null);
 
+  // Global status + log
   const [messages, setMessages] = useState<string[]>([]);
-  const [status, setStatus] = useState<
-    "idle" | "connecting" | "connected" | "done" | "error"
-  >("idle");
+  const [status, setStatus] = useState<Status>("idle");
   const [token, setToken] = useState<string>("");
 
+  const statusRef = useRef<Status>("idle");
   const startedRef = useRef(false);
   const esRef = useRef<EventSource | null>(null);
+  const completedRef = useRef<Record<string, boolean>>({});
 
+  useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+
+  // backend config
   const server = process.env.server || "https://flask.thecka.tech";
   const secret1 = process.env.NEXT_PUBLIC_API_SECRET || "default_secret";
   const secret2 = process.env.NEXT_JWT_SECRET || "default_secret";
 
-  // Get JWT
+  // ---------- 1) Create JWT ----------
   useEffect(() => {
     (async () => {
-      const ts = (Date.now() + 15 * 60 * 1000).toString();
-      const signature = crypto.createHmac("sha256", secret1).update(ts).digest("hex");
-      const key = new TextEncoder().encode(secret2);
+      try {
+        const ts = (Date.now() + 15 * 60 * 1000).toString();
+        const signature = crypto
+          .createHmac("sha256", secret1)
+          .update(ts)
+          .digest("hex");
+        const key = new TextEncoder().encode(secret2);
 
-      const jwt = await new SignJWT({ ts, signature })
-        .setProtectedHeader({ alg: "HS256" })
-        .setExpirationTime("15m")
-        .sign(key);
-      setToken(jwt);
-    })().catch((err) => console.error("JWT error:", err));
+        const jwt = await new SignJWT({ ts, signature })
+          .setProtectedHeader({ alg: "HS256" })
+          .setExpirationTime("15m")
+          .sign(key);
+
+        setToken(jwt);
+      } catch {
+        setStatus("error");
+      }
+    })();
   }, [secret1, secret2]);
 
-  // Load image from blob URL
+  // ---------- 2) Load image from blob URL ----------
   useEffect(() => {
     if (startedRef.current) return;
     if (!fileUrl) return;
@@ -89,7 +106,6 @@ const Trial = () => {
       .then(async (blob) => {
         const arr = new Uint8Array(await blob.arrayBuffer());
         const gzipped = arr[0] === 0x1f && arr[1] === 0x8b;
-        setIsGz(gzipped);
 
         const file = gzipped
           ? new File([Uint8Array.from(pako.inflate(arr))], "uploaded_image.nii")
@@ -99,149 +115,14 @@ const Trial = () => {
 
         const nv = await NVImage.loadFromFile({ file, colormap: "gray" });
         setImage(nv);
-        console.log("✅ Image loaded");
       })
-      .catch((err) => console.error("❌ Load image error:", err))
+      .catch(() => {
+        setStatus("error");
+      })
       .finally(() => setLoading(false));
   }, [fileUrl]);
 
-  // SSE: stream progress / messages
-  useEffect(() => {
-    // don’t run until we have both token and fileBlob
-    if (!token || !fileBlob) return;
-    // only open once
-    if (esRef.current) return;
-
-    setStatus("connecting");
-    setMessages((prev) => [...prev, "[system] Connecting to streaming endpoint…"]);
-
-    const es = new EventSource(
-      `${server}/stream/${grace}/${domino}/${dominopp}/${token}`,
-    );
-    esRef.current = es;
-
-    es.onopen = () => {
-      setStatus("connected");
-      setMessages((prev) => [
-        ...prev,
-        "[system] Connection established. Starting models…",
-      ]);
-    };
-
-    es.onmessage = (e) => {
-      try {
-        const { model, message, progress, complete } = JSON.parse(e.data);
-
-        if (complete) {
-          setStatus("done");
-          setMessages((prev) => [
-            ...prev,
-            "[system] All models finished processing.",
-          ]);
-          es.close();
-          return;
-        }
-
-        if (model === "grace") {
-          setGraceProgress({ message, progress });
-          setMessages((prev) => [...prev, `[GRACE] ${message} (${progress}%)`]);
-          if (progress === 100) {
-            fetchGraceOutput();
-          }
-        } else if (model === "domino") {
-          setDominoProgress({ message, progress });
-          setMessages((prev) => [...prev, `[DOMINO] ${message} (${progress}%)`]);
-          if (progress === 100) {
-            fetchDominoOutput();
-          }
-        } else if (model === "dominopp") {
-          setDppProgress({ message, progress });
-          setMessages((prev) => [
-            ...prev,
-            `[DOMINO++] ${message} (${progress}%)`,
-          ]);
-          if (progress === 100) {
-            // Add fetchDominoPPOutput() when you implement it
-          }
-        }
-      } catch (err) {
-        console.log("in on message");
-        console.error("SSE error:", err);
-        setMessages((prev) => [...prev, `⚠️ SSE parse error: ${String(err)}`]);
-
-        if (grace) setGraceProgress({ message: e.data, progress: 0 });
-        if (domino) setDominoProgress({ message: e.data, progress: 0 });
-        if (dominopp) setDppProgress({ message: e.data, progress: 0 });
-      }
-    };
-
-    es.onerror = (err) => {
-      console.log("EventSource error occurred");
-      if (status !== "done") {
-        console.error("SSE error:", err);
-        setStatus("error");
-        setMessages((prev) => [
-          ...prev,
-          "[system] Connection error. Check backend logs.",
-        ]);
-      }
-      es.close();
-    };
-
-    return () => {
-      es.close();
-    };
-  }, [token, fileBlob, grace, domino, dominopp, server, status]);
-
-  // Kick off predictions once connected
-  useEffect(() => {
-    if (status === "connected") {
-      if (grace) {
-        setGraceProgress({ message: "Starting GRACE…", progress: 0 });
-        fetch(server + "/predict/grace", {
-          method: "POST",
-          headers: { "X-Signature": token },
-          body: createFormData(),
-        })
-          .then((r) => {
-            if (!r.ok) throw new Error(r.statusText);
-          })
-          .catch((err) =>
-            setGraceProgress({ message: err.message, progress: 0 }),
-          );
-      }
-      if (domino) {
-        setDominoProgress({ message: "Starting DOMINO…", progress: 0 });
-        fetch(server + "/predict/domino", {
-          method: "POST",
-          headers: { "X-Signature": token },
-          body: createFormData(),
-        })
-          .then((r) => {
-            if (!r.ok) throw new Error(r.statusText);
-          })
-          .catch((err) =>
-            setDominoProgress({ message: err.message, progress: 0 }),
-          );
-      }
-      if (dominopp) {
-        setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
-        fetch(server + "/predict_dpp", {
-          method: "POST",
-          headers: { "X-Signature": token },
-          body: createFormData(),
-        })
-          .then((r) => {
-            if (!r.ok) throw new Error(r.statusText);
-          })
-          .catch((err) =>
-            setDppProgress({ message: err.message, progress: 0 }),
-          );
-      }
-    }
-  }, [status]);
-
-  // Helpers
+  // Helper to build form data
   const createFormData = () => {
     const fd = new FormData();
     if (fileBlob) {
@@ -254,51 +135,289 @@ const Trial = () => {
     return fd;
   };
 
+  // ---------- 3) Fetch outputs (update progress too) ----------
   const fetchGraceOutput = async () => {
-    console.log("Fetching GRACE output…");
-    const res = await fetch(server + "/output/grace", {
-      method: "GET",
-      headers: { "X-Signature": token },
-    });
-    if (!res.ok) {
-      setGraceProgress({ message: res.statusText, progress: 0 });
-      return;
+    try {
+      const res = await fetch(server + "/output/grace", {
+        method: "GET",
+        headers: { "X-Signature": token },
+      });
+      if (!res.ok) {
+        setGraceProgress((prev) => ({
+          ...prev,
+          message: res.statusText,
+        }));
+        return;
+      }
+      const blob = await res.blob();
+      const img = await NVImage.loadFromFile({
+        file: new File([await blob.arrayBuffer()], "GraceInference.nii.gz"),
+        colormap: "jet",
+        opacity: 1,
+      });
+      setgInferenceResults(img);
+      setGraceProgress((prev) => ({
+        ...prev,
+        progress: 100,
+        message: "GRACE output ready",
+      }));
+    } catch (err: any) {
+      setGraceProgress((prev) => ({
+        ...prev,
+        message: err?.message ?? "Output error",
+      }));
     }
-    const blob = await res.blob();
-    const img = await NVImage.loadFromFile({
-      file: new File([await blob.arrayBuffer()], "GraceInference.nii.gz"),
-      colormap: "jet",
-      opacity: 1,
-    });
-    setgInferenceResults(img);
-    console.log("✅ GRACE output loaded");
   };
 
   const fetchDominoOutput = async () => {
-    console.log("Fetching DOMINO output…");
-    const res = await fetch(server + "/output/domino", {
-      method: "GET",
-      headers: { "X-Signature": token },
-    });
-    if (!res.ok) {
-      setGraceProgress({ message: res.statusText, progress: 0 });
-      return;
+    try {
+      const res = await fetch(server + "/output/domino", {
+        method: "GET",
+        headers: { "X-Signature": token },
+      });
+      if (!res.ok) {
+        setDominoProgress((prev) => ({
+          ...prev,
+          message: res.statusText,
+        }));
+        return;
+      }
+      const blob = await res.blob();
+      const img = await NVImage.loadFromFile({
+        file: new File([await blob.arrayBuffer()], "DominoInference.nii.gz"),
+        colormap: "jet",
+        opacity: 1,
+      });
+      setdInferenceResults(img);
+      setDominoProgress((prev) => ({
+        ...prev,
+        progress: 100,
+        message: "DOMINO output ready",
+      }));
+    } catch (err: any) {
+      setDominoProgress((prev) => ({
+        ...prev,
+        message: err?.message ?? "Output error",
+      }));
     }
-    const blob = await res.blob();
-    const img = await NVImage.loadFromFile({
-      file: new File([await blob.arrayBuffer()], "DominoInference.nii.gz"),
-      colormap: "jet",
-      opacity: 1,
-    });
-    setdInferenceResults(img);
-    console.log("✅ DOMINO output loaded");
   };
 
-  // Status pills / helpers
+  // ---------- 4) SSE + /predict (open once) ----------
+  useEffect(() => {
+    if (!token || !fileBlob) return;
+    if (esRef.current) return; // don't create multiple EventSources
+
+    setStatus("connecting");
+    setMessages((prev) => [
+      ...prev,
+      "[system] Connecting to streaming endpoint…",
+    ]);
+
+    const es = new EventSource(
+      `${server}/stream/${grace}/${domino}/${dominopp}/${token}`,
+    );
+    esRef.current = es;
+
+    es.onopen = () => {
+      setStatus("streaming");
+      setMessages((prev) => [
+        ...prev,
+        "[system] Connection established. Starting models…",
+      ]);
+
+      const fd = createFormData();
+
+      if (grace) {
+        setGraceProgress({ message: "Starting GRACE…", progress: 0 });
+        fetch(server + "/predict/grace", {
+          method: "POST",
+          headers: { "X-Signature": token },
+          body: fd,
+        }).catch((err: any) => {
+          setGraceProgress({
+            message: err?.message ?? "Predict error",
+            progress: 0,
+          });
+        });
+      }
+
+      if (domino) {
+        setDominoProgress({ message: "Starting DOMINO…", progress: 0 });
+        fetch(server + "/predict/domino", {
+          method: "POST",
+          headers: { "X-Signature": token },
+          body: fd,
+        }).catch((err: any) => {
+          setDominoProgress({
+            message: err?.message ?? "Predict error",
+            progress: 0,
+          });
+        });
+      }
+
+      if (dominopp) {
+        setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
+        fetch(server + "/predict_dpp", {
+          method: "POST",
+          headers: { "X-Signature": token },
+          body: fd,
+        }).catch((err: any) => {
+          setDppProgress({
+            message: err?.message ?? "Predict error",
+            progress: 0,
+          });
+        });
+      }
+    };
+
+    es.onmessage = (e) => {
+      try {
+        const payload = JSON.parse(e.data);
+        const { model, message, progress, complete } = payload as {
+          model?: string;
+          message?: string;
+          progress?: number;
+          complete?: boolean;
+        };
+
+        if (model) {
+          setMessages((prev) => [
+            ...prev,
+            `[${model.toUpperCase()}] ${message ?? ""} ${
+              typeof progress === "number" ? `(${progress}%)` : ""
+            }`.trim(),
+          ]);
+        } else {
+          setMessages((prev) => [...prev, message ?? e.data]);
+        }
+
+        if (model === "grace") {
+          setGraceProgress((prev) => ({
+            message: message ?? prev.message,
+            progress:
+              typeof progress === "number" ? progress : prev.progress,
+          }));
+        } else if (model === "domino") {
+          setDominoProgress((prev) => ({
+            message: message ?? prev.message,
+            progress:
+              typeof progress === "number" ? progress : prev.progress,
+          }));
+        } else if (model === "dominopp") {
+          setDppProgress((prev) => ({
+            message: message ?? prev.message,
+            progress:
+              typeof progress === "number" ? progress : prev.progress,
+          }));
+        }
+
+        if (complete) {
+          if (model) {
+            completedRef.current[model] = true;
+
+            if (model === "grace") {
+              setGraceProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "GRACE complete, fetching output…",
+              }));
+              fetchGraceOutput();
+            } else if (model === "domino") {
+              setDominoProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "DOMINO complete, fetching output…",
+              }));
+              fetchDominoOutput();
+            } else if (model === "dominopp") {
+              setDppProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "DOMINO++ complete",
+              }));
+            }
+          } else {
+            if (grace) {
+              completedRef.current["grace"] = true;
+              setGraceProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "GRACE complete, fetching output…",
+              }));
+              fetchGraceOutput();
+            }
+            if (domino) {
+              completedRef.current["domino"] = true;
+              setDominoProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "DOMINO complete, fetching output…",
+              }));
+              fetchDominoOutput();
+            }
+            if (dominopp) {
+              completedRef.current["dominopp"] = true;
+              setDppProgress((prev) => ({
+                ...prev,
+                progress: Math.max(prev.progress, 95),
+                message: "DOMINO++ complete",
+              }));
+            }
+          }
+
+          const needed = [
+            grace ? "grace" : null,
+            domino ? "domino" : null,
+            dominopp ? "dominopp" : null,
+          ].filter(Boolean) as string[];
+
+          const allDone =
+            needed.length > 0 &&
+            needed.every((m) => completedRef.current[m] === true);
+
+          if (allDone) {
+            setStatus("done");
+            setMessages((prev) => [
+              ...prev,
+              "[system] All selected models finished processing.",
+            ]);
+
+            es.close();
+            esRef.current = null;
+          }
+        }
+      } catch (err) {
+        setMessages((prev) => [
+          ...prev,
+          `⚠️ SSE parse error: ${String(err)}`,
+        ]);
+      }
+    };
+
+    es.onerror = () => {
+      if (statusRef.current !== "done") {
+        setStatus("error");
+        setMessages((prev) => [
+          ...prev,
+          "[system] Connection error. Check backend logs.",
+        ]);
+      }
+      es.close();
+      esRef.current = null;
+    };
+
+    return () => {
+      es.close();
+      esRef.current = null;
+    };
+  }, [token, fileBlob, grace, domino, dominopp, server]);
+
+  // ---------- UI helpers ----------
+
   const statusLabel = () => {
     if (status === "idle") return "Idle";
     if (status === "connecting") return "Connecting";
-    if (status === "connected") return "Streaming";
+    if (status === "streaming") return "Streaming";
     if (status === "done") return "Completed";
     if (status === "error") return "Error";
     return status;
@@ -308,7 +427,7 @@ const Trial = () => {
     switch (status) {
       case "connecting":
         return "border-amber-500/60 bg-amber-500/10 text-amber-100";
-      case "connected":
+      case "streaming":
         return "border-emerald-500/60 bg-emerald-500/10 text-emerald-100";
       case "done":
         return "border-neutral-500/60 bg-neutral-500/10 text-neutral-100";
@@ -326,7 +445,7 @@ const Trial = () => {
     progressState: { message: string; progress: number },
   ) => {
     const { message, progress } = progressState;
-    const isComplete = progress === 100;
+    const isComplete = progress >= 100;
     const isDisabled = !enabled;
     const baseColor =
       key === "grace"
@@ -341,7 +460,7 @@ const Trial = () => {
         ? "Error"
         : isComplete
           ? "Completed"
-          : status === "connected" || status === "connecting"
+          : status === "streaming" || status === "connecting"
             ? "Running"
             : "Queued";
 
@@ -396,7 +515,9 @@ const Trial = () => {
     );
   };
 
-  const recentMessages = messages.slice(-20);
+  const recentMessages = messages.slice(-50);
+
+  // ---------- JSX ----------
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 text-neutral-50">
@@ -424,7 +545,7 @@ const Trial = () => {
                   ? "bg-emerald-400"
                   : status === "error"
                     ? "bg-red-400"
-                    : status === "connected"
+                    : status === "streaming"
                       ? "bg-emerald-400 animate-pulse"
                       : status === "connecting"
                         ? "bg-amber-400 animate-pulse"
@@ -455,8 +576,8 @@ const Trial = () => {
           </div>
           <div className="rounded-3xl border border-neutral-800 bg-neutral-950/80 p-6">
             <p className="text-xs text-neutral-400">
-              Waiting for image to load. Once ready, real-time logs from the
-              backend will appear here as each model progresses.
+              Once the image loads, real-time logs from the backend will appear
+              here as each model progresses.
             </p>
           </div>
         </div>
@@ -504,7 +625,7 @@ const Trial = () => {
               </div>
             </div>
 
-            {/* "deployment" log */}
+            {/* live log */}
             <div className="rounded-3xl border border-neutral-800 bg-neutral-950/90 p-4 flex flex-col h-[260px]">
               <div className="flex items-center justify-between mb-2">
                 <h2 className="text-xs font-semibold uppercase tracking-wide text-neutral-300">
