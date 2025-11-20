@@ -52,8 +52,6 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     # if dataparallel:
     #     yield send_progress("Initializing DataParallel with multiple GPUs", 15)
     #     model = torch.nn.DataParallel(model, device_ids=list(range(num_gpu)))
-
-    # Device configured in the grace_predict_single_file function
     model = model.to(device)
 
     yield send_progress(f"Loading model weights from {model_path}...", 20)
