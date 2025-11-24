@@ -149,7 +149,7 @@ export default function Home() {
                     checked={dominopp}
                     onChange={() => setDominopp((prev) => !prev)}
                     className="h-4 w-4 accent-amber-500"
-                  />  q
+                  /> 
                   <span className="font-medium">DOMINO++</span>
                   {/* <span className="text-[10px] uppercase tracking-wide text-neutral-500 ml-1">
                     Coming soon
