@@ -137,19 +137,18 @@ export default function Home() {
                 </label>
 
                 <label
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 cursor-pointer transition-colors $2{
-                    dominopp
+                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 cursor-pointer transition-colors ${
+                    domino
                       ? "border-amber-500 bg-amber-500/15 text-amber-100"
                       : "border-neutral-700 text-neutral-200 hover:border-neutral-500 hover:bg-neutral-900"
                   }`}
-                  // title="Model not available yet"
                 >
                   <input
                     type="checkbox"
-                    checked={dominopp}
+                    checked={domino}
                     onChange={() => setDominopp((prev) => !prev)}
                     className="h-4 w-4 accent-amber-500"
-                  /> 
+                  />
                   <span className="font-medium">DOMINO++</span>
                   {/* <span className="text-[10px] uppercase tracking-wide text-neutral-500 ml-1">
                     Coming soon
