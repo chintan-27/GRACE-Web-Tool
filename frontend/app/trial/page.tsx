@@ -202,6 +202,38 @@ const Trial = () => {
     }
   };
 
+    const fetchDominoppOutput = async () => {
+    try {
+      const res = await fetch(server + "/output/dominopp", {
+        method: "GET",
+        headers: { "X-Signature": token },
+      });
+      if (!res.ok) {
+        setDominoProgress((prev) => ({
+          ...prev,
+          message: res.statusText,
+        }));
+        return;
+      }
+      const blob = await res.blob();
+      const img = await NVImage.loadFromFile({
+        file: new File([await blob.arrayBuffer()], "DominoppInference.nii.gz"),
+        colormap: "jet",
+        opacity: 1,
+      });
+      setdInferenceResults(img);
+      setDominoProgress((prev) => ({
+        ...prev,
+        progress: 100,
+        message: "DOMINO output ready",
+      }));
+    } catch (err: any) {
+      setDominoProgress((prev) => ({
+        ...prev,
+        message: err?.message ?? "Output error",
+      }));
+    }
+  };
   // ---------- 4) SSE + /predict (open once) ----------
   useEffect(() => {
     if (!token || !fileBlob) return;
@@ -257,7 +289,7 @@ const Trial = () => {
 
       if (dominopp) {
         setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
-        fetch(server + "/predict_dpp", {
+        fetch(server + "/predict/dominopp", {
           method: "POST",
           headers: { "X-Signature": token },
           body: fd,
@@ -335,6 +367,7 @@ const Trial = () => {
                 progress: Math.max(prev.progress, 95),
                 message: "DOMINO++ complete",
               }));
+              fetchDominoppOutput();
             }
           } else {
             if (grace) {
@@ -362,6 +395,7 @@ const Trial = () => {
                 progress: Math.max(prev.progress, 95),
                 message: "DOMINO++ complete",
               }));
+              fetchDominoppOutput();
             }
           }
 
