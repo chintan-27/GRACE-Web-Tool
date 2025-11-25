@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+redis
+pydantic
+python-dotenv
+nibabel
+monai
+torch
+h11
+python-multipart
