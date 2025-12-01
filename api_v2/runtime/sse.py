@@ -7,7 +7,7 @@ from typing import Dict, Generator
 # from fastapi import HTTPException
 # from fastapi.responses import StreamingResponse
 
-from config import SSE_SECRET
+from config import HMAC_SECRET
 from services.redis_client import redis_client
 from runtime.session import session_log
 
@@ -22,7 +22,7 @@ def sign_event(event: Dict) -> str:
     """
     raw = json.dumps(event, sort_keys=True).encode("utf-8")
     signature = hmac.new(
-        SSE_SECRET.encode("utf-8"),
+        HMAC_SECRET.encode("utf-8"),
         raw,
         hashlib.sha256
     ).hexdigest()
