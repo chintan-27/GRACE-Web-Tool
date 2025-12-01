@@ -70,7 +70,7 @@ async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
             yield f"{payload}\n\n"
             
     except asyncio.TimeoutError:
-        yield "data: {\"message\": \"keep-alive\"}\n\n"
+        print("data: {\"message\": \"keep-alive\"}\n\n")
     finally:
         clients.pop(client_id, None)
 
