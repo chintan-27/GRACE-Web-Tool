@@ -1,117 +1,138 @@
-import json
 import redis
-from typing import Optional, Dict, Any, List
+import json
+from config import REDIS_HOST, REDIS_PORT, REDIS_DB
 
-from config import (
-    REDIS_HOST,
-    REDIS_PORT,
-    REDIS_DB,
-    REDIS_PREFIX,
-    GPU_COUNT,
-)
-
-# -------------------------------------------------------
-# CONNECT TO REDIS
-# -------------------------------------------------------
+# -------------------------------------------------------------
+# Redis client
+# -------------------------------------------------------------
 redis_client = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
     db=REDIS_DB,
-    decode_responses=True  # return strings, not bytes
+    decode_responses=True
 )
 
-# -------------------------------------------------------
-# KEY HELPERS
-# -------------------------------------------------------
-def _key(*parts):
-    """Create namespaced redis keys"""
-    return f"{REDIS_PREFIX}:" + ":".join(str(p) for p in parts)
+JOB_QUEUE = "job_queue"
+GPU_POOL = "gpu_pool"              # set of free GPUs
+SESSION_STATUS = "session_status"  # hash: session -> status
+PROGRESS_KEY = "progress"          # hash: session:model -> %
+EVENT_STREAM = "sse_events"        # list
+JOB_STATUS = "job_status"          # hash: session:model -> status
 
-# -------------------------------------------------------
-# JOB QUEUE
-# -------------------------------------------------------
-def enqueue_job(job: Dict[str, Any]):
+
+# -------------------------------------------------------------
+# Queue handling
+# -------------------------------------------------------------
+def enqueue_job(job_dict: dict):
     """
-    job = {
-        "session_id": "...",
-        "model": "grace-native",
-        "space": "freesurfer",
+    Adds a job to the queue. job_dict must include:
+    {
+        "session_id": str,
+        "model": str,
+        "gpu": None (initial),
+        "input_path": str,
+        "space": str,
+        ...
     }
     """
-    redis_client.rpush(_key("queue", "jobs"), json.dumps(job))
+    redis_client.rpush(JOB_QUEUE, json.dumps(job_dict))
 
-def dequeue_job() -> Optional[Dict[str, Any]]:
-    raw = redis_client.lpop(_key("queue", "jobs"))
-    if raw is None:
+
+def pop_job():
+    """
+    Pops next job from queue.
+    """
+    job = redis_client.lpop(JOB_QUEUE)
+    if not job:
         return None
-    return json.loads(raw)
+    return json.loads(job)
 
-def queue_length() -> int:
-    return redis_client.llen(_key("queue", "jobs"))
 
-# -------------------------------------------------------
-# SESSION STATUS
-# -------------------------------------------------------
+def get_queue_position(session_id: str) -> int:
+    """
+    Returns the 0-based queue position for the first job with this session ID.
+    This is used by frontend after /predict.
+    """
+    queue = redis_client.lrange(JOB_QUEUE, 0, -1)
+    for idx, raw in enumerate(queue):
+        job = json.loads(raw)
+        if job.get("session_id") == session_id:
+            return idx
+    return -1
+
+
+# -------------------------------------------------------------
+# Session status
+# -------------------------------------------------------------
 def set_session_status(session_id: str, status: str):
-    redis_client.set(_key("session", session_id, "status"), status)
+    redis_client.hset(SESSION_STATUS, session_id, status)
 
-def get_session_status(session_id: str) -> Optional[str]:
-    return redis_client.get(_key("session", session_id, "status"))
 
-# -------------------------------------------------------
-# PER-MODEL PROGRESS
-# -------------------------------------------------------
-def set_progress(session_id: str, model: str, progress: int):
-    redis_client.set(_key("session", session_id, model, "progress"), progress)
+def get_session_status(session_id: str):
+    return redis_client.hget(SESSION_STATUS, session_id)
 
-def get_progress(session_id: str, model: str) -> int:
-    val = redis_client.get(_key("session", session_id, model, "progress"))
-    return int(val) if val is not None else 0
 
-# -------------------------------------------------------
-# GPU STATE MANAGEMENT
-# -------------------------------------------------------
-def lock_gpu(gpu_id: int, session_id: str, model: str) -> bool:
+# -------------------------------------------------------------
+# Job status
+# -------------------------------------------------------------
+def set_job_status(session_id: str, model: str, status: str):
     """
-    Attempt to reserve a GPU.
-    Returns True if successful.
+    per-model job state:
+      queued, assigned, running, complete, error
     """
-    key = _key("gpu", gpu_id, "busy")
+    redis_client.hset(f"{JOB_STATUS}:{session_id}", model, status)
 
-    # Use SETNX pattern
-    acquired = redis_client.setnx(key, f"{session_id}:{model}")
 
-    if acquired:
-        redis_client.expire(key, 3600)  # safety timeout
-        return True
+def get_job_status(session_id: str, model: str):
+    return redis_client.hget(f"{JOB_STATUS}:{session_id}", model)
 
-    return False
 
-def unlock_gpu(gpu_id: int):
-    redis_client.delete(_key("gpu", gpu_id, "busy"))
-
-def get_gpu_assignments() -> Dict[int, str]:
-    assignments = {}
-    for gpu in range(GPU_COUNT):
-        val = redis_client.get(_key("gpu", gpu, "busy"))
-        assignments[gpu] = val if val else "free"
-    return assignments
-
-# -------------------------------------------------------
-# SSE EVENT BUFFER
-# -------------------------------------------------------
-def push_sse_event(session_id: str, event: Dict[str, Any]):
-    redis_client.rpush(_key("sse", session_id, "events"), json.dumps(event))
-
-def pop_sse_events(session_id: str) -> List[Dict[str, Any]]:
+# -------------------------------------------------------------
+# GPU reservation pool
+# -------------------------------------------------------------
+def init_gpu_pool(gpu_count: int):
     """
-    Returns all queued SSE events and clears buffer.
+    Initializes the GPU pool (free GPUs).
     """
-    key = _key("sse", session_id, "events")
-    raw_events = redis_client.lrange(key, 0, -1)
-    redis_client.delete(key)
+    redis_client.delete(GPU_POOL)
+    for gpu in range(gpu_count):
+        redis_client.sadd(GPU_POOL, gpu)
 
-    return [json.loads(e) for e in raw_events]
+
+def reserve_gpu() -> int | None:
+    """
+    Reserves and returns a GPU index, or None if none free.
+    """
+    gpu = redis_client.spop(GPU_POOL)
+    return int(gpu) if gpu is not None else None
+
+
+def free_gpu(gpu_index: int):
+    """
+    Marks a GPU as free.
+    """
+    redis_client.sadd(GPU_POOL, gpu_index)
+
+
+# -------------------------------------------------------------
+# Progress handling
+# -------------------------------------------------------------
+def set_progress(session_id: str, model: str, progress: float):
+    key = f"{session_id}:{model}"
+    redis_client.hset(PROGRESS_KEY, key, progress)
+
+
+def get_progress(session_id: str, model: str) -> float:
+    key = f"{session_id}:{model}"
+    p = redis_client.hget(PROGRESS_KEY, key)
+    return float(p) if p else 0.0
+
+
+# -------------------------------------------------------------
+# SSE events (optional ring buffer)
+# -------------------------------------------------------------
+def push_sse_event(event: dict):
+    redis_client.rpush(EVENT_STREAM, json.dumps(event))
 
 # -------------------------------------------------------
 # CLEANUP

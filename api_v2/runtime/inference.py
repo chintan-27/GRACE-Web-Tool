@@ -8,7 +8,11 @@ from runtime.session import (
 )
 from runtime.freesurfer import convert_to_fs
 from runtime.registry import get_model_config
-from services.redis_client import push_sse_event, set_job_status
+from services.redis_client import (
+    enqueue_sse,
+    set_job_status,
+)
+from runtime.sse import push_sse_event   # <-- FIXED
 
 
 class InferenceOrchestrator:
@@ -16,104 +20,120 @@ class InferenceOrchestrator:
     Orchestrates each inference job BEFORE the scheduler runs ModelRunner.
 
     Responsibilities:
-    - Determine which input (native or FS) to use for each model
-    - Convert to FreeSurfer space ONCE if necessary
-    - Produce a clean job definition for the scheduler
-    - Top-level SSE announcements
+      - Convert to FreeSurfer once if needed
+      - Decide per-model input (native or fs)
+      - Build execution plan for scheduler
+      - Emit high-level SSE events
+      - Log session lifecycle
     """
 
     def __init__(self, session_id: str, models: List[str], space: str):
         self.session_id = session_id
         self.models = models
-        self.space = space
+        self.space = space   # "native" or "freesurfer"
 
-        # paths
+        # Session input paths
         self.native_path = session_input_native(session_id)
         self.fs_path = session_input_fs(session_id)
 
-    # -------------------------------------------------------
-    def prepare_inputs(self):
+    # --------------------------------------------------------------------
+    def prepare_inputs(self) -> Path:
         """
-        Ensure correct input exists:
-        - native always exists (uploaded)
-        - FS input only exists if converted
+        Ensure correct input files are ready:
+          - Native NIfTI always exists
+          - FS input created only once
+        Returns path to whichever input is relevant for orchestrator-level operations.
         """
 
-        session_log(self.session_id, "Preparing inputs...")
+        session_log(self.session_id, "Preparing inputs…")
 
         if self.space == "native":
-            session_log(self.session_id, "Using native T1 as input.")
+            session_log(self.session_id, "Using native T1 input.")
             return self.native_path
 
-        elif self.space == "freesurfer":
-            # If FS already exists, skip conversion
+        if self.space == "freesurfer":
+            # If FS already exists from previous job continuation
             if self.fs_path.exists():
-                session_log(self.session_id, "FS input already exists, skipping conversion.")
+                session_log(self.session_id, "FS input already present — skipping reconversion.")
                 return self.fs_path
 
-            # Otherwise, convert
-            session_log(self.session_id, "Converting native → FreeSurfer space...")
+            session_log(self.session_id, "Converting native → FreeSurfer space…")
             ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
 
             if not ok:
-                raise RuntimeError("FS conversion failed.")
+                raise RuntimeError("FreeSurfer conversion failed.")
 
             session_log(self.session_id, "FS conversion successful.")
             return self.fs_path
 
-        else:
-            raise ValueError(f"Unknown space: {self.space}")
+        raise ValueError(f"Invalid space: {self.space}")
 
-    # -------------------------------------------------------
+    # --------------------------------------------------------------------
     def build_model_plan(self, input_path: Path):
         """
-        Build a model execution plan with correct input_paths.
-        Each model has:
-            {
-              "model": "grace-native",
-              "input_path": "path/to/native_or_fs",
-            }
+        Construct scheduler model execution plan:
+        [
+           {"model": "grace-native",   "input_path": "/path/to/native"},
+           {"model": "domino-fs",      "input_path": "/path/to/fs"},
+           ...
+        ]
         """
 
         plan = []
+        session_log(self.session_id, "Building model execution plan…")
 
         for model_name in self.models:
             cfg = get_model_config(model_name)
 
+            # Model requires native input
             if cfg["space"] == "native":
                 plan.append({
                     "model": model_name,
-                    "input_path": str(self.native_path)
+                    "input_path": str(self.native_path),
                 })
 
+            # Model requires FS input
             elif cfg["space"] == "freesurfer":
                 plan.append({
                     "model": model_name,
-                    "input_path": str(self.fs_path)
+                    "input_path": str(self.fs_path),
                 })
 
+            else:
+                raise ValueError(f"Unknown model space for {model_name}: {cfg['space']}")
+
+        session_log(self.session_id, f"Model plan built: {plan}")
         return plan
 
-    # -------------------------------------------------------
+    # --------------------------------------------------------------------
     def start_job(self):
         """
-        Main entrypoint for /predict:
-        - run input preparation
-        - build plan
-        - announce job started
-        - return clean job structure for scheduler
+        Main entry point called by `/predict`.
+
+        Steps:
+          1. Log & send SSE "orchestrator_start"
+          2. Prepare input(s)
+          3. Build model plan
+          4. Mark job status = prepared
+          5. SSE: input_ready
         """
-        session_log(self.session_id, "Inference orchestrator: start job.")
 
-        push_sse_event(self.session_id, {"event": "orchestrator_start"})
+        session_log(self.session_id, "InferenceOrchestrator: job start.")
 
-        # Prepare input (native or FS)
-        self.prepare_inputs()
+        # High-level event
+        enqueue_sse(self.session_id, {"event": "orchestrator_start"})
 
-        # Build final model plan
-        plan = self.build_model_plan(self.native_path)
+        # Prepare native/FS inputs
+        selected_input = self.prepare_inputs()
 
+        # Build the per-model plan
+        plan = self.build_model_plan(selected_input)
+
+        # Update Redis job state
         set_job_status(self.session_id, "prepared")
+
+        # Notify SSE
         push_sse_event(self.session_id, {"event": "input_ready"})
 
         return plan
+

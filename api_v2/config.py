@@ -64,6 +64,7 @@ if not MRI_CONVERT.exists():
 # -------------------------------------------------------
 LOG_DIR = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
+DB_PATH = f"{LOG_DIR}/audit.db"
 
 # Per-session log filename format
 def session_log_file(session_id: str):
