@@ -15,7 +15,9 @@ from runtime.inference import InferenceOrchestrator
 from runtime.sse import sse_stream
 from services.redis_client import redis_client, get_queue_position
 from config import GPU_COUNT, SESSION_DIR, DB_PATH
+from dotenv import load_dotenv
 
+load_dotenv()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
