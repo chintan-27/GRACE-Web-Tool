@@ -25,7 +25,7 @@ export default function FileUpload({ selectedFile, onFileSelect }: Props) {
 
         <Input
           type="file"
-          accept=".nii,.nii.gz"
+          accept=".nii,.gz"
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) onFileSelect(file);
