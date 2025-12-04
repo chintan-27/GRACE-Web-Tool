@@ -149,7 +149,6 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     yield send_progress("Saving NIfTI file...", 85)
     pred_img = nib.Nifti1Image(processed_preds, affine=input_img.affine, header=input_img.header)
     nii_save_path = os.path.join(output_dir, f"{base_filename}_pred_DOMINOPP.nii.gz")
-
     nib.save(pred_img, nii_save_path)
     
     # Save as .mat
