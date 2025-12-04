@@ -33,7 +33,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts"
-  ],
+, "app/trial/page.tsx"  ],
   "exclude": [
     "node_modules"
   ]
