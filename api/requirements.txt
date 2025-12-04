@@ -1,17 +1,9 @@
 einops
 monai==1.2.0
 nibabel>=5.3.2
-numpy>=1.26.4
+numpy>=1.23,<2.0
 scipy>=1.11.3
-
-# LAST PyTorch version supporting Pascal GPUs
-torch==1.13.1+cu117
-torchvision==0.14.1+cu117
-torchaudio==0.13.1
-
-# Installed from PyTorch wheel index
--f https://download.pytorch.org/whl/cu117
-
+# torch installed in dockerfile
 werkzeug
 python-dotenv
 pyjwt
