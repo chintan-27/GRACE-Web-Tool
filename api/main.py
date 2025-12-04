@@ -42,7 +42,7 @@ app.add_middleware(
 async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
     try:
         while True:
-            data = await asyncio.wait_for(queue.get(), timeout=100)
+            data = await asyncio.wait_for(queue.get(), timeout=600)
             if data == "__CLOSE__GRACE":
                 models.remove("GRACE")
             elif data == "__CLOSE__DOMINO":
