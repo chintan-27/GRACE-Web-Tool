@@ -62,6 +62,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
     
     model.load_state_dict(state_dict, strict=False)
+    model = torch.nn.DataParallel(model, device_ids=[0,1])
     model.eval()
     
     yield send_progress("Model loaded successfully.", 25)
