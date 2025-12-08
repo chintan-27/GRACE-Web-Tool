@@ -196,7 +196,7 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
     
     with torch.no_grad():
         predictions = sliding_window_inference(
-            image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
+            image_tensor, spatial_size, sw_batch_size=2, predictor=model, overlap=0.8
         )
     
     yield send_progress("Inference completed successfully.", 75)
