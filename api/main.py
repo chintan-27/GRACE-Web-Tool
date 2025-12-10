@@ -49,7 +49,7 @@ async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
                 models.remove("DOMINO")
             elif data == "__CLOSE__DOMINOPP":
                 models.remove("DOMINOPP")
-            elif data.startswith("__ERROR__"):
+            elif isinstance(data, str) and data.startswith("__ERROR__"):
                 error_message = data.replace("__ERROR__", "")
                 error_payload = json.dumps({
                     "message": f"Error: {error_message}",
@@ -190,8 +190,8 @@ async def predict_grace(model: str, request: Request, file: UploadFile = File(..
             asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
         except Exception as e:
             asyncio.run_coroutine_threadsafe(
-            queue.put(f"__ERROR__{str(e)}"), loop
-        )
+                queue.put(f"__ERROR__{str(e)}"), loop
+            )
         
     # ✅ run sync function in thread and don't await it
     asyncio.create_task(asyncio.to_thread(run_and_stream, model))
