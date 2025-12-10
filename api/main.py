@@ -171,16 +171,13 @@ async def predict_grace(model: str, request: Request, file: UploadFile = File(..
     
         # ✅ capture the event loop in the main thread
         loop = asyncio.get_event_loop()
-        func = MODEL_FUNCTIONS.get(model)
-        if not func:
-            return {"error": "Invalid model specified"}, 400
-    
-        def run_and_stream():
+        
+        def run_and_stream(model: str):
+            func = MODEL_FUNCTIONS.get(model)
             for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
                 # ✅ use the captured loop
                 asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
             asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
-
     
         # ✅ run sync function in thread and don't await it
         asyncio.create_task(asyncio.to_thread(run_and_stream, model))
