@@ -19,7 +19,7 @@ def send_progress(message, progress):
     """
     return {"model": "domino", "message": message, "progress": progress}  
 
-def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
+def load_model(model_path, spatial_size, num_classes, device):
     """
         Load and configure the model for inference.
         @param model_path: Path to the model weights file (str)
@@ -158,9 +158,27 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
 
+def try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, sw_batch_size):
+    # Load model
+    model = yield from load_model(model_path, spatial_size, num_classes, device)
+
+    # Preprocess input
+    image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
+
+    # Perform inference
+    yield send_progress("Starting sliding window inference...", 50)
+    
+    with torch.no_grad():
+        predictions = sliding_window_inference(
+            image_tensor, spatial_size, sw_batch_size=sw_batch_size, predictor=model, overlap=0.8
+        )
+    
+    yield send_progress("Inference completed successfully.", 75)
+
+    return predictions, input_img
 
 def domino_predict_single_file(input_path, output_dir="output", model_path="models/DOMINO.pth",
-                       spatial_size=(256, 256, 256), num_classes=12, dataparallel=False, num_gpu=1,
+                       spatial_size=(256, 256, 256), num_classes=12,
                        a_min_value=0, a_max_value=255):
     """
         Predict segmentation for a single NIfTI image with progress updates via SSE.
@@ -179,28 +197,33 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
 
     # Determine device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    sw_batch_size = 4
     if torch.backends.mps.is_available() and not torch.cuda.is_available():
         device = torch.device("cpu")
         yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
     else:
         yield send_progress(f"Using device: {device}", 5)
 
-    # Load model
-    model = yield from load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
-
-    # Preprocess input
-    image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
-
-    # Perform inference
-    yield send_progress("Starting sliding window inference...", 50)
-    
-    with torch.no_grad():
-        predictions = sliding_window_inference(
-            image_tensor, spatial_size, sw_batch_size=2, predictor=model, overlap=0.8
-        )
-    
-    yield send_progress("Inference completed successfully.", 75)
-
+    try:
+        predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, sw_batch_size)
+    except Exception as e:
+        if isinstance(e, torch.cuda.OutOfMemoryError):
+            yield send_progress("Error: Out of Memory during model inference.", 0)
+            yield send_progress("Attempting retry with reduced resources", 0)
+            if spatial_size[0] == 64:
+                new_spatial_size = (32, 32, 32)
+            elif spatial_size[0] == 256:
+                new_spatial_size = (64, 64, 64)
+            new_sw_batch_size = 2
+            try:
+                predictions, input_img = yield from try_block(model_path, new_spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
+                yield send_progress("Retry successful with reduced resources.", 75)
+            except Exception as e:
+                yield send_progress(f"Error during retry: {str(e)}", 100)
+                return
+        else:
+            yield send_progress(f"Error during prediction: {str(e)}", 100)
+            return
     # Save predictions
     yield from save_predictions(predictions, input_img, output_dir, base_filename)
     

@@ -169,15 +169,19 @@ async def predict_grace(model: str, request: Request, file: UploadFile = File(..
     loop = asyncio.get_event_loop()
 
     def run_and_stream(model: str):
-        func = grace_predict_single_file
-        if model == "domino":
-            func = domino_predict_single_file
-        elif model == "dominopp":
-            func = dominopp_predict_single_file
-        for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
-            # ✅ use the captured loop
-            asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
-        asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
+        try:
+            func = grace_predict_single_file
+            if model == "domino":
+                func = domino_predict_single_file
+            elif model == "dominopp":
+                func = dominopp_predict_single_file
+            for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
+                # ✅ use the captured loop
+                asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
+        except Exception as e:
+            asyncio.run_coroutine_threadsafe(queue.put({"message": "Error: " + str(e)}), loop)
+        finally:
+            asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
 
     # ✅ run sync function in thread and don't await it
     asyncio.create_task(asyncio.to_thread(run_and_stream, model))
