@@ -203,15 +203,11 @@ def grace_predict_single_file(input_path, output_dir="output", model_path="model
     except Exception as e:
         if isinstance(e, torch.cuda.OutOfMemoryError):
             yield send_progress("Error: Out of Memory during model inference.", 0)
-            yield send_progress("Attempting retry", 0)
-            if spatial_size[0] == 64:
-                new_spatial_size = (32, 32, 32)
-            elif spatial_size[0] == 256:
-                new_spatial_size = (64, 64, 64)
+            yield send_progress("Attempting retry with reduced resources.", 0)
             new_sw_batch_size = 2
             try:
-                predictions, input_img = yield from try_block(model_path, new_spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
-                yield send_progress("Retry successful with reduced spatial size.", 10)
+                predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
+                yield send_progress("Retry successful with reduced resources.", 10)
             except Exception as e:
                 yield send_progress(f"Retry failed: {str(e)}", 0)
                 return

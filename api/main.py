@@ -154,37 +154,37 @@ def get_device():
         return torch.device("cpu")  # Replace with MPS if needed
     return torch.device("cpu")
 
+
 @app.post("/predict/{model}")
 async def predict_grace(model: str, request: Request, file: UploadFile = File(...)):
     client_id = request.headers.get("x-signature")
-
+    MODEL_FUNCTIONS = {
+        "grace": grace_predict_single_file,
+        "domino": domino_predict_single_file,
+        "dominopp": dominopp_predict_single_file,
+    }
     queue = clients.get(client_id)
     if not queue:
         return {"error": "Stream not established"}, 400
-
-    input_path = save_uploaded_file(file)
-    base_filename = os.path.splitext(os.path.basename(input_path))[0]
-
-    # ✅ capture the event loop in the main thread
-    loop = asyncio.get_event_loop()
-
-    def run_and_stream(model: str):
-        try:
-            func = grace_predict_single_file
-            if model == "domino":
-                func = domino_predict_single_file
-            elif model == "dominopp":
-                func = dominopp_predict_single_file
+    try:
+        input_path = save_uploaded_file(file)
+    
+        # ✅ capture the event loop in the main thread
+        loop = asyncio.get_event_loop()
+        func = MODEL_FUNCTIONS.get(model)
+        if not func:
+            return {"error": "Invalid model specified"}, 400
+    
+        def run_and_stream():
             for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
                 # ✅ use the captured loop
                 asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
-        except Exception as e:
-            asyncio.run_coroutine_threadsafe(queue.put({"message": "Error: " + str(e)}), loop)
-        finally:
             asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
 
-    # ✅ run sync function in thread and don't await it
-    asyncio.create_task(asyncio.to_thread(run_and_stream, model))
-
-    return {"status": f"{model} started"}
+    
+        # ✅ run sync function in thread and don't await it
+        asyncio.create_task(asyncio.to_thread(run_and_stream, model))
+        return {"status": f"{model} started"}
+    except Exception as e:
+        return {"error": str(e)}, 500
 

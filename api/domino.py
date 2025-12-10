@@ -210,13 +210,9 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
         if isinstance(e, torch.cuda.OutOfMemoryError):
             yield send_progress("Error: Out of Memory during model inference.", 0)
             yield send_progress("Attempting retry with reduced resources", 0)
-            if spatial_size[0] == 64:
-                new_spatial_size = (32, 32, 32)
-            elif spatial_size[0] == 256:
-                new_spatial_size = (64, 64, 64)
             new_sw_batch_size = 2
             try:
-                predictions, input_img = yield from try_block(model_path, new_spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
+                predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
                 yield send_progress("Retry successful with reduced resources.", 75)
             except Exception as e:
                 yield send_progress(f"Error during retry: {str(e)}", 0)
