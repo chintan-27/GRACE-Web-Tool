@@ -219,10 +219,10 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
                 predictions, input_img = yield from try_block(model_path, new_spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
                 yield send_progress("Retry successful with reduced resources.", 75)
             except Exception as e:
-                yield send_progress(f"Error during retry: {str(e)}", 100)
+                yield send_progress(f"Error during retry: {str(e)}", 0)
                 return
         else:
-            yield send_progress(f"Error during prediction: {str(e)}", 100)
+            yield send_progress(f"Error during prediction: {str(e)}", 0)
             return
     # Save predictions
     yield from save_predictions(predictions, input_img, output_dir, base_filename)

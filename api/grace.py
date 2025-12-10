@@ -213,10 +213,10 @@ def grace_predict_single_file(input_path, output_dir="output", model_path="model
                 predictions, input_img = yield from try_block(model_path, new_spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
                 yield send_progress("Retry successful with reduced spatial size.", 10)
             except Exception as e:
-                yield send_progress(f"Retry failed: {str(e)}", 100)
+                yield send_progress(f"Retry failed: {str(e)}", 0)
                 return
         else:
-            yield send_progress(f"Error during prediction: {str(e)}", 100)
+            yield send_progress(f"Error during prediction: {str(e)}", 0)
             return
     
     # Save predictions
