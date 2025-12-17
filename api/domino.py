@@ -8,7 +8,7 @@ from scipy.io import savemat
 from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd
 
 def send_progress(message, progress):
     """
