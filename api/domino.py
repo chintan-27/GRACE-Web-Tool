@@ -197,7 +197,7 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
 
     # Determine device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    sw_batch_size = 4
+    sw_batch_size = 2
     if torch.backends.mps.is_available() and not torch.cuda.is_available():
         device = torch.device("cpu")
         yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
@@ -209,7 +209,8 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
     except torch.cuda.OutOfMemoryError as e:
         yield send_progress("Error: Out of Memory during model inference.", 0)
         yield send_progress("Attempting retry with reduced resources", 0)
-        new_sw_batch_size = 2
+        torch.cuda.empty_cache()
+        new_sw_batch_size = 1
         predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
         yield send_progress("Retry successful with reduced resources.", 75)
     # Save predictions
