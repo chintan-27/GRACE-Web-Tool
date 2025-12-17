@@ -120,14 +120,14 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     # Apply MONAI spatial transforms
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("trilinear")),
-        Orientationd(keys=["image"], axcodes="RA"),
-#        CropForegroundd(keys=["image"], source_key="image"),
+        Orientationd(keys=["image"], axcodes="RAS"),
+        CropForegroundd(keys=["image"], source_key="image")
     ])
 
     yield send_progress("Applying spatial transforms...", 40)
     transformed = test_transforms({"image": meta_tensor})
 
-    image_tensor = transformed["image"].unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
+    image_tensor = transformed["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
 
     yield send_progress(f"Preprocessing complete. Final shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
