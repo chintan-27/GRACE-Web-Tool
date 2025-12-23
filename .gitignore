@@ -54,6 +54,9 @@ logs*
 .env
 api/core.*
 api/models/*.pth
+api_v2/models/*.pth
+api_v2/models/
+api_v2/sessions/*
 ._.DS_Store
 */._.DS_Store
 */__pycache__
