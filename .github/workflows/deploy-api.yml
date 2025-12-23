@@ -12,7 +12,6 @@ on:
 jobs:
   deploy:
     runs-on: self-hosted
-
     steps:
       - name: Checkout code (for context only)
         uses: actions/checkout@v4

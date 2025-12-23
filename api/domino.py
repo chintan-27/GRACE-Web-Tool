@@ -8,7 +8,7 @@ from scipy.io import savemat
 from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd
 
 def send_progress(message, progress):
     """
@@ -19,7 +19,7 @@ def send_progress(message, progress):
     """
     return {"model": "domino", "message": message, "progress": progress}  
 
-def load_model(model_path, spatial_size, num_classes, device, dataparallel=False, num_gpu=1):
+def load_model(model_path, spatial_size, num_classes, device):
     """
         Load and configure the model for inference.
         @param model_path: Path to the model weights file (str)
@@ -41,7 +41,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
         hidden_size=768,
         mlp_dim=3072,
         num_heads=12,
-        proj_type="perceptron",
+        pos_embed="perceptron",
         norm_name="instance",
         res_block=True,
         dropout_rate=0.0,
@@ -62,6 +62,7 @@ def load_model(model_path, spatial_size, num_classes, device, dataparallel=False
     state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
     
     model.load_state_dict(state_dict, strict=False)
+    model = torch.nn.DataParallel(model, device_ids=[0,1])
     model.eval()
     
     yield send_progress("Model loaded successfully.", 25)
@@ -119,14 +120,14 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     # Apply MONAI spatial transforms
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("trilinear")),
-        Orientationd(keys=["image"], axcodes="RA"),
-#        CropForegroundd(keys=["image"], source_key="image"),
+        Orientationd(keys=["image"], axcodes="RAS"),
+        CropForegroundd(keys=["image"], source_key="image")
     ])
 
     yield send_progress("Applying spatial transforms...", 40)
     transformed = test_transforms({"image": meta_tensor})
 
-    image_tensor = transformed["image"].unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
+    image_tensor = transformed["image"].clone().detach().unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
 
     yield send_progress(f"Preprocessing complete. Final shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
@@ -157,9 +158,27 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
 
+def try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, sw_batch_size):
+    # Load model
+    model = yield from load_model(model_path, spatial_size, num_classes, device)
+
+    # Preprocess input
+    image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
+
+    # Perform inference
+    yield send_progress("Starting sliding window inference...", 50)
+    
+    with torch.no_grad():
+        predictions = sliding_window_inference(
+            image_tensor, spatial_size, sw_batch_size=sw_batch_size, predictor=model, overlap=0.8
+        )
+    
+    yield send_progress("Inference completed successfully.", 75)
+
+    return predictions, input_img
 
 def domino_predict_single_file(input_path, output_dir="output", model_path="models/DOMINO.pth",
-                       spatial_size=(256, 256, 256), num_classes=12, dataparallel=False, num_gpu=1,
+                       spatial_size=(256, 256, 256), num_classes=12,
                        a_min_value=0, a_max_value=255):
     """
         Predict segmentation for a single NIfTI image with progress updates via SSE.
@@ -178,28 +197,22 @@ def domino_predict_single_file(input_path, output_dir="output", model_path="mode
 
     # Determine device
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    sw_batch_size = 2
     if torch.backends.mps.is_available() and not torch.cuda.is_available():
         device = torch.device("cpu")
         yield send_progress("Using MPS backend (CPU due to ConvTranspose3d support limitations)", 5)
     else:
         yield send_progress(f"Using device: {device}", 5)
 
-    # Load model
-    model = yield from load_model(model_path, spatial_size, num_classes, device, dataparallel, num_gpu)
-
-    # Preprocess input
-    image_tensor, input_img = yield from preprocess_input(input_path, device, a_min_value, a_max_value)
-
-    # Perform inference
-    yield send_progress("Starting sliding window inference...", 50)
-    
-    with torch.no_grad():
-        predictions = sliding_window_inference(
-            image_tensor, spatial_size, sw_batch_size=4, predictor=model, overlap=0.8
-        )
-    
-    yield send_progress("Inference completed successfully.", 75)
-
+    try:
+        predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, sw_batch_size)
+    except torch.cuda.OutOfMemoryError as e:
+        yield send_progress("Error: Out of Memory during model inference.", 0)
+        yield send_progress("Attempting retry with reduced resources", 0)
+        torch.cuda.empty_cache()
+        new_sw_batch_size = 1
+        predictions, input_img = yield from try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, new_sw_batch_size)
+        yield send_progress("Retry successful with reduced resources.", 75)
     # Save predictions
     yield from save_predictions(predictions, input_img, output_dir, base_filename)
     

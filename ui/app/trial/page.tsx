@@ -36,11 +36,10 @@ const Trial = () => {
     message: "Setting up the connection to the server",
     progress: 0,
   });
-  const [dppProgress, setDppProgress] = useState({
-    message: "",
+  const [dominoppProgress, setDominoppProgress] = useState({
+    message: "Setting up the connection to the server",
     progress: 0,
   });
-
   // Inference images
   const [ginferenceResults, setgInferenceResults] = useState<NVImage | null>(
     null,
@@ -209,7 +208,7 @@ const Trial = () => {
         headers: { "X-Signature": token },
       });
       if (!res.ok) {
-        setDominoProgress((prev) => ({
+        setDominoppProgress((prev) => ({
           ...prev,
           message: res.statusText,
         }));
@@ -221,14 +220,14 @@ const Trial = () => {
         colormap: "jet",
         opacity: 1,
       });
-      setdInferenceResults(img);
-      setDominoProgress((prev) => ({
+      setdppInferenceResults(img);
+      setDominoppProgress((prev) => ({
         ...prev,
         progress: 100,
-        message: "DOMINO output ready",
+        message: "DOMINO Plus Plush output ready",
       }));
     } catch (err: any) {
-      setDominoProgress((prev) => ({
+      setDominoppProgress((prev) => ({
         ...prev,
         message: err?.message ?? "Output error",
       }));
@@ -288,13 +287,13 @@ const Trial = () => {
       }
 
       if (dominopp) {
-        setDppProgress({ message: "Starting DOMINO++…", progress: 0 });
+        setDominoppProgress({ message: "Starting DOMINO++…", progress: 0 });
         fetch(server + "/predict/dominopp", {
           method: "POST",
           headers: { "X-Signature": token },
           body: fd,
         }).catch((err: any) => {
-          setDppProgress({
+          setDominoppProgress({
             message: err?.message ?? "Predict error",
             progress: 0,
           });
@@ -336,7 +335,7 @@ const Trial = () => {
               typeof progress === "number" ? progress : prev.progress,
           }));
         } else if (model === "dominopp") {
-          setDppProgress((prev) => ({
+          setDominoppProgress((prev) => ({
             message: message ?? prev.message,
             progress:
               typeof progress === "number" ? progress : prev.progress,
@@ -362,7 +361,7 @@ const Trial = () => {
               }));
               fetchDominoOutput();
             } else if (model === "dominopp") {
-              setDppProgress((prev) => ({
+              setDominoppProgress((prev) => ({
                 ...prev,
                 progress: Math.max(prev.progress, 95),
                 message: "DOMINO++ complete",
@@ -390,7 +389,7 @@ const Trial = () => {
             }
             if (dominopp) {
               completedRef.current["dominopp"] = true;
-              setDppProgress((prev) => ({
+              setDominoppProgress((prev) => ({
                 ...prev,
                 progress: Math.max(prev.progress, 95),
                 message: "DOMINO++ complete",
@@ -630,7 +629,7 @@ const Trial = () => {
                 progressMap={{
                   grace: graceProgress,
                   domino: dominoProgress,
-                  dominopp: dppProgress,
+                  dominopp: dominoppProgress,
                 }}
               />
             ) : (
@@ -655,7 +654,7 @@ const Trial = () => {
               <div className="grid gap-3">
                 {renderModelCard("grace", "GRACE", grace, graceProgress)}
                 {renderModelCard("domino", "DOMINO", domino, dominoProgress)}
-                {renderModelCard("dominopp", "DOMINO++", dominopp, dppProgress)}
+                {renderModelCard("dominopp", "DOMINO++", dominopp, dominoppProgress)}
               </div>
             </div>
 

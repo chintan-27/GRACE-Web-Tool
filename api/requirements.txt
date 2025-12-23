@@ -1,11 +1,9 @@
 einops
-monai>=1.4.0
+monai==1.2.0
 nibabel>=5.3.2
-numpy>=1.26.4
+numpy>=1.23,<2.0
 scipy>=1.11.3
-torch>=2.6.0
-torchvision>=0.18.0
-torchaudio
+# torch installed in dockerfile
 werkzeug
 python-dotenv
 pyjwt

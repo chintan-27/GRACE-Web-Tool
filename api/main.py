@@ -42,13 +42,23 @@ app.add_middleware(
 async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
     try:
         while True:
-            data = await asyncio.wait_for(queue.get(), timeout=100)
+            data = await asyncio.wait_for(queue.get(), timeout=600)
             if data == "__CLOSE__GRACE":
                 models.remove("GRACE")
             elif data == "__CLOSE__DOMINO":
                 models.remove("DOMINO")
             elif data == "__CLOSE__DOMINOPP":
                 models.remove("DOMINOPP")
+            elif isinstance(data, str) and data.startswith("__ERROR__"):
+                error_message = data.replace("__ERROR__", "")
+                error_payload = json.dumps({
+                    "message": f"Error: {error_message}",
+                    "progress": 0,
+                    "error": True
+                })
+                yield f"{error_payload}\n\n"
+                models.clear()  # Clear all models on error
+                break
             
             if len(models) == 0:
                 # Send a final completion message before closing
@@ -70,7 +80,7 @@ async def sse_stream(client_id: str, queue: asyncio.Queue, models: list):
             yield f"{payload}\n\n"
             
     except asyncio.TimeoutError:
-        yield "data: {\"message\": \"keep-alive\"}\n\n"
+        print("data: {\"message\": \"keep-alive\"}\n\n")
     finally:
         clients.pop(client_id, None)
 
@@ -154,33 +164,36 @@ def get_device():
         return torch.device("cpu")  # Replace with MPS if needed
     return torch.device("cpu")
 
+
 @app.post("/predict/{model}")
 async def predict_grace(model: str, request: Request, file: UploadFile = File(...)):
     client_id = request.headers.get("x-signature")
-
+    MODEL_FUNCTIONS = {
+        "grace": grace_predict_single_file,
+        "domino": domino_predict_single_file,
+        "dominopp": dominopp_predict_single_file,
+    }
     queue = clients.get(client_id)
     if not queue:
         return {"error": "Stream not established"}, 400
-
     input_path = save_uploaded_file(file)
-    base_filename = os.path.splitext(os.path.basename(input_path))[0]
 
     # ✅ capture the event loop in the main thread
     loop = asyncio.get_event_loop()
-
+    
     def run_and_stream(model: str):
-        func = grace_predict_single_file
-        if model == "domino":
-            func = domino_predict_single_file
-        elif model == "dominopp":
-            func = dominopp_predict_single_file
-        for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
-            # ✅ use the captured loop
-            asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
-        asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
-
+        try:
+            func = MODEL_FUNCTIONS.get(model)
+            for progress in func(input_path=input_path, output_dir=OUTPUT_FOLDER):
+                # ✅ use the captured loop
+                asyncio.run_coroutine_threadsafe(queue.put(progress), loop)
+            asyncio.run_coroutine_threadsafe(queue.put(f"__CLOSE__{model.upper()}"), loop)
+        except Exception as e:
+            asyncio.run_coroutine_threadsafe(
+                queue.put(f"__ERROR__{str(e)}"), loop
+            )
+        
     # ✅ run sync function in thread and don't await it
     asyncio.create_task(asyncio.to_thread(run_and_stream, model))
-
     return {"status": f"{model} started"}
 
