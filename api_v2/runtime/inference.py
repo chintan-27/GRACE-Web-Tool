@@ -9,10 +9,9 @@ from runtime.session import (
 from runtime.freesurfer import convert_to_fs
 from runtime.registry import get_model_config
 from services.redis_client import (
-    enqueue_sse,
     set_job_status,
 )
-from runtime.sse import push_sse_event   # <-- FIXED
+from runtime.sse import push_event   # <-- FIXED
 
 
 class InferenceOrchestrator:
@@ -121,7 +120,7 @@ class InferenceOrchestrator:
         session_log(self.session_id, "InferenceOrchestrator: job start.")
 
         # High-level event
-        enqueue_sse(self.session_id, {"event": "orchestrator_start"})
+        push_event(self.session_id, {"event": "orchestrator_start"})
 
         # Prepare native/FS inputs
         selected_input = self.prepare_inputs()
@@ -133,7 +132,7 @@ class InferenceOrchestrator:
         set_job_status(self.session_id, "prepared")
 
         # Notify SSE
-        push_sse_event(self.session_id, {"event": "input_ready"})
+        push_event(self.session_id, {"event": "input_ready"})
 
         return plan
 
