@@ -90,6 +90,9 @@ class InferenceOrchestrator:
                     "model": model_name,
                     "input_path": str(self.native_path),
                 })
+                # Update Redis job state
+                set_job_status(self.session_id, model_name, "prepared")
+
 
             # Model requires FS input
             elif cfg["space"] == "freesurfer":
@@ -97,8 +100,12 @@ class InferenceOrchestrator:
                     "model": model_name,
                     "input_path": str(self.fs_path),
                 })
+                
+                # Update Redis job state
+                set_job_status(self.session_id, model_name, "prepared")
 
             else:
+                set_job_status(self.session_id, model_name, "error: Unknown model space for the model")
                 raise ValueError(f"Unknown model space for {model_name}: {cfg['space']}")
 
         session_log(self.session_id, f"Model plan built: {plan}")
@@ -127,9 +134,6 @@ class InferenceOrchestrator:
 
         # Build the per-model plan
         plan = self.build_model_plan(selected_input)
-
-        # Update Redis job state
-        set_job_status(self.session_id, "prepared")
 
         # Notify SSE
         push_event(self.session_id, {"event": "input_ready"})
