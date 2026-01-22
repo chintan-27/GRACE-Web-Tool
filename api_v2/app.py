@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
 
+import gzip
 import shutil
 import subprocess
 import sqlite3
@@ -69,10 +70,17 @@ async def predict(
     session_id = create_session()
     session_log(session_id, f"Session created. Models={models}, Space={space}")
 
-    # Save uploaded file → input native
+    # Save uploaded file → input native (always store as real .nii.gz)
     native_path = session_input_native(session_id)
-    with open(native_path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    
+    if file.filename.endswith(".nii.gz"):
+        # Already gzipped → just save it
+        with open(native_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    else:
+        # Uploaded .nii → gzip it while saving so native_path is truly gzipped
+        with gzip.open(native_path, "wb") as gz:
+            shutil.copyfileobj(file.file, gz)
 
     # Model list
     if models == "all":

@@ -1,4 +1,7 @@
 import torch
+import traceback
+import sys
+
 from pathlib import Path
 import nibabel as nib
 
@@ -125,7 +128,7 @@ class ModelRunner:
 
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
         out_path = model_output_path(self.session_id, self.model_name)
-
+        preds_np = preds_np.astype("uint8")
         nib.save(nib.Nifti1Image(preds_np, metadata["affine"]), str(out_path))
 
         session_log(self.session_id, f"[{self.model_name}] Saved to {out_path}")
@@ -142,6 +145,14 @@ class ModelRunner:
             return self.save_output(preds, metadata)
 
         except Exception as e:
+            exc_type, exc_value, exc_tb = sys.exc_info()
+
+            print("Exception type:", exc_type)
+            print("Exception value:", exc_value)
+        
+            print("\nFormatted traceback:")
+            traceback.print_tb(exc_tb)
+
             log_error(self.session_id, f"Model {self.model_name} crashed: {e}")
             self._emit("model_error", -1, detail=str(e))
-            raise
+            raise e

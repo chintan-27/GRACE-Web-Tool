@@ -80,7 +80,13 @@ def sse_stream(session_id: str) -> Generator[str, None, None]:
 
         # Parse event
         _, raw = packet
-        envelope = json.loads(raw.decode("utf-8"))
+
+        # raw is str when decode_responses=True; bytes otherwise
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        
+        envelope = json.loads(raw)
+
         event = envelope["event"]
         sig = envelope["sig"]
 

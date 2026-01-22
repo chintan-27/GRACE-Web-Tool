@@ -12,7 +12,7 @@ from monai.transforms import (
 )
 
 from runtime.session import session_log
-
+import warnings
 
 # -------------------------------------------------------
 # AUTO NORMALIZATION DETECTOR
@@ -90,17 +90,17 @@ def preprocess_image(
 
     # Prepare data dict for MONAI
     data_dict = {"image": img_data, "affine": affine}
-
+    warnings.simplefilter("default")
     transforms = Compose([
-        EnsureChannelFirstd(keys=["image"]),
-        Orientationd(keys=["image"], axcodes="RAS"),
+        EnsureChannelFirstd(keys=["image"], channel_dim="no_channel"),
+        Orientationd(keys=["image"], axcodes = "RAS", labels = None),
         Spacingd(keys=["image"], pixdim=(1, 1, 1), mode=("bilinear",)),
         ResizeWithPadOrCropd(keys=["image"], spatial_size=spatial_size),
     ])
 
     data_dict = transforms(data_dict)
 
-    tensor = torch.tensor(data_dict["image"], dtype=torch.float32)
+    tensor = torch.as_tensor(data_dict["image"], dtype=torch.float32)
 
     metadata = {
         "affine": affine,

@@ -49,15 +49,18 @@ def pop_job():
 
 
 def get_queue_position(session_id: str) -> int:
-    """
-    Returns the 0-based queue position for the first job with this session ID.
-    This is used by frontend after /predict.
-    """
     queue = redis_client.lrange(JOB_QUEUE, 0, -1)
     for idx, raw in enumerate(queue):
-        job = json.loads(raw)
-        if job.get("session_id") == session_id:
+        # raw is a str because decode_responses=True
+        if raw == session_id:
             return idx
+        # backwards compatibility if older JSON jobs exist:
+        try:
+            job = json.loads(raw)
+            if job.get("session_id") == session_id:
+                return idx
+        except Exception:
+            pass
     return -1
 
 
