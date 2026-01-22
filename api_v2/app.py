@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
@@ -59,8 +59,8 @@ app.add_middleware(
 @app.post("/predict")
 async def predict(
     file: UploadFile = File(...),
-    models: str = "all",
-    space: str = "native",
+    models: str = Body(...),
+    space: str = Body(...),
 ):
     # Validate input
     if not (file.filename.endswith(".nii") or file.filename.endswith(".nii.gz")):
