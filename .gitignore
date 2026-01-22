@@ -63,3 +63,4 @@ api_v2/sessions/*
 */*/__pycache__
 
 plan.md
+claude.md

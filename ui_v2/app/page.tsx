@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 
 import FileUpload from "./components/FileUpload";
@@ -32,6 +32,7 @@ export default function HomePage() {
   } = useJob();
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileRef = useRef<File | null>(null);
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [selectedSpace, setSelectedSpace] = useState("native");
 

@@ -19,12 +19,14 @@ export interface PredictResponse {
 
 export interface HealthResponse {
   redis: boolean;
-  gpu_usage: Array<{
-    gpu: number;
-    util: number;
-    mem_used: number;
-    mem_total: number;
-  }> | string;
+  gpu_usage:
+    | Array<{
+        gpu: number;
+        util: number;
+        mem_used: number;
+        mem_total: number;
+      }>
+    | string;
   queue_length: number;
   gpu_count: number;
 }
@@ -80,8 +82,35 @@ export function connectSSE(
 
   evtSource.onmessage = (e) => {
     try {
-      const data = JSON.parse(e.data) as SSEEvent;
-      onEvent(data);
+      const envelope = JSON.parse(e.data) as any;
+
+      // Your backend sends { event: {...}, sig: "..." }
+      const payload = envelope.event ?? envelope;
+
+      // Map backend events -> UI events
+      if (payload.event === "job_complete") {
+        onEvent({ type: "complete" });
+        return;
+      }
+
+      if (payload.event === "job_failed" || payload.event === "model_error") {
+        onEvent({
+          type: "error",
+          message: payload.error || payload.detail || "Job failed",
+        });
+        return;
+      }
+
+      if (typeof payload.progress === "number" && payload.model) {
+        onEvent({
+          type: "progress",
+          model: payload.model,
+          progress: payload.progress,
+        });
+        return;
+      }
+
+      // ignore heartbeats/other events
     } catch (err) {
       console.error("Bad SSE message", err);
     }
