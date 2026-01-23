@@ -35,6 +35,11 @@ class ModelRunner:
         self.spatial_size = self.config["spatial_size"]
         self.norm = self.config["normalization"]
         self.checkpoint = Path(self.config["checkpoint"])
+        self.model_type = self.config["type"]
+        self.percentile_range = self.config.get("percentile_range", (20, 80))
+        self.interpolation_mode = self.config.get("interpolation_mode", "bilinear")
+        self.fixed_range = self.config.get("fixed_range", (0, 255))
+        self.crop_foreground = self.config.get("crop_foreground", False)
         self.num_classes = 12
 
         self.model = None
@@ -72,6 +77,7 @@ class ModelRunner:
             hidden_size=768,
             mlp_dim=3072,
             num_heads=12,
+            pos_embed="perceptron",
             norm_name="instance",
             res_block=True,
             dropout_rate=0.0,
@@ -96,9 +102,15 @@ class ModelRunner:
             session_id=self.session_id,
             spatial_size=self.spatial_size,
             normalization=self.norm,
+            model_type=self.model_type,
+            percentile_range=self.percentile_range,
+            interpolation_mode=self.interpolation_mode,
+            fixed_range=self.fixed_range,
+            crop_foreground=self.crop_foreground,
         )
 
-        tensor = tensor.unsqueeze(0).to(f"cuda:{self.gpu_id}")  # (1,1,X,Y,Z)
+        # Tensor already has shape (1, 1, D, H, W) from preprocess_image
+        tensor = tensor.to(f"cuda:{self.gpu_id}")
 
         self._emit("preprocess_complete", 25)
         return tensor, metadata
@@ -129,7 +141,10 @@ class ModelRunner:
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
         out_path = model_output_path(self.session_id, self.model_name)
         preds_np = preds_np.astype("uint8")
-        nib.save(nib.Nifti1Image(preds_np, metadata["affine"]), str(out_path))
+
+        # Save with original affine and header (matching v1 implementation)
+        pred_img = nib.Nifti1Image(preds_np, affine=metadata["affine"], header=metadata["header"])
+        nib.save(pred_img, str(out_path))
 
         session_log(self.session_id, f"[{self.model_name}] Saved to {out_path}")
         self._emit("model_complete", 100)
