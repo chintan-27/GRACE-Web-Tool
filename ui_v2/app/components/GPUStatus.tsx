@@ -1,6 +1,5 @@
 "use client";
 
-import { Card, CardHeader, CardContent } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { getHealth } from "../../lib/api";
 
@@ -17,49 +16,60 @@ export default function GPUStatus() {
   if (!health) return null;
 
   return (
-    <Card className="bg-white dark:bg-gray-900 dark:border-gray-700">
-      <CardHeader>
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-          System Health
-        </h3>
-      </CardHeader>
+    <div className="rounded-3xl border border-neutral-800 bg-neutral-900/70 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-neutral-300 mb-3">
+        System Status
+      </h3>
 
-      <CardContent className="space-y-2">
-        <p>
-          Redis:{" "}
+      <div className="space-y-3 text-xs">
+        {/* Redis Status */}
+        <div className="flex items-center justify-between">
+          <span className="text-neutral-400">Redis</span>
           <span
-            className={
-              health.redis
-                ? "text-green-600"
-                : "text-red-600 dark:text-red-400"
-            }
+            className={`font-medium ${
+              health.redis ? "text-green-400" : "text-red-400"
+            }`}
           >
             {health.redis ? "Online" : "Offline"}
           </span>
-        </p>
+        </div>
 
-        <p className="text-gray-700 dark:text-gray-300">
-          Queue Length: {health.queue_length}
-        </p>
+        {/* Queue */}
+        <div className="flex items-center justify-between">
+          <span className="text-neutral-400">Queue</span>
+          <span className="text-neutral-200">{health.queue_length} jobs</span>
+        </div>
 
-        {Array.isArray(health.gpu_usage) &&
-          health.gpu_usage.map((gpu: any) => (
-            <div
-              key={gpu.gpu}
-              className="flex justify-between text-sm p-2 border rounded bg-gray-50 dark:bg-gray-800 dark:border-gray-700"
-            >
-              <span className="text-gray-800 dark:text-gray-200">
-                GPU {gpu.gpu}
-              </span>
-              <span className="text-gray-700 dark:text-gray-300">
-                {gpu.util}%
-              </span>
-              <span className="text-gray-700 dark:text-gray-300">
-                {gpu.mem_used}/{gpu.mem_total} MB
-              </span>
+        {/* GPUs */}
+        {Array.isArray(health.gpu_usage) && health.gpu_usage.length > 0 && (
+          <div className="pt-2 border-t border-neutral-800">
+            <p className="text-neutral-500 mb-2">GPUs ({health.gpu_count} available)</p>
+            <div className="space-y-2">
+              {health.gpu_usage.map((gpu: any) => (
+                <div
+                  key={gpu.gpu}
+                  className="flex items-center gap-2"
+                >
+                  <span className="text-neutral-400 w-12">GPU {gpu.gpu}</span>
+                  <div className="flex-1 h-2 bg-neutral-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        gpu.util > 80
+                          ? "bg-amber-500"
+                          : gpu.util > 50
+                          ? "bg-yellow-500"
+                          : "bg-green-500"
+                      }`}
+                      style={{ width: `${gpu.util}%` }}
+                    />
+                  </div>
+                  <span className="text-neutral-500 w-10 text-right">{gpu.util}%</span>
+                </div>
+              ))}
             </div>
-          ))}
-      </CardContent>
-    </Card>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
