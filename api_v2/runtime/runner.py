@@ -43,6 +43,7 @@ class ModelRunner:
         self.num_classes = 12
 
         self.model = None
+        self.device = f"cuda:{self.gpu_id}"
 
     # -------------------------------------------------------
     def _emit(self, event: str, progress: int, detail=None):
@@ -61,7 +62,7 @@ class ModelRunner:
 
     # -------------------------------------------------------
     def load_model(self):
-        session_log(self.session_id, f"[{self.model_name}] Load model")
+        session_log(self.session_id, f"[{self.model_name}] Loading model on GPU {self.gpu_id}")
         self._emit("model_load_start", 5)
 
         if not self.checkpoint.exists():
@@ -86,8 +87,7 @@ class ModelRunner:
         state = {k.replace("module.", ""): v for k, v in state.items()}
         self.model.load_state_dict(state, strict=False)
 
-        device = f"cuda:{self.gpu_id}"
-        self.model = self.model.to(device).eval()
+        self.model = self.model.to(self.device).eval()
 
         self._emit("model_load_complete", 10)
 
@@ -96,7 +96,8 @@ class ModelRunner:
         session_log(self.session_id, f"[{self.model_name}] Preprocessing input")
         self._emit("preprocess_start", 15)
 
-        tensor, metadata = preprocess_image(
+        # preprocess_image returns (tensor, input_img) where input_img is nibabel object
+        image_tensor, input_img = preprocess_image(
             image_path=input_path,
             session_id=self.session_id,
             spatial_size=self.spatial_size,
@@ -108,16 +109,16 @@ class ModelRunner:
             crop_foreground=self.crop_foreground,
         )
 
-        # Tensor already has shape (1, 1, D, H, W) from preprocess_image
-        tensor = tensor.to(f"cuda:{self.gpu_id}")
+        # Move tensor to GPU - shape is (1, 1, D, H, W)
+        image_tensor = image_tensor.to(self.device)
 
         self._emit("preprocess_complete", 25)
-        return tensor, metadata
+        return image_tensor, input_img
 
     # -------------------------------------------------------
     @torch.no_grad()
     def infer(self, tensor):
-        session_log(self.session_id, f"[{self.model_name}] Inference start")
+        session_log(self.session_id, f"[{self.model_name}] Inference start on GPU {self.gpu_id}")
         self._emit("inference_start", 30)
 
         preds = sliding_window_inference(
@@ -134,15 +135,18 @@ class ModelRunner:
         return preds
 
     # -------------------------------------------------------
-    def save_output(self, preds, metadata):
+    def save_output(self, preds, input_img):
+        """
+        Save predictions using original image's affine and header (matching v1).
+        """
         self._emit("save_start", 70)
 
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
         out_path = model_output_path(self.session_id, self.model_name)
         preds_np = preds_np.astype("uint8")
 
-        # Save with original affine and header (matching v1 implementation)
-        pred_img = nib.Nifti1Image(preds_np, affine=metadata["affine"], header=metadata["header"])
+        # Save with original affine and header (exactly like v1)
+        pred_img = nib.Nifti1Image(preds_np, affine=input_img.affine, header=input_img.header)
         nib.save(pred_img, str(out_path))
 
         session_log(self.session_id, f"[{self.model_name}] Saved to {out_path}")
@@ -154,16 +158,16 @@ class ModelRunner:
     def run(self, input_path: Path):
         try:
             self.load_model()
-            tensor, metadata = self.preprocess_input(input_path)
+            tensor, input_img = self.preprocess_input(input_path)
             preds = self.infer(tensor)
-            return self.save_output(preds, metadata)
+            return self.save_output(preds, input_img)
 
         except Exception as e:
             exc_type, exc_value, exc_tb = sys.exc_info()
 
             print("Exception type:", exc_type)
             print("Exception value:", exc_value)
-        
+
             print("\nFormatted traceback:")
             traceback.print_tb(exc_tb)
 

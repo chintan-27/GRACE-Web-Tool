@@ -12,35 +12,11 @@ from monai.transforms import (
 )
 
 from runtime.session import session_log
-import warnings
 
 # Complexity threshold for auto normalization (matches v1)
 COMPLEXITY_THRESHOLD = 10000
 
 
-# -------------------------------------------------------
-# NORMALIZATION METHODS (matching v1 implementation)
-# -------------------------------------------------------
-def normalize_fixed(data: np.ndarray, a_min: float = 0, a_max: float = 255) -> np.ndarray:
-    """
-    Fixed range normalization matching v1 implementation.
-    """
-    data = np.clip(data, a_min, a_max)
-    return (data - a_min) / (a_max - a_min + 1e-8)
-
-
-def normalize_percentile(data: np.ndarray, lower: int = 20, upper: int = 80) -> np.ndarray:
-    """
-    Percentile-based normalization matching v1 implementation.
-    """
-    pmin, pmax = np.percentile(data, [lower, upper])
-    data = np.clip(data, pmin, pmax)
-    return (data - pmin) / (pmax - pmin + 1e-8)
-
-
-# -------------------------------------------------------
-# MAIN PREPROCESSING FUNCTION
-# -------------------------------------------------------
 def preprocess_image(
     image_path: Path,
     session_id: str,
@@ -53,91 +29,61 @@ def preprocess_image(
     crop_foreground: bool = False,
 ):
     """
-    Unified preprocessing pipeline for all models.
-    Matches v1 implementation for correct inference results.
-
-    Args:
-        image_path: Path to input NIfTI file
-        session_id: Session ID for logging
-        spatial_size: Model's expected spatial size (used for metadata, not resizing)
-        normalization: "auto", "fixed", or "percentile"
-        model_type: "grace", "domino", or "dominopp"
-        percentile_range: (lower, upper) percentiles for percentile normalization
-        interpolation_mode: "bilinear" or "trilinear" for spatial transforms
-        fixed_range: (a_min, a_max) for fixed normalization
-        crop_foreground: Whether to crop to foreground (used by DOMINO)
+    Preprocessing pipeline matching v1 implementation exactly.
     """
-
     session_log(session_id, f"Preprocessing image: {image_path}")
 
     # Load image
-    img_nib = nib.load(str(image_path))
-    img_data = img_nib.get_fdata().astype(np.float32)
-    affine = img_nib.affine
-    header = img_nib.header.copy()
+    input_img = nib.load(str(image_path))
+    image_data = input_img.get_fdata().astype(np.float32)
 
-    # Log image stats (matching v1)
-    image_max = np.max(img_data)
-    image_min = np.min(img_data)
-    image_mean = np.mean(img_data)
-    session_log(session_id, f"Image shape: {img_data.shape}, dtype: {img_data.dtype}")
+    # Log image stats
+    image_max = np.max(image_data)
+    image_min = np.min(image_data)
+    image_mean = np.mean(image_data)
+    session_log(session_id, f"Image shape: {image_data.shape}, dtype: {image_data.dtype}")
     session_log(session_id, f"Image stats - Min: {image_min:.2f}, Max: {image_max:.2f}, Mean: {image_mean:.2f}")
 
-    # AUTO NORMALIZATION (matching v1 logic)
-    if normalization == "auto":
-        if image_max > COMPLEXITY_THRESHOLD:
-            # Complex image - use percentile normalization
-            img_data = normalize_percentile(img_data, percentile_range[0], percentile_range[1])
-            session_log(session_id, f"Applied percentile normalization ({percentile_range[0]}-{percentile_range[1]}) due to max > {COMPLEXITY_THRESHOLD}")
-        elif image_max <= 255.0 and model_type == "grace":
-            # GRACE: skip normalization for images already in 0-255 range
-            session_log(session_id, "Skipped normalization (image already in 0-255 range)")
-        else:
-            # Apply fixed normalization
-            img_data = normalize_fixed(img_data, fixed_range[0], fixed_range[1])
-            session_log(session_id, f"Applied fixed normalization: [{fixed_range[0]}, {fixed_range[1]}]")
-    elif normalization == "percentile":
-        img_data = normalize_percentile(img_data, percentile_range[0], percentile_range[1])
+    # Normalization logic matching v1 exactly
+    if image_max > COMPLEXITY_THRESHOLD:
+        # Percentile normalization
+        pmin, pmax = np.percentile(image_data, [percentile_range[0], percentile_range[1]])
+        image_data = np.clip(image_data, pmin, pmax)
+        image_data = (image_data - pmin) / (pmax - pmin + 1e-8)
         session_log(session_id, f"Applied percentile normalization ({percentile_range[0]}-{percentile_range[1]})")
-    elif normalization == "fixed":
-        img_data = normalize_fixed(img_data, fixed_range[0], fixed_range[1])
-        session_log(session_id, f"Applied fixed normalization: [{fixed_range[0]}, {fixed_range[1]}]")
+    elif image_max <= 255.0 and model_type == "grace":
+        # GRACE: skip normalization for images already in 0-255 range
+        session_log(session_id, "Skipped normalization (image max <= 255)")
     else:
-        session_log(session_id, f"Unknown normalization '{normalization}', skipping.")
+        # Fixed normalization
+        a_min, a_max = fixed_range
+        image_data = np.clip(image_data, a_min, a_max)
+        image_data = (image_data - a_min) / (a_max - a_min + 1e-8)
+        session_log(session_id, f"Applied fixed normalization: [{a_min}, {a_max}]")
 
-    # Wrap in MetaTensor (MONAI-friendly) and add channel dimension
-    # Matching v1: add channel dimension before transforms
-    meta_tensor = MetaTensor(img_data[np.newaxis, ...], affine=affine)
+    # Wrap in MetaTensor with channel dimension (matching v1 exactly)
+    meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)
 
-    # Apply MONAI spatial transforms (matching v1 - NO ResizeWithPadOrCrop)
-    warnings.simplefilter("default")
-
-    # Build transform list based on model requirements
+    # Build transforms (matching v1)
     transform_list = [
-        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=(interpolation_mode,)),
+        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=interpolation_mode),
         Orientationd(keys=["image"], axcodes="RAS"),
     ]
 
-    # DOMINO models use CropForegroundd
+    # DOMINO uses CropForegroundd
     if crop_foreground:
         transform_list.append(CropForegroundd(keys=["image"], source_key="image"))
-        session_log(session_id, "Will apply foreground cropping (DOMINO)")
+        session_log(session_id, "Applying foreground cropping")
 
     transforms = Compose(transform_list)
 
     session_log(session_id, f"Applying spatial transforms (mode={interpolation_mode})...")
-    data_dict = transforms({"image": meta_tensor})
+    transformed = transforms({"image": meta_tensor})
 
-    # Get tensor and add batch dimension: (1, 1, D, H, W)
-    tensor = data_dict["image"].unsqueeze(0)
-    tensor = torch.as_tensor(tensor, dtype=torch.float32)
+    # Add batch dimension: (1, 1, D, H, W) - matching v1 exactly
+    image_tensor = transformed["image"].unsqueeze(0)
 
-    metadata = {
-        "affine": affine,
-        "header": header,
-        "original_shape": img_data.shape,
-    }
+    session_log(session_id, f"Finished preprocessing - final shape {image_tensor.shape}")
 
-    session_log(session_id, f"Finished preprocessing - final shape {tensor.shape}")
-
-    return tensor, metadata
+    # Return tensor and the original nibabel image (for affine/header)
+    return image_tensor, input_img

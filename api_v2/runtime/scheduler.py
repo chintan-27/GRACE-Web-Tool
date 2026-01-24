@@ -40,42 +40,42 @@ class GPUScheduler:
         push_event(job_id, {"event": "queued"})
         log_event(job_id, {"event": "queued"})
 
-    def find_free_gpu(self):
-        """Thread-safe GPU allocation."""
+    def acquire_gpu(self, job_id: str, model_name: str):
+        """
+        Atomically find and lock a free GPU.
+        Returns gpu_id if successful, None if no GPU available.
+        """
         with self._gpu_lock:
             for gpu_id in range(self.num_gpus):
                 status = redis_client.hget(GPU_LOCK_KEY, gpu_id)
                 if status == "free":
+                    redis_client.hset(GPU_LOCK_KEY, gpu_id, f"{job_id}:{model_name}")
+                    log_info(job_id, f"GPU {gpu_id} acquired for {model_name}")
                     return gpu_id
         return None
 
-    def lock_gpu(self, gpu_id: int, job_id: str):
-        with self._gpu_lock:
-            redis_client.hset(GPU_LOCK_KEY, gpu_id, job_id)
-        log_info(job_id, f"GPU {gpu_id} locked")
-
-    def unlock_gpu(self, gpu_id: int, job_id: str = None):
+    def release_gpu(self, gpu_id: int, job_id: str = None):
+        """Release a GPU back to the pool."""
         with self._gpu_lock:
             redis_client.hset(GPU_LOCK_KEY, gpu_id, "free")
         if job_id:
-            log_info(job_id, f"GPU {gpu_id} freed")
+            log_info(job_id, f"GPU {gpu_id} released")
 
     def _run_single_model(self, job_id: str, model_name: str, input_path: str):
         """
         Run a single model on an available GPU.
-        Waits for a GPU to become free, locks it, runs inference, unlocks.
+        Waits for a GPU, runs inference, releases GPU.
         Returns (model_name, success, error_msg)
         """
         set_job_status(job_id, model_name, "waiting_gpu")
 
-        # Wait for a free GPU
+        # Wait for a free GPU (with atomic acquisition)
         gpu_id = None
         while gpu_id is None:
-            gpu_id = self.find_free_gpu()
+            gpu_id = self.acquire_gpu(job_id, model_name)
             if gpu_id is None:
-                time.sleep(0.1)
+                time.sleep(0.2)
 
-        self.lock_gpu(gpu_id, f"{job_id}:{model_name}")
         set_job_status(job_id, model_name, "running")
 
         try:
@@ -84,17 +84,19 @@ class GPUScheduler:
             set_job_status(job_id, model_name, "complete")
             return (model_name, True, None)
         except Exception as e:
-            log_error(job_id, f"Model {model_name} failed: {e}")
+            import traceback
+            tb = traceback.format_exc()
+            log_error(job_id, f"Model {model_name} failed: {e}\n{tb}")
             push_event(job_id, {"event": "model_error", "model": model_name, "error": str(e)})
             log_event(job_id, {"event": "model_error", "model": model_name, "error": str(e)})
             set_job_status(job_id, model_name, "error")
             return (model_name, False, str(e))
         finally:
-            self.unlock_gpu(gpu_id, job_id)
+            self.release_gpu(gpu_id, job_id)
 
     def run_job(self, job_id: str):
         """
-        Run all models for a job IN PARALLEL across available GPUs.
+        Run all models for a job in parallel across available GPUs.
         """
         payload_raw = redis_client.get(JOB_DATA_PREFIX + job_id)
         if not payload_raw:
@@ -107,14 +109,15 @@ class GPUScheduler:
         if steps is None:
             steps = [{"model": m, "input_path": payload["input_path"]} for m in payload["models"]]
 
-        session_log(job_id, f"Job started with {len(steps)} models (parallel execution on {self.num_gpus} GPUs).")
+        session_log(job_id, f"Job started with {len(steps)} models (using up to {self.num_gpus} GPUs).")
         push_event(job_id, {"event": "job_start"})
         log_event(job_id, {"event": "job_start"})
 
-        # Run all models in parallel using ThreadPoolExecutor
-        # Max workers = number of GPUs (each model gets its own GPU)
+        # Run models in parallel - ThreadPoolExecutor handles thread safety
+        # Each thread will wait for its own GPU
         errors = []
-        with ThreadPoolExecutor(max_workers=self.num_gpus) as executor:
+
+        with ThreadPoolExecutor(max_workers=min(len(steps), self.num_gpus)) as executor:
             futures = {
                 executor.submit(
                     self._run_single_model,
@@ -133,6 +136,7 @@ class GPUScheduler:
                         errors.append((name, error_msg))
                 except Exception as e:
                     errors.append((model_name, str(e)))
+                    log_error(job_id, f"Future exception for {model_name}: {e}")
 
         if errors:
             error_summary = "; ".join([f"{m}: {e}" for m, e in errors])
@@ -152,6 +156,7 @@ class GPUScheduler:
                 job = json.loads(raw)
                 job_id = job["session_id"]
                 session_log(job_id, "Dequeued job for scheduling.")
+                # Run job in a separate thread so scheduler can continue
                 t = threading.Thread(target=self.run_job, args=(job_id,))
                 t.start()
             time.sleep(self.poll_interval)
