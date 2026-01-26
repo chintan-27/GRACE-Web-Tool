@@ -1,6 +1,5 @@
 "use client";
 
-import { Card } from "@/components/ui/card";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { getResult } from "../../lib/api";
 import { Niivue } from "@niivue/niivue";
@@ -26,6 +25,12 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
     if (count === 3) return "w-1/3";
     if (count === 2) return "w-1/2";
     return "w-full";
+  };
+
+  const getCanvasSize = (count: number) => {
+    if (count === 3) return { width: 512, height: 1024 };
+    if (count === 2) return { width: 120, height: 360 };
+    return { width: 720, height: 720 };
   };
 
   // Initialize Niivue instances and load original image
@@ -99,9 +104,12 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
             const blob = await getResult(sessionId, model);
             const buffer = await blob.arrayBuffer();
 
-            // Add segmentation as overlay (volume index 1)
+            // Add segmentation as overlay (volume index 1) with FreeSurfer colormap
             await nv.loadFromArrayBuffer(buffer, `${model}.nii.gz`);
-            nv.setOpacity(1, 1.0);
+
+            // Set colormap for segmentation - use freesurfer for label visualization
+            nv.setColormap(nv.volumes[1].id, "freesurfer");
+            nv.setOpacity(1, 0.5); // Semi-transparent overlay
             nv.drawScene();
 
             setLoadedResults((prev) => ({ ...prev, [model]: true }));
@@ -149,30 +157,59 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
     setViewMode((prev) => (prev === "2d" ? "3d" : "2d"));
   };
 
-  // Format model name for display
-  const formatModelName = (model: string) => {
-    return model.replace("-native", " (Native)").replace("-fs", " (FS)").toUpperCase();
+  // Handle download from Niivue instance (matching v1)
+  const handleDownload = async (model: string) => {
+    const nv = nvRefs.current[model];
+    if (!nv || nv.volumes.length < 2) {
+      console.error(`Niivue instance or segmentation for ${model} not found.`);
+      return;
+    }
+
+    const filename = `uploaded_image_pred_${model.toUpperCase().replace("-", "_")}.nii.gz`;
+
+    try {
+      const result = await nv.saveImage({
+        filename,
+        volumeByIndex: 1, // Save the segmentation volume
+        isSaveDrawing: false,
+      });
+
+      if (result instanceof Uint8Array) {
+        const blob = new Blob([result as BlobPart], { type: "application/gzip" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error(`Failed to save image for ${model}:`, err);
+    }
   };
 
   return (
-    <Card className="bg-neutral-900 border-neutral-800 p-4 space-y-4">
+    <div className="w-full bg-black p-4">
       {/* View toggle button */}
-      <div className="flex justify-center">
+      <div className="flex justify-center mb-4">
         <button
           onClick={toggleViewMode}
-          className="px-4 py-2 text-sm bg-neutral-800 text-neutral-200 rounded-lg hover:bg-neutral-700 transition"
+          className="px-4 py-2 text-sm bg-gray-800 text-white rounded-sm hover:bg-gray-700"
         >
           Switch to {viewMode === "2d" ? "3D" : "2D"} View
         </button>
       </div>
 
-      {/* Canvases in side-by-side layout */}
+      {/* Canvases in side-by-side layout (matching v1) */}
       <div
         className={`flex flex-row ${
           models.length === 1 ? "justify-center" : "justify-start"
-        } items-start gap-4 w-full`}
+        } items-start space-x-4 w-full h-full`}
       >
         {models.map((model) => {
+          const { width, height } = getCanvasSize(models.length);
           const modelProgress = progress[model] ?? 0;
           const isLoaded = loadedResults[model];
 
@@ -181,37 +218,39 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
               key={model}
               className={`${getWidthClass(models.length)} flex flex-col items-center`}
             >
-              {/* Canvas */}
-              <div className="w-full h-[500px] sm:h-[600px] bg-black rounded-lg overflow-hidden">
-                <canvas
-                  ref={(el) => {
-                    canvasRefs.current[model] = el;
-                  }}
-                  className="w-full h-full"
-                />
-              </div>
+              {/* Canvas with fixed dimensions like v1 */}
+              <canvas
+                ref={(el) => {
+                  canvasRefs.current[model] = el;
+                }}
+                width={width}
+                height={height}
+              />
 
               {/* Model label */}
-              <div className="text-center mt-2 font-semibold text-neutral-100">
-                {formatModelName(model)}
+              <div className="text-center mt-2 font-semibold text-white">
+                {model.toUpperCase().replace("-NATIVE", "").replace("-FS", "")}
               </div>
 
-              {/* Status indicator */}
-              <div className="text-xs text-neutral-400 mt-1">
-                {modelProgress < 100 ? (
-                  <span className="text-amber-400">
-                    Processing... {modelProgress}%
-                  </span>
-                ) : isLoaded ? (
-                  <span className="text-green-400">Segmentation loaded</span>
-                ) : (
-                  <span className="text-amber-400">Loading result...</span>
-                )}
-              </div>
+              {/* Progress or Download button (matching v1) */}
+              {modelProgress < 100 ? (
+                <div className="text-sm text-amber-400 mt-1">
+                  Processing... {modelProgress}%
+                </div>
+              ) : isLoaded ? (
+                <button
+                  onClick={() => handleDownload(model)}
+                  className="mt-2 px-3 py-1 bg-lime-600 text-white text-sm rounded-sm hover:bg-lime-700"
+                >
+                  Download
+                </button>
+              ) : (
+                <div className="text-sm text-amber-400 mt-1">Loading result...</div>
+              )}
             </div>
           );
         })}
       </div>
-    </Card>
+    </div>
   );
 }
