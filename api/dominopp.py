@@ -114,7 +114,8 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
         yield send_progress(f"Applied fixed normalization: [{a_min_value}, {a_max_value}]", 37)
 
     # Wrap in MetaTensor (MONAI-friendly) and add channel
-    meta_tensor = MetaTensor(image_data, affine=input_img.affine)
+    # meta_tensor = MetaTensor(image_data, affine=input_img.affine)
+    meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)  # shape: (1, 176, 240, 256)
 
     # Apply MONAI spatial transforms
     test_transforms = Compose([
@@ -127,7 +128,8 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     yield send_progress("Applying spatial transforms...", 40)
     transformed = test_transforms({"image": meta_tensor})
 
-    image_tensor = transformed["image"].unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
+    # image_tensor = transformed["image"].unsqueeze(0).unsqueeze(0).to(device)  # shape: (1, 1, D, H, W)
+    image_tensor = transformed["image"].unsqueeze(0).to(device)
 
     yield send_progress(f"Preprocessing complete. Final shape: {image_tensor.shape}", 45)
     return image_tensor, input_img
