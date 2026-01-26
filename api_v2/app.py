@@ -168,6 +168,27 @@ async def get_input(session_id: str):
 
 
 # ============================================================
+# GET /logs  — Dev endpoint: list all sessions with logs
+# ============================================================
+@app.get("/logs")
+def list_sessions():
+    sessions_path = Path(SESSION_DIR)
+    if not sessions_path.exists():
+        return {"sessions": []}
+
+    sessions = []
+    for session_dir in sorted(sessions_path.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if session_dir.is_dir():
+            log_file = session_dir / "logs.jsonl"
+            sessions.append({
+                "session_id": session_dir.name,
+                "has_logs": log_file.exists(),
+                "created": session_dir.stat().st_mtime,
+            })
+    return {"sessions": sessions}
+
+
+# ============================================================
 # GET /logs/{session_id}  — Dev endpoint
 # ============================================================
 @app.get("/logs/{session_id}")
