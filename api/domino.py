@@ -120,9 +120,9 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
 
     # Apply MONAI spatial transforms
     test_transforms = Compose([
-        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("trilinear")),
+        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("bilinear")),
         Orientationd(keys=["image"], axcodes="RAS"),
-        CropForegroundd(keys=["image"], source_key="image"),
+        # CropForegroundd(keys=["image"], source_key="image"),
         ResizeWithPadOrCropd(keys=["image"], spatial_size=(256, 256, 256)),
     ])
 
