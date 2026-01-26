@@ -32,7 +32,7 @@ def convert_to_fs(input_path: Path, output_path: Path, session_id: str) -> bool:
         str(MRI_CONVERT),
         str(input_path),
         str(output_path),
-        "--conform"
+        # "--conform"
     ]
 
     try:

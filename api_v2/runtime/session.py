@@ -17,7 +17,7 @@ def session_input_native(session_id: str) -> Path:
 
 
 def session_input_fs(session_id: str) -> Path:
-    return session_path(session_id) / "input_fs.mgz"
+    return session_path(session_id) / "input_fs.nii"
 
 
 def model_output_path(session_id: str, model_name: str) -> Path:
