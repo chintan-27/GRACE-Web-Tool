@@ -151,6 +151,34 @@ async def get_result(session_id: str, model_name: str):
 
 
 # ============================================================
+# GET /results/{session_id}/input
+# ============================================================
+@app.get("/results/{session_id}/input")
+async def get_input(session_id: str):
+    input_path = session_input_native(session_id)
+
+    if not input_path.exists():
+        raise HTTPException(status_code=404, detail="Input file not found")
+
+    return FileResponse(
+        path=str(input_path),
+        filename="input.nii.gz",
+        media_type="application/gzip",
+    )
+
+
+# ============================================================
+# GET /logs/{session_id}  — Dev endpoint
+# ============================================================
+@app.get("/logs/{session_id}")
+def get_session_logs(session_id: str):
+    lp = Path(SESSION_DIR) / session_id / "logs.jsonl"
+    if not lp.exists():
+        raise HTTPException(404, "No logs for session")
+    return FileResponse(str(lp), media_type="text/plain")
+
+
+# ============================================================
 # GET /health
 # ============================================================
 @app.get("/health")

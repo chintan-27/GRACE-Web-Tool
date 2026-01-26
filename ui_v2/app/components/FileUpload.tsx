@@ -25,10 +25,12 @@ export default function FileUpload({ selectedFile, onFileSelect }: Props) {
 
         <Input
           type="file"
-          accept=".nii,.gz"
+          accept=".nii,.nii.gz,.gz"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) onFileSelect(file);
+            if (file && (file.name.endsWith(".nii") || file.name.endsWith(".nii.gz"))) {
+              onFileSelect(file);
+            }
           }}
           className="bg-white text-gray-900 dark:bg-gray-800 dark:text-gray-100 dark:border-gray-700"
         />

@@ -121,13 +121,31 @@ class ModelRunner:
         session_log(self.session_id, f"[{self.model_name}] Inference start on GPU {self.gpu_id}")
         self._emit("inference_start", 30)
 
-        preds = sliding_window_inference(
-            inputs=tensor,
-            roi_size=self.spatial_size,
-            sw_batch_size=4,
-            predictor=self.model,
-            overlap=0.8,
-        )
+        # Try with sw_batch_size=4 first, retry with 2 on OOM (matching v1 behavior)
+        batch_sizes = [4, 2]
+        preds = None
+
+        for sw_batch_size in batch_sizes:
+            try:
+                session_log(self.session_id, f"[{self.model_name}] Trying sw_batch_size={sw_batch_size}")
+                preds = sliding_window_inference(
+                    inputs=tensor,
+                    roi_size=self.spatial_size,
+                    sw_batch_size=sw_batch_size,
+                    predictor=self.model,
+                    overlap=0.8,
+                )
+                break  # Success, exit retry loop
+            except RuntimeError as e:
+                if "out of memory" in str(e).lower() and sw_batch_size > batch_sizes[-1]:
+                    session_log(self.session_id, f"[{self.model_name}] OOM with sw_batch_size={sw_batch_size}, retrying with smaller batch")
+                    torch.cuda.empty_cache()
+                    continue
+                else:
+                    raise  # Re-raise if not OOM or if we've exhausted retries
+
+        if preds is None:
+            raise RuntimeError(f"Inference failed for {self.model_name} even with smallest batch size")
 
         self._emit("inference_mid", 65)
         session_log(self.session_id, f"[{self.model_name}] Inference finished")

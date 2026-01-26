@@ -140,6 +140,15 @@ export async function getResult(
 }
 
 // ---------------------------------------------------------------------
+// GET /results/{session}/input
+// ---------------------------------------------------------------------
+export async function getInput(sessionId: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/results/${sessionId}/input`);
+  if (!res.ok) throw new Error("Input file not found");
+  return await res.blob();
+}
+
+// ---------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------
 export async function getHealth(): Promise<HealthResponse> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useJob } from "@/context/JobContext";
 
 import GPUStatus from "./components/GPUStatus";
@@ -33,13 +33,27 @@ export default function HomePage() {
   const [domino, setDomino] = useState(false);
   const [dominopp, setDominopp] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [inputBlobUrl, setInputBlobUrl] = useState<string | null>(null);
 
   const isAnyModelChecked = grace || domino || dominopp;
   const canSubmit = selectedFile && isAnyModelChecked;
 
+  // Cleanup blob URL when component unmounts or resets
+  useEffect(() => {
+    return () => {
+      if (inputBlobUrl) {
+        URL.revokeObjectURL(inputBlobUrl);
+      }
+    };
+  }, [inputBlobUrl]);
+
   const handleStart = async () => {
     if (!selectedFile) return;
     if (!isAnyModelChecked) return;
+
+    // Create blob URL for immediate display
+    const blobUrl = URL.createObjectURL(selectedFile);
+    setInputBlobUrl(blobUrl);
 
     // Build model list based on space + selected models
     const modelList: string[] = [];
@@ -50,6 +64,21 @@ export default function HomePage() {
     if (dominopp) modelList.push(`dominopp${suffix}`);
 
     await startJob(selectedFile, modelList, selectedSpace);
+  };
+
+  const handleReset = () => {
+    // Cleanup blob URL
+    if (inputBlobUrl) {
+      URL.revokeObjectURL(inputBlobUrl);
+      setInputBlobUrl(null);
+    }
+    // Reset form state
+    setSelectedFile(null);
+    setGrace(false);
+    setDomino(false);
+    setDominopp(false);
+    // Reset job context
+    resetJob();
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -156,10 +185,12 @@ export default function HomePage() {
                   >
                     <input
                       type="file"
-                      accept=".nii,.nii.gz"
+                      accept=".nii,.nii.gz,.gz"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) setSelectedFile(file);
+                        if (file && (file.name.endsWith(".nii") || file.name.endsWith(".nii.gz"))) {
+                          setSelectedFile(file);
+                        }
                       }}
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                     />
@@ -305,29 +336,46 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* QUEUED / RUNNING */}
-          {status !== "idle" && status !== "complete" && (
-            <div className="rounded-3xl border border-neutral-800 bg-neutral-900/80 p-6 md:p-8 shadow-[0_18px_60px_rgba(0,0,0,0.75)]">
-              <SessionSummary />
-              <ProgressPanel models={models} progress={progress} />
-              <div className="mt-6">
-                <GPUStatus />
+          {/* QUEUED / RUNNING - Show viewer immediately with original image */}
+          {status !== "idle" && status !== "complete" && inputBlobUrl && (
+            <div className="space-y-6">
+              <div className="rounded-3xl border border-neutral-800 bg-neutral-900/80 p-6 md:p-8 shadow-[0_18px_60px_rgba(0,0,0,0.75)]">
+                <SessionSummary />
+                <ProgressPanel models={models} progress={progress} />
+                <div className="mt-6">
+                  <GPUStatus />
+                </div>
               </div>
+
+              {/* Viewer with original image while processing */}
+              {sessionId && (
+                <Viewer
+                  inputUrl={inputBlobUrl}
+                  sessionId={sessionId}
+                  models={models}
+                  progress={progress}
+                />
+              )}
             </div>
           )}
 
           {/* COMPLETED */}
-          {status === "complete" && viewerReady && (
+          {status === "complete" && viewerReady && inputBlobUrl && (
             <div className="space-y-6">
               <div className="rounded-3xl border border-neutral-800 bg-neutral-900/80 p-6 md:p-8 shadow-[0_18px_60px_rgba(0,0,0,0.75)]">
                 <SessionSummary />
                 <DownloadAll sessionId={sessionId!} models={models} />
               </div>
 
-              <Viewer sessionId={sessionId!} models={models} />
+              <Viewer
+                inputUrl={inputBlobUrl}
+                sessionId={sessionId!}
+                models={models}
+                progress={progress}
+              />
 
               <button
-                onClick={resetJob}
+                onClick={handleReset}
                 className="font-semibold py-2.5 px-6 rounded-full text-sm bg-neutral-800 hover:bg-neutral-700 text-neutral-200 transition"
               >
                 New Job
