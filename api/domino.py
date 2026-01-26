@@ -8,7 +8,7 @@ from scipy.io import savemat
 from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd, ResizeWithPadOrCropd
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd, ResizeWithPadOrCropd, ResizeWithPadOrCrop
 
 def send_progress(message, progress):
     """
@@ -148,7 +148,12 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     
     yield send_progress("Post-processing predictions...", 80)
     processed_preds = torch.argmax(predictions, dim=1).detach().cpu().numpy().squeeze()
-    
+
+    # Resize prediction back to original input shape
+    original_shape = input_img.shape
+    resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="nearest")
+    processed_preds = resize_back(processed_preds[np.newaxis, ...])[0]
+
     # Save as .nii.gz
     yield send_progress("Saving NIfTI file...", 85)
     pred_img = nib.Nifti1Image(processed_preds, affine=input_img.affine, header=input_img.header)
@@ -156,9 +161,9 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
     nib.save(pred_img, nii_save_path)
     
     # Save as .mat
-    yield send_progress("Saving MAT file...", 90)
-    mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_DOMINO.mat")
-    savemat(mat_save_path, {"testimage": processed_preds})
+    # yield send_progress("Saving MAT file...", 90)
+    # mat_save_path = os.path.join(output_dir, f"{base_filename}_pred_DOMINO.mat")
+    # savemat(mat_save_path, {"testimage": processed_preds})
     yield send_progress("Files saved successfully.", 95)
 
 def try_block(model_path, spatial_size, num_classes, device, input_path, a_min_value, a_max_value, sw_batch_size):
