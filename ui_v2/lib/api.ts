@@ -46,6 +46,8 @@ export async function startPrediction(
   models: string[],
   space: string
 ): Promise<PredictResponse> {
+  console.log(models);
+  console.log(space);
   const formData = new FormData();
   formData.append("file", file);
   formData.append("space", space);
@@ -89,6 +91,7 @@ export function connectSSE(
 
       // Map backend events -> UI events
       if (payload.event === "job_complete") {
+        evtSource.close(); // Close gracefully to prevent onerror firing
         onEvent({ type: "complete" });
         return;
       }
