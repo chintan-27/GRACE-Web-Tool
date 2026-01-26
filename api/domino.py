@@ -8,7 +8,7 @@ from scipy.io import savemat
 from monai.data import MetaTensor
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
-from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd
+from monai.transforms import Compose, Spacingd, Orientationd, ScaleIntensityRanged, Resize, CropForegroundd, ResizeWithPadOrCropd
 
 def send_progress(message, progress):
     """
@@ -121,7 +121,8 @@ def preprocess_input(input_path, device, a_min_value=0, a_max_value=255, complex
     test_transforms = Compose([
         Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=("trilinear")),
         Orientationd(keys=["image"], axcodes="RAS"),
-        CropForegroundd(keys=["image"], source_key="image")
+        CropForegroundd(keys=["image"], source_key="image"),
+        ResizeWithPadOrCropd(keys=["image"], spatial_size=(256, 256, 256)),
     ])
 
     yield send_progress("Applying spatial transforms...", 40)
