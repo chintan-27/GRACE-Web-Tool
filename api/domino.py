@@ -151,7 +151,7 @@ def save_predictions(predictions, input_img, output_dir, base_filename):
 
     # Resize prediction back to original input shape
     original_shape = input_img.shape
-    resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="nearest")
+    resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="constant")
     processed_preds = resize_back(processed_preds[np.newaxis, ...])[0]
 
     # Save as .nii.gz
