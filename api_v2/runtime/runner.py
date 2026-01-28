@@ -43,6 +43,7 @@ class ModelRunner:
         self.fixed_range = self.config.get("fixed_range", (0, 255))
         self.resize_spatial_size = self.config.get("resize_spatial_size", None)
         self.num_classes = 12
+        self.proj_type = self.config['proj_type']
 
         self.model = None
         self.device = f"cuda:{self.gpu_id}"
@@ -80,7 +81,7 @@ class ModelRunner:
             hidden_size=768,
             mlp_dim=3072,
             num_heads=12,
-            proj_type="perceptron",
+            proj_type=self.proj_type,
             norm_name="instance",
             res_block=True,
             dropout_rate=0.0,

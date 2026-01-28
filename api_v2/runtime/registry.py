@@ -39,6 +39,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (176, 256, 256),  # v1 uses this for ResizeWithPadOrCrop
+        'proj_type': 'conv',
     },
     "grace-fs": {
         "name": "grace-fs",
@@ -51,6 +52,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (256, 256, 256),
+        'proj_type': 'conv',
     },
 
     # ---------------------------------------------------
@@ -67,6 +69,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (176, 256, 256),
+        'proj_type': 'perceptron',
     },
     "domino-fs": {
         "name": "domino-fs",
@@ -79,6 +82,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (256, 256, 256),
+        'proj_type': 'perceptron',
     },
 
     # ---------------------------------------------------
@@ -95,6 +99,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (176, 256, 256),
+        'proj_type': 'perceptron',
     },
     "dominopp-fs": {
         "name": "dominopp-fs",
@@ -107,6 +112,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (256, 256, 256),
+        'proj_type': 'perceptron',
     },
 }
 
