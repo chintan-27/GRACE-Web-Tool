@@ -44,13 +44,15 @@ export interface SSEEvent {
 export async function startPrediction(
   file: File,
   models: string[],
-  space: string
+  space: string,
+  convertToFs: boolean = false
 ): Promise<PredictResponse> {
   console.log(models);
   console.log(space);
   const formData = new FormData();
   formData.append("file", file);
   formData.append("space", space);
+  formData.append("convert_to_fs", convertToFs ? "true" : "false");
 
   if (models.length === 6) formData.append("models", "all");
   else formData.append("models", models.join(","));

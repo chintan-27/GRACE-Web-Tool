@@ -29,6 +29,7 @@ export default function HomePage() {
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSpace, setSelectedSpace] = useState<Space>("native");
+  const [convertToFs, setConvertToFs] = useState(false);
   const [grace, setGrace] = useState(false);
   const [domino, setDomino] = useState(false);
   const [dominopp, setDominopp] = useState(false);
@@ -63,7 +64,9 @@ export default function HomePage() {
     if (domino) modelList.push(`domino${suffix}`);
     if (dominopp) modelList.push(`dominopp${suffix}`);
 
-    await startJob(selectedFile, modelList, selectedSpace);
+    // Only convert to FS if user selected FreeSurfer space AND checked the conversion box
+    const shouldConvertToFs = selectedSpace === "freesurfer" && convertToFs;
+    await startJob(selectedFile, modelList, selectedSpace, shouldConvertToFs);
   };
 
   const handleReset = () => {
@@ -74,6 +77,7 @@ export default function HomePage() {
     }
     // Reset form state
     setSelectedFile(null);
+    setConvertToFs(false);
     setGrace(false);
     setDomino(false);
     setDominopp(false);
@@ -161,6 +165,27 @@ export default function HomePage() {
                       </div>
                     </button>
                   </div>
+
+                  {/* FreeSurfer conversion checkbox - only shown when FreeSurfer space is selected */}
+                  {selectedSpace === "freesurfer" && (
+                    <label className="flex items-start gap-3 mt-3 p-3 rounded-xl border border-neutral-700 bg-neutral-800/50 cursor-pointer hover:border-neutral-600 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={convertToFs}
+                        onChange={() => setConvertToFs((prev) => !prev)}
+                        className="mt-0.5 h-4 w-4 accent-amber-500"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-neutral-200">
+                          Convert input to FreeSurfer space
+                        </div>
+                        <div className="text-xs text-neutral-400 mt-0.5">
+                          Check this if your input is in native space and needs to be converted.
+                          Leave unchecked if your input is already in FreeSurfer space.
+                        </div>
+                      </div>
+                    </label>
+                  )}
                 </div>
 
                 {/* File Upload */}

@@ -33,7 +33,7 @@ interface JobContextType {
   retryCount: number;
 
   // actions
-  startJob: (file: File, models: string[], space: string) => Promise<void>;
+  startJob: (file: File, models: string[], space: string, convertToFs?: boolean) => Promise<void>;
   resetJob: () => void;
 
   // setters
@@ -104,10 +104,10 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   // ------------------------------------------------------------
   // START A NEW JOB
   // ------------------------------------------------------------
-  const startJob = async (file: File, modelList: string[], sp: string) => {
+  const startJob = async (file: File, modelList: string[], sp: string, convertToFs: boolean = false) => {
     setStatus("uploading");
 
-    const resp: PredictResponse = await startPrediction(file, modelList, sp);
+    const resp: PredictResponse = await startPrediction(file, modelList, sp, convertToFs);
 
     setSessionId(resp.session_id);
     setModels(resp.models);
