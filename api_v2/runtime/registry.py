@@ -52,7 +52,7 @@ MODEL_REGISTRY = {
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
         "resize_spatial_size": (256, 256, 256),
-        'proj_type': 'conv',
+        'proj_type': 'perceptron',
     },
 
     # ---------------------------------------------------
