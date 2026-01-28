@@ -52,13 +52,13 @@ class InferenceOrchestrator:
             return self.native_path
 
         if self.space == "freesurfer":
-            # If FS already exists from previous job continuation
-            if self.fs_path.exists():
-                session_log(self.session_id, "FS input already present — skipping reconversion.")
-                return self.fs_path
-
             # Only convert if user explicitly requested it
             if self.convert_to_fs:
+                # If FS already exists from previous job continuation
+                if self.fs_path.exists():
+                    session_log(self.session_id, "FS input already present — skipping reconversion.")
+                    return self.fs_path
+
                 session_log(self.session_id, "Converting native → FreeSurfer space…")
                 ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
 
@@ -68,28 +68,24 @@ class InferenceOrchestrator:
                 session_log(self.session_id, "FS conversion successful.")
                 return self.fs_path
             else:
-                # User's input is already in FS space, decompress to fs_path for FS models
-                # Native is .nii.gz, FS path expects .nii (uncompressed)
-                session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested).")
-                import gzip
-                import shutil
-                with gzip.open(self.native_path, 'rb') as f_in:
-                    with open(self.fs_path, 'wb') as f_out:
-                        shutil.copyfileobj(f_in, f_out)
-                session_log(self.session_id, "Decompressed input to FS path for FS models.")
-                return self.fs_path
+                # User's input is already in FS space - use native path directly
+                # No conversion or copying needed
+                session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested). Using as-is.")
+                return self.native_path
 
         raise ValueError(f"Invalid space: {self.space}")
 
     # --------------------------------------------------------------------
-    def build_model_plan(self, input_path: Path):
+    def build_model_plan(self, fs_input_path: Path):
         """
         Construct scheduler model execution plan:
         [
            {"model": "grace-native",   "input_path": "/path/to/native"},
-           {"model": "domino-fs",      "input_path": "/path/to/fs"},
+           {"model": "domino-fs",      "input_path": "/path/to/fs_or_native"},
            ...
         ]
+
+        fs_input_path: The path to use for FS models (could be converted FS or original native if already in FS space)
         """
 
         plan = []
@@ -104,18 +100,14 @@ class InferenceOrchestrator:
                     "model": model_name,
                     "input_path": str(self.native_path),
                 })
-                # Update Redis job state
                 set_job_status(self.session_id, model_name, "prepared")
 
-
-            # Model requires FS input
+            # Model requires FS input - use the prepared FS input path
             elif cfg["space"] == "freesurfer":
                 plan.append({
                     "model": model_name,
-                    "input_path": str(self.fs_path),
+                    "input_path": str(fs_input_path),
                 })
-                
-                # Update Redis job state
                 set_job_status(self.session_id, model_name, "prepared")
 
             else:
