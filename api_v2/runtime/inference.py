@@ -68,12 +68,15 @@ class InferenceOrchestrator:
                 session_log(self.session_id, "FS conversion successful.")
                 return self.fs_path
             else:
-                # User's input is already in FS space, use native path as-is for FS models
+                # User's input is already in FS space, decompress to fs_path for FS models
+                # Native is .nii.gz, FS path expects .nii (uncompressed)
                 session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested).")
-                # Copy native to fs_path so FS models can find it
+                import gzip
                 import shutil
-                shutil.copy(self.native_path, self.fs_path)
-                session_log(self.session_id, "Copied input to FS path for FS models.")
+                with gzip.open(self.native_path, 'rb') as f_in:
+                    with open(self.fs_path, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                session_log(self.session_id, "Decompressed input to FS path for FS models.")
                 return self.fs_path
 
         raise ValueError(f"Invalid space: {self.space}")
