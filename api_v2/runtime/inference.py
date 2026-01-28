@@ -26,10 +26,11 @@ class InferenceOrchestrator:
       - Log session lifecycle
     """
 
-    def __init__(self, session_id: str, models: List[str], space: str):
+    def __init__(self, session_id: str, models: List[str], space: str, convert_to_fs: bool = False):
         self.session_id = session_id
         self.models = models
         self.space = space   # "native" or "freesurfer"
+        self.convert_to_fs = convert_to_fs  # Whether to convert input to FS space
 
         # Session input paths
         self.native_path = session_input_native(session_id)
@@ -40,7 +41,7 @@ class InferenceOrchestrator:
         """
         Ensure correct input files are ready:
           - Native NIfTI always exists
-          - FS input created only once
+          - FS input created only if user requested conversion
         Returns path to whichever input is relevant for orchestrator-level operations.
         """
 
@@ -56,14 +57,24 @@ class InferenceOrchestrator:
                 session_log(self.session_id, "FS input already present — skipping reconversion.")
                 return self.fs_path
 
-            session_log(self.session_id, "Converting native → FreeSurfer space…")
-            ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
+            # Only convert if user explicitly requested it
+            if self.convert_to_fs:
+                session_log(self.session_id, "Converting native → FreeSurfer space…")
+                ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
 
-            if not ok:
-                raise RuntimeError("FreeSurfer conversion failed.")
+                if not ok:
+                    raise RuntimeError("FreeSurfer conversion failed.")
 
-            session_log(self.session_id, "FS conversion successful.")
-            return self.fs_path
+                session_log(self.session_id, "FS conversion successful.")
+                return self.fs_path
+            else:
+                # User's input is already in FS space, use native path as-is for FS models
+                session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested).")
+                # Copy native to fs_path so FS models can find it
+                import shutil
+                shutil.copy(self.native_path, self.fs_path)
+                session_log(self.session_id, "Copied input to FS path for FS models.")
+                return self.fs_path
 
         raise ValueError(f"Invalid space: {self.space}")
 

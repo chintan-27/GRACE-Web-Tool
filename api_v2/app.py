@@ -61,14 +61,18 @@ async def predict(
     file: UploadFile = File(...),
     models: str = Body(...),
     space: str = Body(...),
+    convert_to_fs: str = Body("false"),
 ):
     # Validate input
     if not (file.filename.endswith(".nii") or file.filename.endswith(".nii.gz")):
         raise HTTPException(status_code=400, detail="File must be NIfTI")
 
+    # Parse convert_to_fs boolean
+    should_convert_to_fs = convert_to_fs.lower() == "true"
+
     # Create session
     session_id = create_session()
-    session_log(session_id, f"Session created. Models={models}, Space={space}")
+    session_log(session_id, f"Session created. Models={models}, Space={space}, ConvertToFS={should_convert_to_fs}")
 
     # Save uploaded file → input native (always store as real .nii.gz)
     native_path = session_input_native(session_id)
@@ -97,6 +101,7 @@ async def predict(
         session_id=session_id,
         models=model_list,
         space=space,
+        convert_to_fs=should_convert_to_fs,
     )
     plan = orchestrator.start_job()
 
