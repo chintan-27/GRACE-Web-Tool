@@ -35,9 +35,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (64, 64, 64),
         "checkpoint": str(Path(MODEL_DIR) / "grace_native.pth"),
-        "percentile_range": (10, 90),
+        "percentile_range": (25, 75),
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
+        "crop_foreground": False,
     },
     "grace-fs": {
         "name": "grace-fs",
@@ -46,9 +47,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (64, 64, 64),
         "checkpoint": str(Path(MODEL_DIR) / "grace_fs.pth"),
-        "percentile_range": (10, 90),
+        "percentile_range": (25, 75),
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
+        "crop_foreground": False,
     },
 
     # ---------------------------------------------------
@@ -61,10 +63,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (176, 176, 176),
         "checkpoint": str(Path(MODEL_DIR) / "domino_native.pth"),
-        "percentile_range": (15, 85),
+        "percentile_range": (25, 75),
         "interpolation_mode": "trilinear",
         "fixed_range": (0, 255),
-        "crop_foreground": False,
+        "crop_foreground": True,
     },
     "domino-fs": {
         "name": "domino-fs",
@@ -73,10 +75,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (256, 256, 256),
         "checkpoint": str(Path(MODEL_DIR) / "domino_fs.pth"),
-        "percentile_range": (15, 85),
+        "percentile_range": (25, 75),
         "interpolation_mode": "trilinear",
         "fixed_range": (0, 255),
-        "crop_foreground": False,
+        "crop_foreground": True,
     },
 
     # ---------------------------------------------------
@@ -89,9 +91,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (176, 176, 176),
         "checkpoint": str(Path(MODEL_DIR) / "dominopp_native.pth"),
-        "percentile_range": (15, 85),
+        "percentile_range": (25, 75),
         "interpolation_mode": "trilinear",
         "fixed_range": (0, 255),
+        "crop_foreground": True,
     },
     "dominopp-fs": {
         "name": "dominopp-fs",
@@ -100,9 +103,10 @@ MODEL_REGISTRY = {
         "normalization": "auto",
         "spatial_size": (256, 256, 256),
         "checkpoint": str(Path(MODEL_DIR) / "dominopp_fs.pth"),
-        "percentile_range": (15, 85),
+        "percentile_range": (25, 75),
         "interpolation_mode": "trilinear",
         "fixed_range": (0, 255),
+        "crop_foreground": True,
     },
 }
 

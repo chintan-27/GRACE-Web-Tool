@@ -2,7 +2,6 @@ import nibabel as nib
 import numpy as np
 from pathlib import Path
 from typing import Tuple
-import torch
 from monai.data import MetaTensor
 from monai.transforms import (
     Compose,
@@ -13,19 +12,17 @@ from monai.transforms import (
 
 from runtime.session import session_log
 
-# Thresholds for determining normalization strategy
-# Only apply percentile normalization for images with very high dynamic range
-PERCENTILE_THRESHOLD = 10000  # Apply percentile normalization only above this
-FIXED_NORM_THRESHOLD = 255    # Images at or below this are considered pre-normalized
+# Threshold for determining normalization strategy (matches v1)
+COMPLEXITY_THRESHOLD = 10000
 
 
 def preprocess_image(
     image_path: Path,
     session_id: str,
-    spatial_size: Tuple[int, int, int],
-    normalization: str,
-    model_type: str = "grace",
-    percentile_range: Tuple[int, int] = (20, 80),
+    spatial_size: Tuple[int, int, int],  # noqa: ARG001 - kept for API compatibility
+    normalization: str,  # noqa: ARG001 - kept for API compatibility
+    model_type: str = "grace",  # noqa: ARG001 - kept for API compatibility
+    percentile_range: Tuple[int, int] = (25, 75),
     interpolation_mode: str = "bilinear",
     fixed_range: Tuple[float, float] = (0, 255),
     crop_foreground: bool = False,
@@ -46,22 +43,18 @@ def preprocess_image(
     session_log(session_id, f"Image shape: {image_data.shape}, dtype: {image_data.dtype}")
     session_log(session_id, f"Image stats - Min: {image_min:.2f}, Max: {image_max:.2f}, Mean: {image_mean:.2f}")
 
-    # Normalization logic:
-    # 1. If max > PERCENTILE_THRESHOLD (very high range), use percentile clipping
-    # 2. If max <= 255, image is likely pre-normalized (FS space or already processed), skip normalization
-    # 3. Otherwise, use fixed range normalization
-    if image_max > PERCENTILE_THRESHOLD:
-        # Percentile normalization for very high dynamic range images
+    # Normalization logic matching v1 exactly:
+    # - If max > threshold: use percentile normalization
+    # - Otherwise: use fixed range normalization
+    # ALWAYS normalize to 0-1 range (model expects normalized input)
+    if image_max > COMPLEXITY_THRESHOLD:
+        # Percentile normalization for high dynamic range images
         pmin, pmax = np.percentile(image_data, [percentile_range[0], percentile_range[1]])
         image_data = np.clip(image_data, pmin, pmax)
         image_data = (image_data - pmin) / (pmax - pmin + 1e-8)
-        session_log(session_id, f"Applied percentile normalization ({percentile_range[0]}-{percentile_range[1]}) - image max {image_max:.0f} > {PERCENTILE_THRESHOLD}")
-    elif image_max <= FIXED_NORM_THRESHOLD:
-        # Image already in reasonable range (0-255), skip normalization
-        # This handles FreeSurfer-conformed images and pre-normalized inputs
-        session_log(session_id, f"Skipped normalization (image max {image_max:.2f} <= {FIXED_NORM_THRESHOLD})")
+        session_log(session_id, f"Applied percentile normalization ({percentile_range[0]}-{percentile_range[1]}) - image max {image_max:.0f} > {COMPLEXITY_THRESHOLD}")
     else:
-        # Fixed normalization for intermediate range (255 < max <= 50000)
+        # Fixed normalization to 0-1 range
         a_min, a_max = fixed_range
         image_data = np.clip(image_data, a_min, a_max)
         image_data = (image_data - a_min) / (a_max - a_min + 1e-8)
