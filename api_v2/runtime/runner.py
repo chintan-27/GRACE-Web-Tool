@@ -80,6 +80,7 @@ class ModelRunner:
             hidden_size=768,
             mlp_dim=3072,
             num_heads=12,
+            pos_embed="perceptron",
             norm_name="instance",
             res_block=True,
             dropout_rate=0.0,
@@ -124,7 +125,7 @@ class ModelRunner:
         self._emit("inference_start", 30)
 
         # Try with sw_batch_size=4 first, retry with 2 on OOM (matching v1 behavior)
-        batch_sizes = [4, 2]
+        batch_sizes = [2, 1]
         preds = None
 
         for sw_batch_size in batch_sizes:
