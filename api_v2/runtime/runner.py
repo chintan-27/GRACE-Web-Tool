@@ -1,12 +1,14 @@
 import torch
 import traceback
 import sys
+import numpy as np
 
 from pathlib import Path
 import nibabel as nib
 
 from monai.networks.nets import UNETR
 from monai.inferers import sliding_window_inference
+from monai.transforms import ResizeWithPadOrCrop
 
 from runtime.preprocess import preprocess_image
 from runtime.registry import get_model_config
@@ -39,7 +41,7 @@ class ModelRunner:
         self.percentile_range = self.config.get("percentile_range", (20, 80))
         self.interpolation_mode = self.config.get("interpolation_mode", "bilinear")
         self.fixed_range = self.config.get("fixed_range", (0, 255))
-        self.crop_foreground = self.config.get("crop_foreground", False)
+        self.resize_spatial_size = self.config.get("resize_spatial_size", None)
         self.num_classes = 12
 
         self.model = None
@@ -106,7 +108,7 @@ class ModelRunner:
             percentile_range=self.percentile_range,
             interpolation_mode=self.interpolation_mode,
             fixed_range=self.fixed_range,
-            crop_foreground=self.crop_foreground,
+            resize_spatial_size=self.resize_spatial_size,
         )
 
         # Move tensor to GPU - shape is (1, 1, D, H, W)
@@ -156,10 +158,19 @@ class ModelRunner:
     def save_output(self, preds, input_img):
         """
         Save predictions using original image's affine and header (matching v1).
+        Resizes predictions back to original input shape.
         """
         self._emit("save_start", 70)
 
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
+
+        # Resize prediction back to original input shape (matching v1)
+        original_shape = input_img.shape
+        session_log(self.session_id, f"[{self.model_name}] Resizing predictions from {preds_np.shape} to {original_shape}")
+
+        resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="constant")
+        preds_np = resize_back(preds_np[np.newaxis, ...])[0]
+
         out_path = model_output_path(self.session_id, self.model_name)
         preds_np = preds_np.astype("uint8")
 
