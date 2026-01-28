@@ -50,7 +50,7 @@ MODEL_REGISTRY = {
         "percentile_range": (20, 80),
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
-        "resize_spatial_size": (176, 256, 256),
+        "resize_spatial_size": (256, 256, 256),
     },
 
     # ---------------------------------------------------
@@ -66,7 +66,7 @@ MODEL_REGISTRY = {
         "percentile_range": (25, 75),
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
-        "resize_spatial_size": (256, 256, 256),
+        "resize_spatial_size": (176, 256, 256),
     },
     "domino-fs": {
         "name": "domino-fs",
@@ -94,7 +94,7 @@ MODEL_REGISTRY = {
         "percentile_range": (25, 75),
         "interpolation_mode": "bilinear",
         "fixed_range": (0, 255),
-        "resize_spatial_size": (256, 256, 256),
+        "resize_spatial_size": (176, 256, 256),
     },
     "dominopp-fs": {
         "name": "dominopp-fs",
