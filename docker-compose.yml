@@ -1,0 +1,70 @@
+version: "3.9"
+
+services:
+  # Redis for job queue
+  redis:
+    image: redis:7-alpine
+    container_name: whs-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Whole-Head Segmentation API v2
+  api:
+    build:
+      context: ./api_v2
+      dockerfile: Dockerfile
+    container_name: whs-api
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    volumes:
+      # Mount models directory (pre-trained weights)
+      - ./api_v2/models:/app/models:ro
+      # Mount sessions directory for outputs
+      - ./api_v2/sessions:/app/sessions
+      # Mount logs directory
+      - ./api_v2/logs:/app/logs
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GPU_COUNT=4
+      - JWT_SECRET=${JWT_SECRET:-change_me_in_production}
+      - HMAC_SECRET=${HMAC_SECRET:-change_me_hmac_in_production}
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # Frontend (optional - uncomment to include)
+  # ui:
+  #   build:
+  #     context: ./ui_v2
+  #     dockerfile: Dockerfile
+  #   container_name: whs-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     - NEXT_PUBLIC_API_URL=http://api:8100
+  #   depends_on:
+  #     - api
+
+volumes:
+  redis_data:

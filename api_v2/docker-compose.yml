@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Redis for job queue and session management
+  redis:
+    image: redis:7-alpine
+    container_name: whs-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Whole-Head Segmentation API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: whs-api
+    ports:
+      - "8100:8100"
+    volumes:
+      # Mount models directory (pre-trained weights)
+      - ./models:/app/models:ro
+      # Mount sessions directory for outputs
+      - ./sessions:/app/sessions
+      # Mount logs directory
+      - ./logs:/app/logs
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - GPU_COUNT=${GPU_COUNT:-4}
+      - JWT_SECRET=${JWT_SECRET:-change_me_in_production}
+      - HMAC_SECRET=${HMAC_SECRET:-change_me_hmac_in_production}
+      - FREESURFER_HOME=/usr/local/freesurfer
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    # GPU support - requires NVIDIA Container Toolkit
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  redis_data:
+
+# To run with GPU support:
+# docker compose up --build
+#
+# To run specific number of GPUs:
+# GPU_COUNT=2 docker compose up --build
+#
+# To run in detached mode:
+# docker compose up -d --build
