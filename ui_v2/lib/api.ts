@@ -36,6 +36,7 @@ export interface SSEEvent {
   model?: string;
   progress?: number;
   message?: string;
+  gpu?: number;
 }
 
 // ---------------------------------------------------------------------
@@ -111,6 +112,7 @@ export function connectSSE(
           type: "progress",
           model: payload.model,
           progress: payload.progress,
+          gpu: payload.gpu,
         });
         return;
       }

@@ -1,15 +1,23 @@
-"use client";
-
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
-import { JobProvider } from "../context/JobContext";
-import ThemeToggle from "./components/ThemeToggle";
+import ClientLayout from "./ClientLayout";
 
-export default function RootLayout({ children }: any) {
+const inter = Inter({
+  subsets: ["latin"],
+  variable: "--font-inter",
+});
+
+export const metadata: Metadata = {
+  title: "GRACE - MRI Segmentation Suite",
+  description: "Whole-head MRI segmentation with GRACE, DOMINO, and DOMINO++ models",
+};
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
-      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
-        <ThemeToggle />
-        <JobProvider>{children}</JobProvider>
+    <html lang="en" className={`dark ${inter.variable}`}>
+      <body className="min-h-screen bg-background text-foreground antialiased font-sans">
+        <ClientLayout>{children}</ClientLayout>
       </body>
     </html>
   );
