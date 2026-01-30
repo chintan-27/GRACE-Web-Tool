@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useId } from "react";
-import { Upload, FileCheck, AlertCircle, ArrowRight, X } from "lucide-react";
+import { Upload, FileCheck, AlertCircle, ArrowRight, X, ShieldAlert } from "lucide-react";
 import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -90,6 +90,25 @@ export default function UploadStep() {
 
   return (
     <div className="mx-auto max-w-2xl">
+      {/* Important Disclaimer Alert */}
+      <div
+        className="mb-6 rounded-xl border border-warning/30 bg-warning/10 p-4"
+        role="alert"
+      >
+        <div className="flex gap-3">
+          <ShieldAlert className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold text-warning">Important Notice</p>
+            <p className="text-foreground-secondary">
+              This tool is for <strong>research and prototyping only</strong> and does not provide medical advice, diagnosis, or treatment.
+            </p>
+            <p className="text-foreground-secondary">
+              Upload only <strong>de-identified MRI data</strong>. Ensure your use complies with all applicable ethics, privacy, and data governance requirements.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Header */}
       <header className="mb-8 text-center">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
