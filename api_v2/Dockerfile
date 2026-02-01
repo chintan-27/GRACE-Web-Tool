@@ -39,21 +39,15 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
 RUN python -m pip install --upgrade pip setuptools wheel
 
 # -----------------------------------------------------------------------------
-# Stage 2: FreeSurfer from official image
-# -----------------------------------------------------------------------------
-FROM freesurfer/freesurfer:8.0.0 AS freesurfer
-
-# -----------------------------------------------------------------------------
-# Stage 3: Final production image
+# Stage 2: Final production image
 # -----------------------------------------------------------------------------
 FROM base AS production
 
 # Set working directory
 WORKDIR /app
 
-# Copy FreeSurfer from official image
+# FreeSurfer will be mounted at runtime via docker-compose
 ENV FREESURFER_HOME=/usr/local/freesurfer
-COPY --from=freesurfer /usr/local/freesurfer ${FREESURFER_HOME}
 ENV PATH="${FREESURFER_HOME}/bin:${PATH}"
 ENV FS_LICENSE=${FREESURFER_HOME}/license.txt
 
