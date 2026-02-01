@@ -1,0 +1,29 @@
+# Web framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.6
+
+# Redis client
+redis>=5.0.0
+
+# Data validation
+pydantic>=2.5.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Medical imaging
+nibabel>=5.2.0
+monai>=1.3.0
+scipy>=1.12.0
+numpy>=1.26.0
+
+# PyTorch - installed separately in Dockerfile with CUDA support
+# torch>=2.1.0
+
+# HTTP
+h11>=0.14.0
+httpx>=0.26.0
+
+# Utilities
+pillow>=10.2.0

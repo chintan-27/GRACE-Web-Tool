@@ -1,0 +1,148 @@
+from pathlib import Path
+from typing import List
+
+from runtime.session import (
+    session_log,
+    session_input_native,
+    session_input_fs,
+)
+from runtime.freesurfer import convert_to_fs
+from runtime.registry import get_model_config
+from services.redis_client import (
+    set_job_status,
+)
+from runtime.sse import push_event   # <-- FIXED
+
+
+class InferenceOrchestrator:
+    """
+    Orchestrates each inference job BEFORE the scheduler runs ModelRunner.
+
+    Responsibilities:
+      - Convert to FreeSurfer once if needed
+      - Decide per-model input (native or fs)
+      - Build execution plan for scheduler
+      - Emit high-level SSE events
+      - Log session lifecycle
+    """
+
+    def __init__(self, session_id: str, models: List[str], space: str, convert_to_fs: bool = False):
+        self.session_id = session_id
+        self.models = models
+        self.space = space   # "native" or "freesurfer"
+        self.convert_to_fs = convert_to_fs  # Whether to convert input to FS space
+
+        # Session input paths
+        self.native_path = session_input_native(session_id)
+        self.fs_path = session_input_fs(session_id)
+
+    # --------------------------------------------------------------------
+    def prepare_inputs(self) -> Path:
+        """
+        Ensure correct input files are ready:
+          - Native NIfTI always exists
+          - FS input created only if user requested conversion
+        Returns path to whichever input is relevant for orchestrator-level operations.
+        """
+
+        session_log(self.session_id, "Preparing inputs…")
+
+        if self.space == "native":
+            session_log(self.session_id, "Using native T1 input.")
+            return self.native_path
+
+        if self.space == "freesurfer":
+            # Only convert if user explicitly requested it
+            if self.convert_to_fs:
+                # If FS already exists from previous job continuation
+                if self.fs_path.exists():
+                    session_log(self.session_id, "FS input already present — skipping reconversion.")
+                    return self.fs_path
+
+                session_log(self.session_id, "Converting native → FreeSurfer space…")
+                ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
+
+                if not ok:
+                    raise RuntimeError("FreeSurfer conversion failed.")
+
+                session_log(self.session_id, "FS conversion successful.")
+                return self.fs_path
+            else:
+                # User's input is already in FS space - use native path directly
+                # No conversion or copying needed
+                session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested). Using as-is.")
+                return self.native_path
+
+        raise ValueError(f"Invalid space: {self.space}")
+
+    # --------------------------------------------------------------------
+    def build_model_plan(self, fs_input_path: Path):
+        """
+        Construct scheduler model execution plan:
+        [
+           {"model": "grace-native",   "input_path": "/path/to/native"},
+           {"model": "domino-fs",      "input_path": "/path/to/fs_or_native"},
+           ...
+        ]
+
+        fs_input_path: The path to use for FS models (could be converted FS or original native if already in FS space)
+        """
+
+        plan = []
+        session_log(self.session_id, "Building model execution plan…")
+
+        for model_name in self.models:
+            cfg = get_model_config(model_name)
+
+            # Model requires native input
+            if cfg["space"] == "native":
+                plan.append({
+                    "model": model_name,
+                    "input_path": str(self.native_path),
+                })
+                set_job_status(self.session_id, model_name, "prepared")
+
+            # Model requires FS input - use the prepared FS input path
+            elif cfg["space"] == "freesurfer":
+                plan.append({
+                    "model": model_name,
+                    "input_path": str(fs_input_path),
+                })
+                set_job_status(self.session_id, model_name, "prepared")
+
+            else:
+                set_job_status(self.session_id, model_name, "error: Unknown model space for the model")
+                raise ValueError(f"Unknown model space for {model_name}: {cfg['space']}")
+
+        session_log(self.session_id, f"Model plan built: {plan}")
+        return plan
+
+    # --------------------------------------------------------------------
+    def start_job(self):
+        """
+        Main entry point called by `/predict`.
+
+        Steps:
+          1. Log & send SSE "orchestrator_start"
+          2. Prepare input(s)
+          3. Build model plan
+          4. Mark job status = prepared
+          5. SSE: input_ready
+        """
+
+        session_log(self.session_id, "InferenceOrchestrator: job start.")
+
+        # High-level event
+        push_event(self.session_id, {"event": "orchestrator_start"})
+
+        # Prepare native/FS inputs
+        selected_input = self.prepare_inputs()
+
+        # Build the per-model plan
+        plan = self.build_model_plan(selected_input)
+
+        # Notify SSE
+        push_event(self.session_id, {"event": "input_ready"})
+
+        return plan
+
