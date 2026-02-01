@@ -1,0 +1,47 @@
+name: Deploy API v2 to fanglab
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'api_v2/**'
+      - 'docker-compose.yml'
+      - '.github/workflows/deploy-api.yml'
+
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Deploy via SSH to fanglab
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.FANGLAB_HOST }}
+          username: ${{ secrets.FANGLAB_USER }}
+          key: ${{ secrets.FANGLAB_SSH_KEY }}
+          port: ${{ secrets.FANGLAB_SSH_PORT }}
+          script: |
+            set -e
+
+            echo "[deploy] Updating repo on server..."
+            cd /home/chintan/web-wholehead-segmentator/GRACE-Web-Tool
+            git fetch origin main
+            git checkout main
+            git reset --hard origin/main
+
+            echo "[deploy] Rebuilding and restarting containers..."
+            cd /home/chintan/web-wholehead-segmentator/GRACE-Web-Tool
+            docker compose down || true
+            docker compose build --no-cache api
+            docker compose up -d
+
+            echo "[deploy] Checking container status..."
+            docker compose ps
+
+            echo "[deploy] Done."
