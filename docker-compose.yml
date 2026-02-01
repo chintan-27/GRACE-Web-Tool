@@ -29,8 +29,8 @@ services:
       - ./api_v2/sessions:/app/sessions
       # Mount logs directory
       - ./api_v2/logs:/app/logs
-      # Mount FreeSurfer license
-      - /home/chintan/licenses/freesurfer.txt:/usr/local/freesurfer/license.txt:ro
+      # Mount FreeSurfer (extracted once on host)
+      - /home/chintan/freesurfer:/usr/local/freesurfer:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
