@@ -23,8 +23,8 @@ services:
     ports:
       - "8000:8100"
     volumes:
-      # Mount models directory (pre-trained weights)
-      - ./api_v2/models:/app/models:ro
+      # Mount models directory (pre-trained weights) from dev location
+      - /home/chintan/wws_v2/api_v2/models:/app/models:ro
       # Mount sessions directory for outputs
       - ./api_v2/sessions:/app/sessions
       # Mount logs directory
