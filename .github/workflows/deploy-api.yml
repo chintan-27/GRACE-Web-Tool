@@ -36,7 +36,7 @@ jobs:
             git reset --hard origin/main
 
             echo "[deploy] Rebuilding and restarting containers..."
-            cd /home/chintan/web-wholehead-segmentator/GRACE-Web-Tool
+            cd /home/chintan/GRACE-Web-Tool
             docker compose down || true
             docker compose build --no-cache api
             docker compose up -d
