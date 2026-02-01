@@ -37,6 +37,8 @@ jobs:
 
             echo "[deploy] Rebuilding and restarting containers..."
             cd /home/chintan/GRACE-Web-Tool
+            echo "Coping models from dev"
+            cp -R /home/chintan/wws_v2/api_v2/models ./api_v2/
             docker compose down || true
             docker compose build --no-cache api
             docker compose up -d

@@ -63,7 +63,7 @@ MODEL_REGISTRY = {
         "type": "domino",
         "space": "native",
         "normalization": "auto",
-        "spatial_size": (176, 176, 176),
+        "spatial_size": (64, 64, 64),
         "checkpoint": str(Path(MODEL_DIR) / "domino_native.pth"),
         "percentile_range": (25, 75),
         "interpolation_mode": "bilinear",
