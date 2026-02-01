@@ -32,8 +32,8 @@ jobs:
             echo "[deploy] Updating repo on server..."
             cd /home/chintan/GRACE-Web-Tool
             git fetch origin main
-            # git checkout main
-            # git reset --hard origin/main
+            git checkout main
+            git reset --hard origin/main
 
             echo "[deploy] Rebuilding and restarting containers..."
             cd /home/chintan/GRACE-Web-Tool
