@@ -39,23 +39,9 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
 RUN python -m pip install --upgrade pip setuptools wheel
 
 # -----------------------------------------------------------------------------
-# Stage 2: Install FreeSurfer (minimal - just mri_convert)
+# Stage 2: FreeSurfer from official image
 # -----------------------------------------------------------------------------
-FROM base AS freesurfer
-
-# Download and extract FreeSurfer (minimal installation)
-# Using FreeSurfer 7.4.1 - only extracting necessary binaries
-ENV FREESURFER_VERSION=7.4.1
-ENV FREESURFER_HOME=/usr/local/freesurfer
-
-RUN mkdir -p ${FREESURFER_HOME} && \
-    wget -q -O /tmp/freesurfer.tar.gz \
-    "https://surfer.nmr.mgh.harvard.edu/pub/dist/freesurfer/${FREESURFER_VERSION}/freesurfer-linux-ubuntu22_amd64-${FREESURFER_VERSION}.tar.gz" && \
-    tar -xzf /tmp/freesurfer.tar.gz -C /tmp && \
-    # Copy only essential files for mri_convert
-    cp -r /tmp/freesurfer/bin/mri_convert ${FREESURFER_HOME}/bin/ || true && \
-    cp -r /tmp/freesurfer/lib ${FREESURFER_HOME}/ || true && \
-    rm -rf /tmp/freesurfer /tmp/freesurfer.tar.gz
+FROM freesurfer/freesurfer:latest AS freesurfer
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final production image
@@ -65,10 +51,11 @@ FROM base AS production
 # Set working directory
 WORKDIR /app
 
-# Copy FreeSurfer from previous stage
+# Copy FreeSurfer from official image
 ENV FREESURFER_HOME=/usr/local/freesurfer
-COPY --from=freesurfer ${FREESURFER_HOME} ${FREESURFER_HOME}
+COPY --from=freesurfer /usr/local/freesurfer ${FREESURFER_HOME}
 ENV PATH="${FREESURFER_HOME}/bin:${PATH}"
+ENV FS_LICENSE=${FREESURFER_HOME}/license.txt
 
 # Copy requirements first for better caching
 COPY requirements.txt .
