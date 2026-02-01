@@ -41,7 +41,7 @@ RUN python -m pip install --upgrade pip setuptools wheel
 # -----------------------------------------------------------------------------
 # Stage 2: FreeSurfer from official image
 # -----------------------------------------------------------------------------
-FROM freesurfer/freesurfer:8.0.0 AS freesurfer
+FROM freesurfer/freesurfer:7.4.1 AS freesurfer
 
 # -----------------------------------------------------------------------------
 # Stage 3: Final production image
