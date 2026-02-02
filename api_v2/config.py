@@ -53,6 +53,7 @@ JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "3600"))
 # Path to FreeSurfer tools inside Docker
 FREESURFER_HOME = os.getenv("FREESURFER_HOME", "/usr/local/freesurfer")
 MRI_CONVERT = Path(FREESURFER_HOME) / "bin" / "mri_convert"
+MRI_VOL2VOL = Path(FREESURFER_HOME) / "bin" / "mri_vol2vol"
 
 # Verify FS installation (optional check)
 if not MRI_CONVERT.exists():
