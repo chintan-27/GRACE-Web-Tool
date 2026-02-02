@@ -12,7 +12,8 @@ from monai.transforms import ResizeWithPadOrCrop
 
 from runtime.preprocess import preprocess_image
 from runtime.registry import get_model_config
-from runtime.session import session_log, model_output_path
+from runtime.session import session_log, model_output_path, session_input_native
+from runtime.freesurfer import convert_to_native
 from runtime.sse import push_event
 from services.redis_client import set_progress
 from services.logger import log_event, log_error
@@ -161,6 +162,7 @@ class ModelRunner:
         """
         Save predictions using original image's affine and header (matching v1).
         Resizes predictions back to original input shape.
+        For FreeSurfer models, also converts output back to native space orientation.
         """
         self._emit("save_start", 70)
 
@@ -181,6 +183,26 @@ class ModelRunner:
         nib.save(pred_img, str(out_path))
 
         session_log(self.session_id, f"[{self.model_name}] Saved to {out_path}")
+
+        # For FreeSurfer models, convert segmentation back to native space orientation
+        if self.config.get("space") == "freesurfer":
+            self._emit("native_conversion_start", 85)
+            session_log(self.session_id, f"[{self.model_name}] Converting output to native space orientation")
+
+            native_input = session_input_native(self.session_id)
+            fs_output = out_path  # Current output in FS space
+            native_output = out_path.parent / "output_native.nii.gz"
+
+            ok = convert_to_native(fs_output, native_input, native_output, self.session_id)
+
+            if ok:
+                # Replace FS output with native output
+                fs_output.rename(out_path.parent / "output_fs.nii.gz")  # Keep FS version
+                native_output.rename(out_path)  # Make native version the default
+                session_log(self.session_id, f"[{self.model_name}] Native space output saved as default")
+            else:
+                session_log(self.session_id, f"[{self.model_name}] WARNING: Native conversion failed, keeping FS-space output")
+
         self._emit("model_complete", 100)
 
         return out_path
