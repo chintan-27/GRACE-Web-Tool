@@ -52,26 +52,20 @@ class InferenceOrchestrator:
             return self.native_path
 
         if self.space == "freesurfer":
-            # Only convert if user explicitly requested it
-            if self.convert_to_fs:
-                # If FS already exists from previous job continuation
-                if self.fs_path.exists():
-                    session_log(self.session_id, "FS input already present — skipping reconversion.")
-                    return self.fs_path
-
-                session_log(self.session_id, "Converting native → FreeSurfer space…")
-                ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
-
-                if not ok:
-                    raise RuntimeError("FreeSurfer conversion failed.")
-
-                session_log(self.session_id, "FS conversion successful.")
+            # Always convert to FreeSurfer space for FreeSurfer models
+            # If FS already exists from previous job continuation
+            if self.fs_path.exists():
+                session_log(self.session_id, "FS input already present — skipping reconversion.")
                 return self.fs_path
-            else:
-                # User's input is already in FS space - use native path directly
-                # No conversion or copying needed
-                session_log(self.session_id, "Input assumed to be in FreeSurfer space (no conversion requested). Using as-is.")
-                return self.native_path
+
+            session_log(self.session_id, "Converting native → FreeSurfer space…")
+            ok = convert_to_fs(self.native_path, self.fs_path, self.session_id)
+
+            if not ok:
+                raise RuntimeError("FreeSurfer conversion failed.")
+
+            session_log(self.session_id, "FS conversion successful.")
+            return self.fs_path
 
         raise ValueError(f"Invalid space: {self.space}")
 
