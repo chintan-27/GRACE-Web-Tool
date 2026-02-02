@@ -101,6 +101,10 @@ class ModelRunner:
         session_log(self.session_id, f"[{self.model_name}] Preprocessing input")
         self._emit("preprocess_start", 15)
 
+        # For FreeSurfer models, skip spatial transforms to preserve array↔affine relationship
+        # Conformed input is already 256³ @ 1mm in standardized geometry
+        is_fs_model = self.config.get("space") == "freesurfer"
+
         # preprocess_image returns (tensor, input_img) where input_img is nibabel object
         image_tensor, input_img = preprocess_image(
             image_path=input_path,
@@ -112,6 +116,7 @@ class ModelRunner:
             interpolation_mode=self.interpolation_mode,
             fixed_range=self.fixed_range,
             resize_spatial_size=self.resize_spatial_size,
+            skip_spatial_transforms=is_fs_model,
         )
 
         # Move tensor to GPU - shape is (1, 1, D, H, W)
@@ -161,24 +166,31 @@ class ModelRunner:
     def save_output(self, preds, input_img):
         """
         Save predictions using original image's affine and header (matching v1).
-        Resizes predictions back to original input shape.
-        For FreeSurfer models, also converts output back to native space orientation.
+        Resizes predictions back to original input shape (native models only).
+        For FreeSurfer models, skips resize to preserve array↔affine relationship,
+        then converts output back to native space orientation via mri_vol2vol.
         """
         self._emit("save_start", 70)
 
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
 
-        # Resize prediction back to original input shape (matching v1)
-        original_shape = input_img.shape
-        session_log(self.session_id, f"[{self.model_name}] Resizing predictions from {preds_np.shape} to {original_shape}")
+        is_fs_model = self.config.get("space") == "freesurfer"
 
-        resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="constant")
-        preds_np = resize_back(preds_np[np.newaxis, ...])[0]
+        if is_fs_model:
+            # FreeSurfer models: skip resize to preserve exact array↔affine match
+            # The conformed input geometry is preserved, allowing mri_vol2vol --regheader to work
+            session_log(self.session_id, f"[{self.model_name}] Skipping resize (FreeSurfer model) - shape {preds_np.shape}")
+        else:
+            # Native models: resize prediction back to original input shape (matching v1)
+            original_shape = input_img.shape
+            session_log(self.session_id, f"[{self.model_name}] Resizing predictions from {preds_np.shape} to {original_shape}")
+            resize_back = ResizeWithPadOrCrop(spatial_size=original_shape, mode="constant")
+            preds_np = resize_back(preds_np[np.newaxis, ...])[0]
 
         out_path = model_output_path(self.session_id, self.model_name)
         preds_np = preds_np.astype("uint8")
 
-        # Save with original affine and header (exactly like v1)
+        # Save with input's affine and header
         pred_img = nib.Nifti1Image(preds_np, affine=input_img.affine, header=input_img.header)
         nib.save(pred_img, str(out_path))
 
