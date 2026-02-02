@@ -26,6 +26,7 @@ def preprocess_image(
     interpolation_mode: str = "bilinear",
     fixed_range: Tuple[float, float] = (0, 255),
     resize_spatial_size: Tuple[int, int, int] = None,
+    skip_spatial_transforms: bool = False,
 ):
     """
     Preprocessing pipeline matching v1 implementation exactly.
@@ -66,23 +67,30 @@ def preprocess_image(
     # Wrap in MetaTensor with channel dimension (matching v1 exactly)
     meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)
 
-    # Build transforms (matching v1)
-    # Use resize_spatial_size if provided, otherwise use spatial_size
-    resize_size = resize_spatial_size if resize_spatial_size else spatial_size
+    if skip_spatial_transforms:
+        # For FreeSurfer conformed input: skip spatial transforms
+        # Conformed input is already 256³ @ 1mm in standardized geometry
+        # This preserves the exact array↔affine relationship for mri_vol2vol
+        session_log(session_id, "Skipping spatial transforms (FreeSurfer conformed input)")
+        image_tensor = meta_tensor.unsqueeze(0)
+    else:
+        # Build transforms (matching v1)
+        # Use resize_spatial_size if provided, otherwise use spatial_size
+        resize_size = resize_spatial_size if resize_spatial_size else spatial_size
 
-    transform_list = [
-        Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=interpolation_mode),
-        Orientationd(keys=["image"], axcodes="RAS"),
-        ResizeWithPadOrCropd(keys=["image"], spatial_size=resize_size),
-    ]
+        transform_list = [
+            Spacingd(keys=["image"], pixdim=(1.0, 1.0, 1.0), mode=interpolation_mode),
+            Orientationd(keys=["image"], axcodes="RAS"),
+            ResizeWithPadOrCropd(keys=["image"], spatial_size=resize_size),
+        ]
 
-    transforms = Compose(transform_list)
+        transforms = Compose(transform_list)
 
-    session_log(session_id, f"Applying spatial transforms (mode={interpolation_mode}, resize={resize_size})...")
-    transformed = transforms({"image": meta_tensor})
+        session_log(session_id, f"Applying spatial transforms (mode={interpolation_mode}, resize={resize_size})...")
+        transformed = transforms({"image": meta_tensor})
 
-    # Add batch dimension: (1, 1, D, H, W) - matching v1 exactly
-    image_tensor = transformed["image"].unsqueeze(0)
+        # Add batch dimension: (1, 1, D, H, W) - matching v1 exactly
+        image_tensor = transformed["image"].unsqueeze(0)
 
     session_log(session_id, f"Finished preprocessing - final shape {image_tensor.shape}")
 
