@@ -44,4 +44,4 @@ sleep 2
 
 # Start the FastAPI application
 echo "Starting FastAPI application on port 8100..."
-exec uvicorn app:app --host 0.0.0.0 --port 8100 --workers 1
+exec uvicorn app:app --port 8100 --workers 1
