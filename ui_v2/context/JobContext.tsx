@@ -100,7 +100,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
   // Form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [selectedSpace, setSelectedSpace] = useState<Space>("native");
+  const [selectedSpace, setSelectedSpace] = useState<Space>("freesurfer");
   const [convertToFs, setConvertToFs] = useState(false);
   const [selectedModels, setSelectedModels] = useState<ModelSelection>({
     grace: false,
@@ -278,7 +278,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
     // Reset form state
     setSelectedFile(null);
-    setSelectedSpace("native");
+    setSelectedSpace("freesurfer");
     setConvertToFs(false);
     setSelectedModels({ grace: false, domino: false, dominopp: false });
     setInputBlobUrl(null);

@@ -35,19 +35,19 @@ const modelOptions: ModelOption[] = [
   {
     id: "grace",
     name: "GRACE",
-    description: "Whole-head segmentation with extended tissue coverage",
+    description: "Fast accurate whole-head segmentation",
     icon: <Brain className="h-5 w-5" />,
   },
   {
     id: "domino",
     name: "DOMINO",
-    description: "Fast inference with efficient architecture",
+    description: "Domain-aware model calibration",
     icon: <Boxes className="h-5 w-5" />,
   },
   {
     id: "dominopp",
     name: "DOMINO++",
-    description: "Enhanced accuracy with improved tissue boundaries",
+    description: "Robust calibration under domain shift",
     icon: <Sparkles className="h-5 w-5" />,
   },
 ];
