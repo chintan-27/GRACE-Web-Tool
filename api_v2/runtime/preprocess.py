@@ -54,9 +54,10 @@ def preprocess_image(
         image_data = np.clip(image_data, pmin, pmax)
         image_data = (image_data - pmin) / (pmax - pmin + 1e-8)
         session_log(session_id, f"Applied percentile normalization ({percentile_range[0]}-{percentile_range[1]}) - image max {image_max:.0f} > {COMPLEXITY_THRESHOLD}")
-    elif image_max <= 255.0 and model_type == "grace":
-        # GRACE: skip normalization for images already in 0-255 range
-        session_log(session_id, "Skipped normalization (GRACE model, image max <= 255)")
+    elif image_max <= 255.0 and model_type == "grace" and not skip_spatial_transforms:
+        # GRACE native: skip normalization for images already in 0-255 range
+        # (FreeSurfer conformed images are also 0-255 but still need normalization to [0,1])
+        session_log(session_id, "Skipped normalization (GRACE native model, image max <= 255)")
     else:
         # Fixed normalization to 0-1 range
         a_min, a_max = fixed_range
