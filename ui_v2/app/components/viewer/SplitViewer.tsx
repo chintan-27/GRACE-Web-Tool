@@ -6,6 +6,7 @@ import { AlertTriangle } from "lucide-react";
 import { getResult } from "@/lib/api";
 import ViewerControls, { ColormapId } from "./ViewerControls";
 import ComparisonSelector from "./ComparisonSelector";
+import SegmentationLegend from "./SegmentationLegend";
 
 interface SplitViewerProps {
   inputUrl: string;
@@ -603,6 +604,9 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           </div>
         </article>
       </div>
+
+      {/* Segmentation Legend */}
+      <SegmentationLegend colormap={colormap} />
 
       {/* Debug info in development */}
       {process.env.NODE_ENV === "development" && (
