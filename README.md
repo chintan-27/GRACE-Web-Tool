@@ -1,35 +1,59 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# GRACE Web Tool
 
-## Getting Started
+A web-based whole-head MRI segmentation platform powered by deep learning. Upload a NIfTI MRI volume and receive automated tissue segmentation across 12 classes using state-of-the-art neural network architectures.
 
-First, run the development server:
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## What It Does
+
+GRACE Web Tool segments whole-head MRI scans into 12 tissue classes:
+
+| Label | Tissue |
+|-------|--------|
+| 0 | Background |
+| 1 | White Matter (WM) |
+| 2 | Gray Matter (GM) |
+| 3 | Eyes |
+| 4 | Cerebrospinal Fluid (CSF) |
+| 5 | Air |
+| 6 | Blood |
+| 7 | Cancellous Bone |
+| 8 | Cortical Bone |
+| 9 | Skin |
+| 10 | Fat |
+| 11 | Muscle |
+
+## Models
+
+Six models are available, spanning three architectures and two coordinate spaces:
+
+| Architecture | Native Space | FreeSurfer Space |
+|-------------|-------------|-----------------|
+| **GRACE** | `grace-native` | `grace-fs` |
+| **DOMINO** | `domino-native` | `domino-fs` |
+| **DOMINO++** | `dominopp-native` | `dominopp-fs` |
+
+- **Native space** outputs match the input MRI's original coordinate system.
+- **FreeSurfer space** outputs are conformed to FreeSurfer's 1mm isotropic 256x256x256 standard space.
+
+## Features
+
+- **Upload & Segment** -- Upload a NIfTI (.nii / .nii.gz) MRI volume and select one or more models to run
+- **Interactive Viewer** -- Built-in Niivue-based 3D/2D viewer with side-by-side model comparison
+- **Multiple Colormaps** -- Switch between FreeSurfer, Viridis, Plasma, and other colormaps with a dynamic tissue legend
+- **Real-time Progress** -- Server-Sent Events stream processing status to the browser as inference runs
+- **GPU Scheduling** -- Multi-GPU job queue with Redis-backed scheduling for concurrent users
+- **Result Download** -- Download segmentation outputs as NIfTI files
+
+## Architecture
+
+```
+ui_v2/          Next.js frontend (Niivue viewer, shadcn/ui, Tailwind CSS)
+api_v2/         FastAPI backend (Redis job queue, GPU scheduler, SSE streaming)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Workflow
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. User uploads a NIfTI MRI volume and selects models + coordinate space
+2. Backend creates a session, preprocesses the input (RAS orientation, 1mm resampling), and enqueues a job
+3. GPU scheduler assigns the job to an available GPU and runs inference
+4. Progress is streamed to the frontend via SSE
+5. Results are visualized in the interactive viewer and available for download

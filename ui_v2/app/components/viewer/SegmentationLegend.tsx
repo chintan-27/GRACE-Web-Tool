@@ -21,29 +21,15 @@ const TISSUE_LABELS = [
 
 const MAX_LABEL = 11;
 
-// Label-type colormaps use direct index-to-color mapping.
-// Continuous colormaps use interpolated 256-entry gradients.
-const LABEL_COLORMAPS = new Set(["freesurfer", "actc"]);
-
 function getLabelColors(colormapName: ColormapId): string[] {
-  const cm = cmapper.colormapFromKey(colormapName);
-
-  if (LABEL_COLORMAPS.has(colormapName)) {
-    // Label colormap: use makeLabelLut for direct mapping
-    const lut = cmapper.makeLabelLut(cm);
-    const minIdx = lut.min ?? 0;
-    return TISSUE_LABELS.map(({ id }) => {
-      const offset = (id - minIdx) * 4;
-      if (offset >= 0 && offset + 2 < lut.lut.length) {
-        return `rgb(${lut.lut[offset]}, ${lut.lut[offset + 1]}, ${lut.lut[offset + 2]})`;
-      }
-      return "rgb(0, 0, 0)";
-    });
-  }
-
-  // Continuous colormap: sample from interpolated 256-entry LUT
+  // Use the interpolated 256-entry LUT — this matches how Niivue
+  // renders colormaps on volumes (normalizes voxel range to 0-255).
   const lut = cmapper.colormap(colormapName);
+
   return TISSUE_LABELS.map(({ id }) => {
+    // Label 0 is always black (background / transparent in the viewer)
+    if (id === 0) return "rgb(0, 0, 0)";
+
     const pos = Math.round((id / MAX_LABEL) * 255) * 4;
     return `rgb(${lut[pos]}, ${lut[pos + 1]}, ${lut[pos + 2]})`;
   });
