@@ -32,7 +32,7 @@ services:
       # Mount FreeSurfer license
       - /home/chintan/licenses/freesurfer.txt:/usr/local/freesurfer/license.txt:ro
       # Mount ROAST compiled binary
-      - /home/chintan/roast11/build:/home/chintan/roast11/build:ro
+      - /home/chintan/roast11/build:/home/chintan/roast11/build
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility

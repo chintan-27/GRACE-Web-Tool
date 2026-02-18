@@ -37,6 +37,15 @@ async def lifespan(app: FastAPI):
     t2.start()
     print("ROAST Scheduler started under lifespan()")
 
+    # Ensure ROAST binaries are executable
+    import stat
+    from config import ROAST_BUILD_DIR
+    for binary in ["roast_run", "run_roast_run.sh"]:
+        p = ROAST_BUILD_DIR / binary
+        if p.exists():
+            p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+            print(f"chmod +x {p}")
+
     yield
 
     # SHUTDOWN
