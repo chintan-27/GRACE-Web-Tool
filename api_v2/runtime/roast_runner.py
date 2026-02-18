@@ -10,6 +10,9 @@ import subprocess
 import time
 from pathlib import Path
 
+import nibabel as nib
+import numpy as np
+
 from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
 from runtime.roast_config import build_roast_config
 from runtime.session import (
@@ -66,12 +69,13 @@ class ROASTRunner:
             shutil.copyfileobj(f_in, f_out)
         session_log(self.session_id, f"[ROAST] T1 gunzipped → {t1_nii}")
 
-        # Gunzip segmentation mask
+        # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement)
         mask_gz = model_output_path(self.session_id, self.model_name)
         mask_nii = self.work_dir / "T1_T1orT2_masks.nii"
-        with gzip.open(mask_gz, "rb") as f_in, open(mask_nii, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        session_log(self.session_id, f"[ROAST] Mask gunzipped → {mask_nii}")
+        img = nib.load(mask_gz)
+        data = np.asarray(img.dataobj, dtype=np.uint8)
+        nib.save(nib.Nifti1Image(data, img.affine, img.header), str(mask_nii))
+        session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 
         # Create a dummy c1T1_T1orT2.nii to bypass ROAST step 1 (SPM segmentation).
         # ROAST checks for this file's existence to decide whether to run SPM.
