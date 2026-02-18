@@ -1,0 +1,163 @@
+function roast_run(config_json_path)
+% roast_run(config_json_path)
+%
+% Compiled wrapper for ROAST-11. Reads a JSON config file and calls roast()
+% with the appropriate parameters.
+%
+% Usage (compiled):
+%   ./roast_run /path/to/config.json
+%
+% The JSON config file should contain:
+%   {
+%     "t1_path": "/abs/path/to/T1.nii",
+%     "recipe": ["F3", -2, "F4", 2],
+%     "electype": ["pad", "pad"],
+%     "elecsize": [[70, 50, 3], [70, 50, 3]],
+%     "elecori": ["lr", "lr"],
+%     "meshoptions": {"radbound": 5, "angbound": 30, "distbound": 0.3, "reratio": 3, "maxvol": 10},
+%     "simulationtag": "tDCSLAB"
+%   }
+
+if nargin < 1
+    error('Usage: roast_run <config.json>');
+end
+
+% In compiled mode, all args come in as char
+if ischar(config_json_path) || isstring(config_json_path)
+    config_json_path = char(config_json_path);
+end
+
+fprintf('ROAST_RUN: Reading config from %s\n', config_json_path);
+
+% Read and parse JSON config
+fid = fopen(config_json_path, 'r');
+if fid == -1
+    error('Cannot open config file: %s', config_json_path);
+end
+raw = fread(fid, inf, 'char=>char')';
+fclose(fid);
+cfg = jsondecode(raw);
+
+% T1 path (required)
+t1_path = cfg.t1_path;
+if ~exist(t1_path, 'file')
+    error('T1 file not found: %s', t1_path);
+end
+
+% Recipe: JSON array like ["F3", -2, "F4", 2] → cell {'F3', -2, 'F4', 2}
+% jsondecode returns a cell array for mixed-type JSON arrays
+if isfield(cfg, 'recipe')
+    r = cfg.recipe;
+    if ~iscell(r); r = num2cell(r); end
+    recipe = {};
+    for i = 1:length(r)
+        val = r{i};
+        if isnumeric(val)
+            recipe{end+1} = val;
+        elseif ischar(val) && ~isnan(str2double(val))
+            recipe{end+1} = str2double(val);
+        else
+            recipe{end+1} = val;
+        end
+    end
+else
+    recipe = {'F3', -2, 'F4', 2};
+end
+
+fprintf('ROAST_RUN: T1=%s\n', t1_path);
+fprintf('ROAST_RUN: Recipe=');
+for i = 1:length(recipe)
+    if isnumeric(recipe{i})
+        fprintf(' %.1f', recipe{i});
+    else
+        fprintf(' %s', recipe{i});
+    end
+end
+fprintf('\n');
+
+% Build varargin for roast()
+vargs = {};
+
+% Electrode type
+% jsondecode returns char matrix for JSON string arrays in compiled mode
+% cellstr() splits a char matrix into a proper cell array of strings
+if isfield(cfg, 'electype')
+    et = cfg.electype;
+    if ~iscell(et); et = cellstr(et); end
+    vargs = [vargs, {'electype', et}];
+end
+
+% Electrode size: [[70,50,3],[70,50,3]] → {[70 50 3],[70 50 3]}
+if isfield(cfg, 'elecsize')
+    es = cfg.elecsize;
+    if iscell(es)
+        vargs = [vargs, {'elecsize', es}];
+    else
+        % Matrix rows → cell of row vectors
+        c = cell(1, size(es,1));
+        for i = 1:size(es,1); c{i} = es(i,:); end
+        vargs = [vargs, {'elecsize', c}];
+    end
+end
+
+% Electrode orientation
+% Same cellstr() fix for JSON string arrays in compiled mode
+if isfield(cfg, 'elecori')
+    eo = cfg.elecori;
+    if ~iscell(eo); eo = cellstr(eo); end
+    vargs = [vargs, {'elecOri', eo}];
+end
+
+% Mesh options
+if isfield(cfg, 'meshoptions')
+    mo = cfg.meshoptions;
+    meshStruct = struct();
+    if isfield(mo, 'radbound'); meshStruct.radbound = mo.radbound; end
+    if isfield(mo, 'angbound'); meshStruct.angbound = mo.angbound; end
+    if isfield(mo, 'distbound'); meshStruct.distbound = mo.distbound; end
+    if isfield(mo, 'reratio'); meshStruct.reratio = mo.reratio; end
+    if isfield(mo, 'maxvol'); meshStruct.maxvol = mo.maxvol; end
+    vargs = [vargs, {'meshoptions', meshStruct}];
+end
+
+% Simulation tag
+if isfield(cfg, 'simulationtag')
+    vargs = [vargs, {'simulationTag', cfg.simulationtag}];
+else
+    vargs = [vargs, {'simulationTag', 'tDCSLAB'}];
+end
+
+% Conductivities — load 11-tissue defaults and set gel/electrode
+if isfield(cfg, 'conductivities_path')
+    c = load(cfg.conductivities_path, 'cond');
+else
+    % Use bundled default
+    roastDir = fileparts(mfilename('fullpath'));
+    condPath = fullfile(roastDir, 'conductivities', 'cond_11tis.mat');
+    if ~exist(condPath, 'file')
+        condPath = fullfile(roastDir, 'lib', 'conductivities', 'cond_11tis.mat');
+    end
+    c = load(condPath, 'cond');
+end
+c.cond.gel = 0.3;
+c.cond.electrode = 5.9e7;
+% Replicate for number of electrodes
+numElec = length(recipe) / 2;
+if length(c.cond.gel(:)) == 1
+    c.cond.gel = repmat(c.cond.gel, 1, numElec);
+end
+if length(c.cond.electrode(:)) == 1
+    c.cond.electrode = repmat(c.cond.electrode, 1, numElec);
+end
+vargs = [vargs, {'conductivities', c.cond}];
+
+% Subject index (s) — always 1 for single-subject web invocation
+s = 1;
+
+fprintf('ROAST_RUN: Starting ROAST with %d varargin pairs\n', length(vargs)/2);
+
+% Call ROAST
+roast(s, t1_path, recipe, vargs{:});
+
+fprintf('ROAST_RUN: COMPLETE\n');
+end

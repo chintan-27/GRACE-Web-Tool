@@ -14,15 +14,41 @@ import { API_BASE, startSimulation, connectROASTSSE } from "@/lib/api";
 type RoastStatus = "idle" | "queued" | "running" | "complete" | "error";
 
 const ROAST_STEP_LABELS: Record<string, string> = {
-  roast_queued:           "Queued...",
-  roast_start:            "Starting simulation...",
-  roast_prepare:          "Preparing files...",
-  roast_step_csf_fix:     "Step 2.5: Fixing CSF...",
-  roast_step_electrode:   "Step 3: Placing electrodes...",
-  roast_step_mesh:        "Step 4: Generating mesh...",
-  roast_step_solve:       "Step 5: Solving FEM model...",
-  roast_step_postprocess: "Step 6: Post-processing...",
-  roast_complete:         "Complete!",
+  roast_queued:            "Queued...",
+  roast_start:             "Starting simulation...",
+  roast_prepare:           "Preparing files...",
+  // seg8 registration
+  roast_seg8:              "Registering T1 to template...",
+  roast_seg8_done:         "Registration complete",
+  // Step 2.5
+  roast_step_csf_fix:      "Step 2.5: Fixing CSF...",
+  // Step 3: electrodes
+  roast_step_electrode:    "Step 3: Setting up electrodes...",
+  roast_step_el_measure:   "Step 3: Measuring head...",
+  roast_step_el_cap:       "Step 3: Fitting electrode cap...",
+  roast_step_el_f3:        "Step 3: Placing F3 electrode...",
+  roast_step_el_f4:        "Step 3: Placing F4 electrode...",
+  roast_step_el_cleanup:   "Step 3: Finalizing electrodes...",
+  // Step 4: mesh
+  roast_step_mesh:         "Step 4: Generating mesh...",
+  roast_step_mesh_sizing:  "Step 4: Computing mesh sizes...",
+  roast_step_mesh_done:    "Step 4: Mesh complete",
+  roast_step_mesh_saving:  "Step 4: Saving mesh...",
+  // Step 5: FEM solve
+  roast_step_solve:        "Step 5: Setting up FEM solver...",
+  roast_step_solve_pre:    "Step 5: FEM pre-processing...",
+  roast_step_solve_gen:    "Step 5: Assembling FEM system...",
+  roast_step_solve_fem:    "Step 5: Solving linear system...",
+  roast_step_solve_save:   "Step 5: Saving solution...",
+  roast_step_solve_post:   "Step 5: FEM post-processing...",
+  // Step 6: post-processing
+  roast_step_postprocess:  "Step 6: Post-processing...",
+  roast_step_post_convert: "Step 6: Converting results...",
+  roast_step_post_jroast:  "Step 6: Computing E-fields...",
+  roast_step_post_save:    "Step 6: Saving final results...",
+  roast_step_post_done:    "Step 6: Almost done...",
+  // Complete
+  roast_complete:          "Complete!",
 };
 
 // -------------------------------------------------------------------

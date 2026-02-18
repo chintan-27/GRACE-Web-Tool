@@ -2,17 +2,19 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Niivue } from "@niivue/niivue";
-import { AlertTriangle, ChevronDown } from "lucide-react";
+import { AlertTriangle } from "lucide-react";
 import { getSimulationResult } from "@/lib/api";
 import ViewerControls from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 
-type OutputType = "emag" | "voltage";
+// All three ROAST output types shown simultaneously
+const PANELS = [
+  { type: "emag",    label: "E-field Magnitude", unit: "V/m",  description: "Electric field intensity" },
+  { type: "voltage", label: "Voltage",           unit: "mV",   description: "Electric potential" },
+  { type: "efield",  label: "E-field Vector",    unit: "V/m",  description: "Electric field direction" },
+] as const;
 
-const OUTPUT_OPTIONS: { id: OutputType; label: string; description: string }[] = [
-  { id: "emag",    label: "E-field Magnitude", description: "Electric field intensity (V/m)" },
-  { id: "voltage", label: "Voltage",           description: "Electric potential (mV)" },
-];
+type OutputType = typeof PANELS[number]["type"];
 
 interface RoastViewerProps {
   inputUrl: string;
@@ -20,19 +22,20 @@ interface RoastViewerProps {
 }
 
 export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
-  const leftCanvasRef  = useRef<HTMLCanvasElement>(null);
-  const rightCanvasRef = useRef<HTMLCanvasElement>(null);
-  const leftNvRef  = useRef<Niivue | null>(null);
-  const rightNvRef = useRef<Niivue | null>(null);
+  const canvasRefs = [
+    useRef<HTMLCanvasElement>(null),
+    useRef<HTMLCanvasElement>(null),
+    useRef<HTMLCanvasElement>(null),
+  ];
+  const nvRefs = useRef<(Niivue | null)[]>([null, null, null]);
 
-  const [initialized, setInitialized]   = useState(false);
-  const [leftOutput, setLeftOutput]     = useState<OutputType>("emag");
-  const [rightOutput, setRightOutput]   = useState<OutputType>("voltage");
-  const [viewMode, setViewMode]         = useState<"2d" | "3d">("2d");
+  const [initialized, setInitialized] = useState(false);
+  const [viewMode, setViewMode]       = useState<"2d" | "3d">("2d");
   const [overlayOpacity, setOverlayOpacity] = useState(0.7);
-  const [colormap, setColormap]         = useState<ColormapId>("hot");
-  const [error, setError]               = useState<string | null>(null);
-  const [loading, setLoading]           = useState(false);
+  const [colormap, setColormap]       = useState<ColormapId>("hot");
+  const [error, setError]             = useState<string | null>(null);
+  const [loading, setLoading]         = useState(false);
+  const [loadErrors, setLoadErrors]   = useState<Partial<Record<OutputType, string>>>({});
 
   const bufferCache = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
 
@@ -44,18 +47,16 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
       bufferCache.current[type] = buf;
       return buf;
     } catch (e) {
-      setError(`Failed to load ${type}: ${e}`);
       return null;
     }
   }, [sessionId]);
 
   const loadOverlay = useCallback(async (
-    nv: Niivue | null,
+    nv: Niivue,
     type: OutputType,
     opacity: number,
     cmap: ColormapId,
   ): Promise<boolean> => {
-    if (!nv) return false;
     while (nv.volumes.length > 1) nv.removeVolumeByIndex(1);
 
     const buf = await fetchOutput(type);
@@ -70,11 +71,11 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
     return true;
   }, [fetchOutput]);
 
-  // Initialise viewers and load initial overlays
+  // Initialise all three viewers
   useEffect(() => {
     if (initialized) return;
-    if (!leftCanvasRef.current || !rightCanvasRef.current) return;
-    if (leftNvRef.current || rightNvRef.current) { setInitialized(true); return; }
+    if (canvasRefs.some(r => !r.current)) return;
+    if (nvRefs.current[0]) { setInitialized(true); return; }
 
     let mounted = true;
 
@@ -85,43 +86,48 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
       const opts = {
         show3Dcrosshair: true,
         isRadiologicalConvention: true,
-        backColor:       [0, 0, 0, 1] as [number, number, number, number],
-        crosshairColor:  [1, 0, 0, 1] as [number, number, number, number],
+        backColor:      [0, 0, 0, 1] as [number, number, number, number],
+        crosshairColor: [1, 0, 0, 1] as [number, number, number, number],
       };
 
-      const leftNv  = new Niivue(opts);
-      const rightNv = new Niivue(opts);
-      leftNv.attachToCanvas(leftCanvasRef.current!);
-      rightNv.attachToCanvas(rightCanvasRef.current!);
-      leftNvRef.current  = leftNv;
-      rightNvRef.current = rightNv;
+      // Create all 3 Niivue instances
+      const nvs = canvasRefs.map((ref, i) => {
+        const nv = new Niivue(opts);
+        nv.attachToCanvas(ref.current!);
+        nvRefs.current[i] = nv;
+        return nv;
+      });
 
-      // Load T1 to both panels
+      // Load T1 into all panels
       const resp = await fetch(inputUrl);
       if (!resp.ok) throw new Error("Failed to fetch input image");
       const inputBuf = await resp.arrayBuffer();
-      await leftNv.loadFromArrayBuffer(inputBuf.slice(0),  "input.nii.gz");
-      await rightNv.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+      for (const nv of nvs) {
+        await nv.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+        nv.setOpacity(0, 1.0);
+        nv.setSliceType(nv.sliceTypeMultiplanar);
+      }
 
-      leftNv.setOpacity(0, 1.0);
-      rightNv.setOpacity(0, 1.0);
-
-      const sliceType = leftNv.sliceTypeMultiplanar;
-      leftNv.setSliceType(sliceType);
-      rightNv.setSliceType(sliceType);
-
-      leftNv.broadcastTo([rightNv], { "2d": true, "3d": true });
-      rightNv.broadcastTo([leftNv], { "2d": true, "3d": true });
+      // Sync all panels: each broadcasts to the other two
+      nvs[0].broadcastTo([nvs[1], nvs[2]], { "2d": true, "3d": true });
+      nvs[1].broadcastTo([nvs[0], nvs[2]], { "2d": true, "3d": true });
+      nvs[2].broadcastTo([nvs[0], nvs[1]], { "2d": true, "3d": true });
 
       if (!mounted) return;
       setInitialized(true);
 
-      // Load initial overlays
+      // Load overlays in parallel
       setLoading(true);
-      await Promise.all([
-        loadOverlay(leftNv,  "emag",    overlayOpacity, colormap),
-        loadOverlay(rightNv, "voltage", overlayOpacity, colormap),
-      ]);
+      const results = await Promise.allSettled(
+        PANELS.map((panel, i) => loadOverlay(nvs[i], panel.type, overlayOpacity, colormap))
+      );
+      const errs: Partial<Record<OutputType, string>> = {};
+      results.forEach((r, i) => {
+        if (r.status === "rejected" || (r.status === "fulfilled" && !r.value)) {
+          errs[PANELS[i].type] = "Failed to load";
+        }
+      });
+      if (Object.keys(errs).length) setLoadErrors(errs);
       setLoading(false);
     };
 
@@ -131,43 +137,28 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputUrl, initialized]);
 
-  // Handle left panel output change
-  const handleLeftChange = async (type: OutputType) => {
-    setLeftOutput(type);
-    await loadOverlay(leftNvRef.current, type, overlayOpacity, colormap);
-  };
-
-  const handleRightChange = async (type: OutputType) => {
-    setRightOutput(type);
-    await loadOverlay(rightNvRef.current, type, overlayOpacity, colormap);
-  };
-
-  // Sync view mode
+  // Sync view mode across all panels
   useEffect(() => {
     if (!initialized) return;
-    [leftNvRef, rightNvRef].forEach(ref => {
-      const nv = ref.current;
-      if (nv) {
-        nv.setSliceType(viewMode === "3d" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar);
-        nv.drawScene();
-      }
+    nvRefs.current.forEach(nv => {
+      if (!nv) return;
+      nv.setSliceType(viewMode === "3d" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar);
+      nv.drawScene();
     });
   }, [viewMode, initialized]);
 
-  // Sync opacity
+  // Sync opacity across all panels
   useEffect(() => {
     if (!initialized) return;
-    [leftNvRef, rightNvRef].forEach(ref => {
-      const nv = ref.current;
+    nvRefs.current.forEach(nv => {
       if (nv && nv.volumes.length > 1) { nv.setOpacity(1, overlayOpacity); nv.drawScene(); }
     });
   }, [overlayOpacity, initialized]);
 
-  // Sync colormap
+  // Sync colormap across all panels
   useEffect(() => {
     if (!initialized) return;
-    [leftNvRef, rightNvRef].forEach(ref => {
-      const nv = ref.current;
+    nvRefs.current.forEach(nv => {
       if (nv && nv.volumes.length > 1) {
         nv.setColormap(nv.volumes[1].id, colormap);
         nv.drawScene();
@@ -206,106 +197,52 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
         )}
       </div>
 
-      {/* Split panels */}
-      <div className="grid gap-4 md:grid-cols-2">
-        <RoastPanel
-          canvasRef={leftCanvasRef}
-          initialized={initialized}
-          selected={leftOutput}
-          onSelect={handleLeftChange}
-          panelId="left"
-        />
-        <RoastPanel
-          canvasRef={rightCanvasRef}
-          initialized={initialized}
-          selected={rightOutput}
-          onSelect={handleRightChange}
-          panelId="right"
-        />
+      {/* Three panels — one per output type */}
+      <div className="grid gap-4 md:grid-cols-3">
+        {PANELS.map((panel, i) => (
+          <article key={panel.type} className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+            <header className="border-b border-border px-4 py-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-foreground">{panel.label}</h3>
+                <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">
+                  {panel.unit}
+                </span>
+              </div>
+              <p className="text-xs text-foreground-muted mt-0.5">{panel.description}</p>
+            </header>
+
+            <div className="relative bg-black" style={{ height: "380px" }}>
+              <canvas
+                ref={canvasRefs[i]}
+                width={512}
+                height={512}
+                style={{ width: "100%", height: "100%" }}
+                aria-label={`${panel.label} ROAST viewer`}
+              />
+              {!initialized && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                    <span className="text-sm text-foreground-muted">Initializing...</span>
+                  </div>
+                </div>
+              )}
+              {initialized && loadErrors[panel.type] && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                  <div className="flex flex-col items-center gap-2 text-center px-4">
+                    <AlertTriangle className="h-6 w-6 text-warning" />
+                    <p className="text-sm text-foreground-muted">Could not load {panel.label}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </article>
+        ))}
       </div>
 
       <p className="text-xs text-foreground-muted">
-        Simulation results shown as overlay on T1 anatomy. Use controls above to adjust opacity and colormap.
+        All three simulation outputs shown as overlays on T1 anatomy. Panels are synchronized — scroll or rotate one to move all.
       </p>
     </section>
-  );
-}
-
-// -------------------------------------------------------------------
-// Internal panel component
-// -------------------------------------------------------------------
-interface RoastPanelProps {
-  canvasRef: React.RefObject<HTMLCanvasElement>;
-  initialized: boolean;
-  selected: OutputType;
-  onSelect: (type: OutputType) => void;
-  panelId: string;
-}
-
-function RoastPanel({ canvasRef, initialized, selected, onSelect, panelId }: RoastPanelProps) {
-  const [open, setOpen] = useState(false);
-  const dropRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const current = OUTPUT_OPTIONS.find(o => o.id === selected)!;
-
-  return (
-    <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h3 className="text-sm font-medium text-foreground">{current.label}</h3>
-        <div ref={dropRef} className="relative">
-          <button
-            onClick={() => setOpen(v => !v)}
-            aria-haspopup="listbox"
-            aria-expanded={open}
-            className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-elevated transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
-          >
-            {current.label}
-            <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-          </button>
-          {open && (
-            <ul role="listbox" className="absolute right-0 top-full z-50 mt-1 w-52 rounded-lg border border-border bg-surface py-1 shadow-lg">
-              {OUTPUT_OPTIONS.map(opt => (
-                <li
-                  key={opt.id}
-                  role="option"
-                  aria-selected={selected === opt.id}
-                  onClick={() => { onSelect(opt.id); setOpen(false); }}
-                  className={`cursor-pointer px-3 py-2 text-sm transition-colors hover:bg-surface-elevated ${selected === opt.id ? "bg-accent/10 text-accent" : ""}`}
-                >
-                  <div className="font-medium">{opt.label}</div>
-                  <div className="text-xs text-foreground-muted">{opt.description}</div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </header>
-
-      <div className="relative bg-black" style={{ height: "500px" }}>
-        <canvas
-          ref={canvasRef}
-          width={512}
-          height={512}
-          style={{ width: "100%", height: "100%" }}
-          aria-label={`${panelId} ROAST viewer`}
-        />
-        {!initialized && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-2">
-              <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-              <span className="text-sm text-foreground-muted">Initializing viewer...</span>
-            </div>
-          </div>
-        )}
-      </div>
-    </article>
   );
 }
