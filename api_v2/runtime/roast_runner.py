@@ -140,6 +140,22 @@ class ROASTRunner:
 
             session_log(self.session_id, f"[ROAST] Launching: {' '.join(cmd)}")
 
+            # MCR extracts CTF archive binaries without execute bits on Linux.
+            # chmod all .mexa64 and plain binaries in the MCR runtime cache.
+            mcr_cache = Path.home() / ".MathWorks" / "MatlabRuntimeCache"
+            if mcr_cache.exists():
+                for p in mcr_cache.rglob("*"):
+                    if p.is_file() and not p.suffix:  # executables (no extension)
+                        try:
+                            p.chmod(p.stat().st_mode | 0o111)
+                        except Exception:
+                            pass
+                for p in mcr_cache.rglob("*.mexa64"):
+                    try:
+                        p.chmod(p.stat().st_mode | 0o111)
+                    except Exception:
+                        pass
+
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
