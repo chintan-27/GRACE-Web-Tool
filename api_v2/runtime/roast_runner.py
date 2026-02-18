@@ -5,6 +5,7 @@ parses stdout for step progress, and emits SSE events.
 
 import gzip
 import json
+import re
 import shutil
 import subprocess
 import time
@@ -28,13 +29,57 @@ from services.logger import log_event, log_error
 
 
 # Maps stdout substrings → (sse_event, progress_pct)
+# Order matters: first match wins per line (break after match).
 STEP_MAP = [
-    ("STEP 2.5",                          "roast_step_csf_fix",      10),
-    ("STEP 3",                            "roast_step_electrode",    20),
-    ("STEP 4",                            "roast_step_mesh",         35),
-    ("STEP 5",                            "roast_step_solve",        60),
-    ("STEP 6",                            "roast_step_postprocess",  85),
-    ("ROAST_RUN: COMPLETE",               "roast_complete",         100),
+    # --- seg8 generation (gen_seg8 in roast_run.m, pre-ROAST step) ---
+    ("ROAST_RUN: Generating seg8",        "roast_seg8",              5),
+    ("ROAST_RUN: seg8 saved",             "roast_seg8_done",         8),
+
+    # --- Step 2.5: CSF fix ---
+    ("STEP 2.5",                          "roast_step_csf_fix",     10),
+
+    # --- Step 3: Electrode placement ---
+    ("STEP 3",                            "roast_step_electrode",   12),
+    ("measuring head size",               "roast_step_el_measure",  14),
+    ("wearing the cap",                   "roast_step_el_cap",      16),
+    ("placing electrode F3",              "roast_step_el_f3",       19),
+    ("placing electrode F4",              "roast_step_el_f4",       21),
+    ("final clean-up",                    "roast_step_el_cleanup",  23),
+
+    # --- Step 4: Mesh generation (CGAL) ---
+    ("STEP 4",                            "roast_step_mesh",        25),
+    ("Mesh sizes are",                    "roast_step_mesh_sizing", 28),
+    ("surface and volume meshes complete","roast_step_mesh_done",   38),
+    ("saving mesh",                       "roast_step_mesh_saving", 40),
+
+    # --- Step 5: FEM solve (getDP) ---
+    # Percentage lines handled separately by _GETDP_RANGES below.
+    ("STEP 5",                            "roast_step_solve",       42),
+    ("Solve[Sys_Ele]",                    "roast_step_solve_fem",   65),
+    ("SaveSolution",                      "roast_step_solve_save",  68),
+
+    # --- Step 6: Post-processing ---
+    ("STEP 6",                            "roast_step_postprocess", 75),
+    ("converting the results",            "roast_step_post_convert",79),
+    ("Computing Jroast",                  "roast_step_post_jroast", 85),
+    ("saving the final results",          "roast_step_post_save",   90),
+    ("ALL DONE ROAST",                    "roast_step_post_done",   95),
+
+    # --- Complete ---
+    ("ROAST_RUN: COMPLETE",               "roast_complete",        100),
+]
+
+# getDP prints percentage lines like "10%    : Pre-processing" as each phase runs 0→100%.
+# We interpolate each phase's 0-100% into a sub-range of the overall 42-74% Step 5 window.
+_GETDP_PRE  = re.compile(r"(\d+)%\s+:\s+Pre-processing")
+_GETDP_GEN  = re.compile(r"(\d+)%\s+:\s+Processing \(Generate\)")
+_GETDP_POST = re.compile(r"(\d+)%\s+:\s+Post-processing")
+
+_GETDP_RANGES = [
+    # (pattern, overall_lo, overall_hi, event_name)
+    (_GETDP_PRE,  42, 52, "roast_step_solve_pre"),
+    (_GETDP_GEN,  52, 62, "roast_step_solve_gen"),
+    (_GETDP_POST, 65, 73, "roast_step_solve_post"),
 ]
 
 
@@ -179,13 +224,27 @@ class ROASTRunner:
                 if line:
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
-                # Match step progress
+                # 1) Match fixed step substrings
+                matched = False
                 for substring, event_name, pct in STEP_MAP:
                     if substring in line:
                         if pct > last_progress:
                             self._emit(event_name, pct)
                             last_progress = pct
+                        matched = True
                         break
+
+                # 2) If no fixed match, try getDP percentage patterns (Step 5 only)
+                if not matched:
+                    for pattern, lo, hi, event_name in _GETDP_RANGES:
+                        m = pattern.search(line)
+                        if m:
+                            raw_pct = int(m.group(1))
+                            mapped = lo + int((raw_pct / 100.0) * (hi - lo))
+                            if mapped > last_progress:
+                                self._emit(event_name, mapped)
+                                last_progress = mapped
+                            break
 
                 if time.time() > deadline:
                     proc.kill()
