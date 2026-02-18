@@ -326,7 +326,7 @@ export default function ResultsStep() {
           <li>Segmentation results are in NIfTI format with FreeSurfer-compatible labels</li>
           <li>TES simulation uses ROAST with F3(-2mA)/F4(+2mA) pad electrodes by default</li>
           <li>Simulation outputs include E-field magnitude and voltage maps</li>
-          <li>Session data will be automatically cleaned up after 24 hours</li>
+          <li>Session data is automatically deleted after 24 hours</li>
         </ul>
       </div>
     </div>

@@ -38,13 +38,13 @@ async def lifespan(app: FastAPI):
     t2.start()
     print("ROAST Scheduler started under lifespan()")
 
-    # Session cleanup loop (runs every 24h, deletes sessions >30 days old)
+    # Session cleanup loop (runs every hour, deletes sessions >24h old)
     def cleanup_loop():
         while True:
-            deleted = cleanup_old_sessions(max_age_days=30)
+            deleted = cleanup_old_sessions(max_age_hours=24)
             if deleted:
                 print(f"Session cleanup: removed {deleted} old session(s)")
-            time.sleep(86400)
+            time.sleep(3600)
 
     t3 = threading.Thread(target=cleanup_loop, daemon=True)
     t3.start()

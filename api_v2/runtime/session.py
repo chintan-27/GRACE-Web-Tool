@@ -99,12 +99,12 @@ def session_exists(session_id: str) -> bool:
 # -----------------------------------------------------------
 # CLEANUP
 # -----------------------------------------------------------
-def cleanup_old_sessions(max_age_days: int = 30) -> int:
+def cleanup_old_sessions(max_age_hours: int = 24) -> int:
     """
-    Delete session directories older than max_age_days.
+    Delete session directories older than max_age_hours.
     Returns number of sessions deleted.
     """
-    cutoff = time.time() - (max_age_days * 86400)
+    cutoff = time.time() - (max_age_hours * 3600)
     deleted = 0
 
     sessions_root = Path(SESSION_DIR)
