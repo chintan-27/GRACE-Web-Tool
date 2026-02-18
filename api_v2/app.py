@@ -10,11 +10,16 @@ import subprocess
 import sqlite3
 from pathlib import Path
 
-from runtime.session import create_session, session_input_native, model_output_path, session_log
+from runtime.session import create_session, session_input_native, model_output_path, session_log, roast_output_path
 from runtime.scheduler import scheduler
+from runtime.roast_scheduler import roast_scheduler
 from runtime.inference import InferenceOrchestrator
 from runtime.sse import sse_stream
-from services.redis_client import redis_client, get_queue_position
+from runtime.roast_config import build_roast_config, validate_recipe
+from services.redis_client import (
+    redis_client, get_queue_position,
+    enqueue_roast_job, get_roast_status, get_roast_progress, set_roast_status,
+)
 from config import GPU_COUNT, SESSION_DIR, DB_PATH
 from dotenv import load_dotenv
 
@@ -27,6 +32,10 @@ async def lifespan(app: FastAPI):
     t = threading.Thread(target=scheduler.scheduler_loop, daemon=True)
     t.start()
     print("GPU Scheduler started under lifespan()")
+
+    t2 = threading.Thread(target=roast_scheduler.scheduler_loop, daemon=True)
+    t2.start()
+    print("ROAST Scheduler started under lifespan()")
 
     yield
 
@@ -169,6 +178,98 @@ async def get_input(session_id: str):
         path=str(input_path),
         filename="input.nii.gz",
         media_type="application/gzip",
+    )
+
+
+# ============================================================
+# POST /simulate  — Enqueue a ROAST TES simulation
+# ============================================================
+@app.post("/simulate")
+async def simulate(body: dict = Body(...)):
+    session_id = body.get("session_id")
+    model_name = body.get("model_name")
+
+    if not session_id or not model_name:
+        raise HTTPException(status_code=400, detail="session_id and model_name are required")
+
+    # Validate segmentation output exists
+    seg_path = model_output_path(session_id, model_name)
+    if not seg_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Segmentation output not found for model '{model_name}'. Run segmentation first."
+        )
+
+    # Validate recipe if provided
+    recipe = body.get("recipe")
+    if recipe:
+        try:
+            validate_recipe(recipe)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    # Build job payload
+    payload = {
+        "model_name": model_name,
+        "recipe": recipe,
+        "electrode_type": body.get("electrode_type"),
+        "electrode_size": body.get("electrode_size"),
+        "electrode_ori": body.get("electrode_ori"),
+        "mesh_options": body.get("mesh_options"),
+        "simulation_tag": body.get("simulation_tag"),
+    }
+
+    set_roast_status(session_id, "queued")
+    enqueue_roast_job(session_id, payload)
+    session_log(session_id, f"ROAST job enqueued for model={model_name}")
+
+    from runtime.sse import push_event
+    push_event(session_id, {"event": "roast_queued", "progress": 0})
+
+    return {"session_id": session_id, "status": "queued"}
+
+
+# ============================================================
+# GET /simulate/results/{session_id}/{output_type}
+# ============================================================
+@app.get("/simulate/results/{session_id}/{output_type}")
+async def get_simulate_result(session_id: str, output_type: str):
+    if output_type not in ("voltage", "efield", "emag"):
+        raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag")
+
+    try:
+        out_path = roast_output_path(session_id, output_type)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not out_path.exists():
+        raise HTTPException(status_code=404, detail=f"ROAST output '{output_type}' not found. Run simulation first.")
+
+    return FileResponse(
+        path=str(out_path),
+        filename=f"{output_type}.nii",
+        media_type="application/octet-stream",
+    )
+
+
+# ============================================================
+# GET /simulate/status/{session_id}
+# ============================================================
+@app.get("/simulate/status/{session_id}")
+async def get_simulate_status(session_id: str):
+    status = get_roast_status(session_id) or "not_started"
+    progress = get_roast_progress(session_id)
+    return {"status": status, "progress": progress}
+
+
+# ============================================================
+# GET /stream/roast/{session_id}  — SSE for ROAST jobs
+# ============================================================
+@app.get("/stream/roast/{session_id}")
+async def stream_roast(session_id: str):
+    return StreamingResponse(
+        sse_stream(session_id, terminate_on=("roast_complete", "roast_error")),
+        media_type="text/event-stream"
     )
 
 

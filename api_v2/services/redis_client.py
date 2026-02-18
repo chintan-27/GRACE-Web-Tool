@@ -137,6 +137,46 @@ def get_progress(session_id: str, model: str) -> float:
 def push_sse_event(event: dict):
     redis_client.rpush(EVENT_STREAM, json.dumps(event))
 
+# -------------------------------------------------------------
+# ROAST queue
+# -------------------------------------------------------------
+ROAST_JOB_QUEUE = "roast_job_queue"
+ROAST_JOB_DATA_PREFIX = "roast_job_data:"
+ROAST_JOB_STATUS_PREFIX = "roast_job_status:"
+ROAST_PROGRESS_PREFIX = "roast_progress:"
+
+
+def enqueue_roast_job(session_id: str, payload: dict):
+    redis_client.set(ROAST_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.rpush(ROAST_JOB_QUEUE, session_id)
+
+
+def pop_roast_job() -> str | None:
+    return redis_client.lpop(ROAST_JOB_QUEUE)
+
+
+def get_roast_job_data(session_id: str) -> dict | None:
+    raw = redis_client.get(ROAST_JOB_DATA_PREFIX + session_id)
+    return json.loads(raw) if raw else None
+
+
+def set_roast_status(session_id: str, status: str):
+    redis_client.set(ROAST_JOB_STATUS_PREFIX + session_id, status)
+
+
+def get_roast_status(session_id: str) -> str | None:
+    return redis_client.get(ROAST_JOB_STATUS_PREFIX + session_id)
+
+
+def set_roast_progress(session_id: str, progress: float):
+    redis_client.set(ROAST_PROGRESS_PREFIX + session_id, progress)
+
+
+def get_roast_progress(session_id: str) -> float:
+    p = redis_client.get(ROAST_PROGRESS_PREFIX + session_id)
+    return float(p) if p else 0.0
+
+
 # -------------------------------------------------------
 # CLEANUP
 # -------------------------------------------------------

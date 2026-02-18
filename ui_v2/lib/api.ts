@@ -153,6 +153,104 @@ export async function getInput(sessionId: string): Promise<Blob> {
 }
 
 // ---------------------------------------------------------------------
+// POST /simulate
+// ---------------------------------------------------------------------
+export interface SimulateResponse {
+  session_id: string;
+  status: "queued";
+}
+
+export async function startSimulation(
+  sessionId: string,
+  modelName: string,
+  recipe?: (string | number)[]
+): Promise<SimulateResponse> {
+  const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName };
+  if (recipe) body.recipe = recipe;
+
+  const res = await fetch(`${API_BASE}/simulate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let detail = "Failed to start simulation";
+    try { const err = await res.json(); detail = err.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------
+// SSE for ROAST /stream/roast/{session_id}
+// ---------------------------------------------------------------------
+export interface ROASTSSEEvent {
+  type: "progress" | "complete" | "error";
+  event?: string;
+  progress?: number;
+  detail?: string;
+}
+
+export function connectROASTSSE(
+  sessionId: string,
+  onEvent: (event: ROASTSSEEvent) => void,
+  onDisconnect?: () => void
+): EventSource {
+  const evtSource = new EventSource(`${API_BASE}/stream/roast/${sessionId}`);
+
+  evtSource.onmessage = (e) => {
+    try {
+      const envelope = JSON.parse(e.data) as any;
+      const payload = envelope.event ?? envelope;
+
+      if (payload.event === "roast_complete") {
+        evtSource.close();
+        onEvent({ type: "complete", progress: 100 });
+        return;
+      }
+      if (payload.event === "roast_error") {
+        evtSource.close();
+        onEvent({ type: "error", detail: payload.detail || "Simulation failed" });
+        return;
+      }
+      if (typeof payload.progress === "number") {
+        onEvent({ type: "progress", event: payload.event, progress: payload.progress });
+        return;
+      }
+    } catch {}
+  };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    onDisconnect?.();
+  };
+
+  return evtSource;
+}
+
+// ---------------------------------------------------------------------
+// GET /simulate/results/{session}/{output_type}
+// ---------------------------------------------------------------------
+export async function getSimulationResult(
+  sessionId: string,
+  outputType: "voltage" | "efield" | "emag"
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/simulate/results/${sessionId}/${outputType}`);
+  if (!res.ok) throw new Error(`Simulation result not found: ${outputType}`);
+  return await res.blob();
+}
+
+// ---------------------------------------------------------------------
+// GET /simulate/status/{session}
+// ---------------------------------------------------------------------
+export async function getSimulationStatus(sessionId: string): Promise<{ status: string; progress: number }> {
+  const res = await fetch(`${API_BASE}/simulate/status/${sessionId}`);
+  if (!res.ok) throw new Error("Failed to get simulation status");
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------
 export async function getHealth(): Promise<HealthResponse> {

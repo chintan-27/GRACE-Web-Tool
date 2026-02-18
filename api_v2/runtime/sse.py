@@ -51,7 +51,7 @@ def push_event(session_id: str, event: Dict):
 # -------------------------------------------------------------------
 # Streaming generator
 # -------------------------------------------------------------------
-def sse_stream(session_id: str) -> Generator[str, None, None]:
+def sse_stream(session_id: str, terminate_on: tuple = ("job_complete", "job_failed")) -> Generator[str, None, None]:
     """
     Reads events from Redis and emits SSE messages.
     Includes:
@@ -95,7 +95,7 @@ def sse_stream(session_id: str) -> Generator[str, None, None]:
         last_event_time = time.time()
 
         # Termination signals
-        if event.get("event") in ("job_complete", "job_failed"):
+        if event.get("event") in terminate_on:
             session_log(session_id, "SSE stream closing due to final event.")
             break
 

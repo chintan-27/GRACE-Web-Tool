@@ -48,6 +48,14 @@ GPU_COUNT = int(os.getenv("GPU_COUNT", "4"))
 JOB_TIMEOUT_SECONDS = int(os.getenv("JOB_TIMEOUT_SECONDS", "3600"))
 
 # -------------------------------------------------------
+# ROAST CONFIG
+# -------------------------------------------------------
+ROAST_BUILD_DIR = Path(os.getenv("ROAST_BUILD_DIR", str(BASE_DIR.parent / "roast-11" / "build")))
+MATLAB_RUNTIME = Path(os.getenv("MATLAB_RUNTIME", "/usr/local/MATLAB/MATLAB_Runtime/R2025b"))
+ROAST_MAX_WORKERS = int(os.getenv("ROAST_MAX_WORKERS", "2"))
+ROAST_TIMEOUT_SECONDS = int(os.getenv("ROAST_TIMEOUT_SECONDS", "7200"))
+
+# -------------------------------------------------------
 # FREESURFER
 # -------------------------------------------------------
 # Path to FreeSurfer tools inside Docker

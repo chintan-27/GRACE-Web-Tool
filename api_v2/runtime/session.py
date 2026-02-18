@@ -31,6 +31,26 @@ def model_output_path(session_id: str, model_name: str) -> Path:
 
 
 # -----------------------------------------------------------
+# ROAST HELPERS
+# -----------------------------------------------------------
+def roast_working_dir(session_id: str) -> Path:
+    d = session_path(session_id) / "roast"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def roast_output_path(session_id: str, output_type: str) -> Path:
+    filenames = {
+        "voltage": "T1_tDCSLAB_v.nii",
+        "efield":  "T1_tDCSLAB_e.nii",
+        "emag":    "T1_tDCSLAB_emag.nii",
+    }
+    if output_type not in filenames:
+        raise ValueError(f"Unknown ROAST output type: {output_type}")
+    return roast_working_dir(session_id) / filenames[output_type]
+
+
+# -----------------------------------------------------------
 # SESSION CREATION
 # -----------------------------------------------------------
 def create_session() -> str:
