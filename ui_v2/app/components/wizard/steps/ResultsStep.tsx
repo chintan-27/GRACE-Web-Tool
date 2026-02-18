@@ -179,11 +179,17 @@ export default function ResultsStep() {
       {/* Segmentation Viewer */}
       <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
 
-      {/* Download + Simulate Cards */}
-      <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-          Segmentation Results
-        </h2>
+      {/* TES Simulation Section */}
+      <div className="rounded-2xl border border-accent/30 bg-accent/5 p-6 shadow-medical">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="rounded-lg bg-accent/15 p-2">
+            <Zap className="h-5 w-5 text-accent" />
+          </div>
+          <div>
+            <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
+            <p className="text-xs text-foreground-muted">Run a transcranial electrical stimulation simulation on your segmentation</p>
+          </div>
+        </div>
 
         <div className="grid gap-4 md:grid-cols-3">
           {models.map((model) => {
@@ -194,40 +200,30 @@ export default function ResultsStep() {
             const isViewerOpen = roastOpen[model] ?? false;
 
             return (
-              <div key={model} className="flex flex-col gap-3 rounded-xl border border-border bg-background p-4">
-                {/* Model info + download */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
-                    <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
-                  </div>
-                  <Button variant="success" size="sm" onClick={() => handleDownload(model)} className="gap-1.5">
-                    <Download className="h-3.5 w-3.5" />
-                    Download
-                  </Button>
+              <div key={model} className="flex flex-col gap-3 rounded-xl border border-accent/20 bg-background p-4">
+                <div>
+                  <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
+                  <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space · F3(−2mA) / F4(+2mA)</p>
                 </div>
 
-                {/* Run simulation */}
                 {rs === "idle" && (
                   <Button
-                    variant="outline"
-                    size="sm"
+                    variant="accent"
                     onClick={() => runSimulation(model)}
-                    className="gap-1.5 w-full"
+                    className="gap-2 w-full"
                   >
-                    <Zap className="h-3.5 w-3.5" />
+                    <Zap className="h-4 w-4" />
                     Run TES Simulation
                   </Button>
                 )}
 
-                {/* Progress bar */}
                 {(rs === "queued" || rs === "running") && (
-                  <div className="space-y-1">
+                  <div className="space-y-2">
                     <div className="flex justify-between text-xs text-foreground-muted">
                       <span>{rStep || "Queued..."}</span>
                       <span>{rp}%</span>
                     </div>
-                    <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
+                    <div className="h-2 w-full rounded-full bg-border overflow-hidden">
                       <div
                         className="h-full rounded-full bg-accent transition-all duration-500"
                         style={{ width: `${rp}%` }}
@@ -236,27 +232,24 @@ export default function ResultsStep() {
                   </div>
                 )}
 
-                {/* Error */}
                 {rs === "error" && rErr && (
                   <div className="space-y-2">
                     <p className="text-xs text-error">{rErr}</p>
-                    <Button variant="outline" size="sm" onClick={() => runSimulation(model)} className="gap-1.5 w-full">
-                      <Zap className="h-3.5 w-3.5" />
-                      Retry Simulation
+                    <Button variant="outline" onClick={() => runSimulation(model)} className="gap-2 w-full">
+                      <Zap className="h-4 w-4" />
+                      Retry
                     </Button>
                   </div>
                 )}
 
-                {/* Complete: toggle viewer */}
                 {rs === "complete" && (
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={() => setRoastOpen(p => ({ ...p, [model]: !isViewerOpen }))}
-                    className="gap-1.5 w-full"
+                    className="gap-2 w-full border-accent/40 text-accent hover:bg-accent/10"
                   >
-                    {isViewerOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                    {isViewerOpen ? "Hide" : "View"} Simulation Results
+                    {isViewerOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {isViewerOpen ? "Hide" : "View"} Results
                   </Button>
                 )}
               </div>
@@ -284,6 +277,27 @@ export default function ResultsStep() {
           </div>
         );
       })}
+
+      {/* Download Cards */}
+      <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
+        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
+          Download Segmentations
+        </h2>
+        <div className="grid gap-4 md:grid-cols-3">
+          {models.map((model) => (
+            <div key={model} className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
+              <div>
+                <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
+                <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
+              </div>
+              <Button variant="success" size="sm" onClick={() => handleDownload(model)} className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Download
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Info */}
       <div className="rounded-xl border border-border-subtle bg-background-secondary p-4">
