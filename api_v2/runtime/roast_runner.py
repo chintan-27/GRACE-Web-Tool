@@ -69,12 +69,17 @@ class ROASTRunner:
             shutil.copyfileobj(f_in, f_out)
         session_log(self.session_id, f"[ROAST] T1 gunzipped → {t1_nii}")
 
-        # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement)
+        # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement).
+        # Do NOT pass the old header — nibabel would keep the old dtype code
+        # (int16/float32) in the header even though the array is uint8, causing
+        # MATLAB's load_untouch_nii to read the wrong type. Creating a fresh
+        # Nifti1Image from only (data, affine) lets nibabel derive the correct
+        # uint8 dtype code automatically.
         mask_gz = model_output_path(self.session_id, self.model_name)
         mask_nii = self.work_dir / "T1_T1orT2_masks.nii"
         img = nib.load(mask_gz)
         data = np.asarray(img.dataobj, dtype=np.uint8)
-        nib.save(nib.Nifti1Image(data, img.affine, img.header), str(mask_nii))
+        nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
         session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 
         # Create a dummy c1T1_T1orT2.nii to bypass ROAST step 1 (SPM segmentation).
