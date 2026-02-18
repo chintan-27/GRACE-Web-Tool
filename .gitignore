@@ -65,5 +65,4 @@ api_v2/sessions/*
 plan.md
 claude.md
 context.md
-roast-11/*
-!roast-11/build/
+roast-11
