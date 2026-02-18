@@ -63,9 +63,11 @@ export default function ResultsStep() {
   const [roastStep,     setRoastStep]     = useState<Record<string, string>>({});
   const [roastError,    setRoastError]    = useState<Record<string, string | null>>({});
   const [roastOpen,     setRoastOpen]     = useState<Record<string, boolean>>({});
+  const [roastQuality,  setRoastQuality]  = useState<Record<string, "fast" | "standard">>({});
 
   const runSimulation = useCallback(async (model: string) => {
     if (!sessionId) return;
+    const quality = roastQuality[model] ?? "fast";
 
     setRoastStatus(p  => ({ ...p, [model]: "queued" }));
     setRoastProgress(p => ({ ...p, [model]: 0 }));
@@ -73,7 +75,7 @@ export default function ResultsStep() {
     setRoastError(p   => ({ ...p, [model]: null }));
 
     try {
-      await startSimulation(sessionId, model);
+      await startSimulation(sessionId, model, quality);
     } catch (e: any) {
       setRoastStatus(p => ({ ...p, [model]: "error" }));
       setRoastError(p  => ({ ...p, [model]: e.message || "Failed to start" }));
@@ -176,85 +178,103 @@ export default function ResultsStep() {
         </div>
       </div>
 
-      {/* Segmentation Viewer */}
-      <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
-
-      {/* TES Simulation Section */}
-      <div className="rounded-2xl border border-accent/30 bg-accent/5 p-6 shadow-medical">
-        <div className="flex items-center gap-3 mb-5">
-          <div className="rounded-lg bg-accent/15 p-2">
-            <Zap className="h-5 w-5 text-accent" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
-            <p className="text-xs text-foreground-muted">Run a transcranial electrical stimulation simulation on your segmentation</p>
-          </div>
+      {/* Segmentation Viewer + TES Simulation wrapper */}
+      <div className="rounded-2xl border border-accent/30 bg-accent/5 shadow-medical overflow-hidden">
+        {/* Viewer */}
+        <div className="p-4 pb-0">
+          <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-3">
-          {models.map((model) => {
-            const rs = roastStatus[model] ?? "idle";
-            const rp = roastProgress[model] ?? 0;
-            const rStep = roastStep[model] ?? "";
-            const rErr = roastError[model];
-            const isViewerOpen = roastOpen[model] ?? false;
+        {/* TES Simulation bar */}
+        <div className="p-5 border-t border-accent/20 mt-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="rounded-lg bg-accent/15 p-2">
+              <Zap className="h-5 w-5 text-accent" />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
+              <p className="text-xs text-foreground-muted">F3(−2mA) / F4(+2mA) pad electrodes · ROAST-11</p>
+            </div>
+          </div>
 
-            return (
-              <div key={model} className="flex flex-col gap-3 rounded-xl border border-accent/20 bg-background p-4">
-                <div>
-                  <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
-                  <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space · F3(−2mA) / F4(+2mA)</p>
-                </div>
+          <div className="grid gap-4 md:grid-cols-3">
+            {models.map((model) => {
+              const rs = roastStatus[model] ?? "idle";
+              const rp = roastProgress[model] ?? 0;
+              const rStep = roastStep[model] ?? "";
+              const rErr = roastError[model];
+              const isViewerOpen = roastOpen[model] ?? false;
+              const quality = roastQuality[model] ?? "fast";
 
-                {rs === "idle" && (
-                  <Button
-                    variant="accent"
-                    onClick={() => runSimulation(model)}
-                    className="gap-2 w-full"
-                  >
-                    <Zap className="h-4 w-4" />
-                    Run TES Simulation
-                  </Button>
-                )}
-
-                {(rs === "queued" || rs === "running") && (
-                  <div className="space-y-2">
-                    <div className="flex justify-between text-xs text-foreground-muted">
-                      <span>{rStep || "Queued..."}</span>
-                      <span>{rp}%</span>
-                    </div>
-                    <div className="h-2 w-full rounded-full bg-border overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-accent transition-all duration-500"
-                        style={{ width: `${rp}%` }}
-                      />
-                    </div>
+              return (
+                <div key={model} className="flex flex-col gap-3 rounded-xl border border-accent/20 bg-background p-4">
+                  <div>
+                    <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
+                    <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
                   </div>
-                )}
 
-                {rs === "error" && rErr && (
-                  <div className="space-y-2">
-                    <p className="text-xs text-error">{rErr}</p>
-                    <Button variant="outline" onClick={() => runSimulation(model)} className="gap-2 w-full">
-                      <Zap className="h-4 w-4" />
-                      Retry
+                  {rs === "idle" && (
+                    <>
+                      {/* Quality toggle */}
+                      <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
+                        <button
+                          onClick={() => setRoastQuality(p => ({ ...p, [model]: "fast" }))}
+                          className={`flex-1 py-1.5 transition-colors ${quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface"}`}
+                        >
+                          ⚡ Fast
+                        </button>
+                        <button
+                          onClick={() => setRoastQuality(p => ({ ...p, [model]: "standard" }))}
+                          className={`flex-1 py-1.5 transition-colors ${quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface"}`}
+                        >
+                          🎯 Standard
+                        </button>
+                      </div>
+                      <p className="text-xs text-foreground-muted -mt-1">
+                        {quality === "fast" ? "~1–2 min · coarser mesh" : "~3–5 min · full accuracy"}
+                      </p>
+                      <Button variant="accent" onClick={() => runSimulation(model)} className="gap-2 w-full">
+                        <Zap className="h-4 w-4" />
+                        Run TES Simulation
+                      </Button>
+                    </>
+                  )}
+
+                  {(rs === "queued" || rs === "running") && (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-xs text-foreground-muted">
+                        <span>{rStep || "Queued..."}</span>
+                        <span>{rp}%</span>
+                      </div>
+                      <div className="h-2 w-full rounded-full bg-border overflow-hidden">
+                        <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${rp}%` }} />
+                      </div>
+                    </div>
+                  )}
+
+                  {rs === "error" && rErr && (
+                    <div className="space-y-2">
+                      <p className="text-xs text-error">{rErr}</p>
+                      <Button variant="outline" onClick={() => runSimulation(model)} className="gap-2 w-full">
+                        <Zap className="h-4 w-4" />Retry
+                      </Button>
+                    </div>
+                  )}
+
+                  {rs === "complete" && (
+                    <Button
+                      variant="outline"
+                      onClick={() => setRoastOpen(p => ({ ...p, [model]: !isViewerOpen }))}
+                      className="gap-2 w-full border-accent/40 text-accent hover:bg-accent/10"
+                    >
+                      {isViewerOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      {isViewerOpen ? "Hide" : "View"} Results
                     </Button>
-                  </div>
-                )}
-
-                {rs === "complete" && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setRoastOpen(p => ({ ...p, [model]: !isViewerOpen }))}
-                    className="gap-2 w-full border-accent/40 text-accent hover:bg-accent/10"
-                  >
-                    {isViewerOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    {isViewerOpen ? "Hide" : "View"} Results
-                  </Button>
-                )}
-              </div>
-            );
-          })}
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
 

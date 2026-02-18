@@ -163,9 +163,10 @@ export interface SimulateResponse {
 export async function startSimulation(
   sessionId: string,
   modelName: string,
+  quality: "fast" | "standard" = "standard",
   recipe?: (string | number)[]
 ): Promise<SimulateResponse> {
-  const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName };
+  const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName, quality };
   if (recipe) body.recipe = recipe;
 
   const res = await fetch(`${API_BASE}/simulate`, {

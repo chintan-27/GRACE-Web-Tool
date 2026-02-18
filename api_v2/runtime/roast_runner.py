@@ -103,6 +103,7 @@ class ROASTRunner:
             elecori=self.payload.get("electrode_ori"),
             meshoptions=self.payload.get("mesh_options"),
             simulationtag=self.payload.get("simulation_tag"),
+            quality=self.payload.get("quality", "standard"),
         )
         config_path = self.work_dir / "config.json"
         with open(config_path, "w") as f:
@@ -156,12 +157,18 @@ class ROASTRunner:
                     except Exception:
                         pass
 
+            # Use all available cores for getDP FEM solver
+            import os as _os
+            omp_env = _os.environ.copy()
+            omp_env["OMP_NUM_THREADS"] = str(_os.cpu_count() or 4)
+
             proc = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
                 cwd=str(self.work_dir),
+                env=omp_env,
             )
 
             last_progress = 5

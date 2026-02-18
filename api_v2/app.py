@@ -239,6 +239,7 @@ async def simulate(body: dict = Body(...)):
         "electrode_ori": body.get("electrode_ori"),
         "mesh_options": body.get("mesh_options"),
         "simulation_tag": body.get("simulation_tag"),
+        "quality": body.get("quality", "standard"),  # "fast" or "standard"
     }
 
     set_roast_status(session_id, "queued")

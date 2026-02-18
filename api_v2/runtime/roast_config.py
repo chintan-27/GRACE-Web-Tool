@@ -18,6 +18,15 @@ DEFAULT_MESH_OPTIONS = {
     "maxvol": 10,
 }
 
+# Fast mode: coarser mesh, ~3x fewer elements, ~2-3x faster, slight accuracy loss
+FAST_MESH_OPTIONS = {
+    "radbound": 8,
+    "angbound": 30,
+    "distbound": 0.5,
+    "reratio": 3,
+    "maxvol": 30,
+}
+
 DEFAULT_SIMULATION_TAG = "tDCSLAB"
 
 # Conductivities: gel (S/m) and electrode (S/m) — applied per electrode
@@ -52,6 +61,7 @@ def build_roast_config(
     elecori: list | None = None,
     meshoptions: dict | None = None,
     simulationtag: str | None = None,
+    quality: str = "standard",  # "fast" or "standard"
 ) -> dict:
     """
     Build the JSON config dict that roast_run.m reads.
@@ -59,12 +69,15 @@ def build_roast_config(
     recipe = recipe or DEFAULT_RECIPE
     validate_recipe(recipe)
 
+    if meshoptions is None:
+        meshoptions = FAST_MESH_OPTIONS if quality == "fast" else DEFAULT_MESH_OPTIONS
+
     return {
         "t1_path": t1_path,
         "recipe": recipe,
         "electype": electype or DEFAULT_ELECTRODE_TYPE,
         "elecsize": elecsize or DEFAULT_ELECTRODE_SIZE,
         "elecori": elecori or DEFAULT_ELECTRODE_ORI,
-        "meshoptions": meshoptions or DEFAULT_MESH_OPTIONS,
+        "meshoptions": meshoptions,
         "simulationtag": simulationtag or DEFAULT_SIMULATION_TAG,
     }
