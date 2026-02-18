@@ -1,5 +1,7 @@
 from pathlib import Path
 import uuid
+import shutil
+import time
 
 from config import SESSION_DIR
 from services.logger import log_info
@@ -92,3 +94,32 @@ def session_log(session_id: str, message: str):
 # -----------------------------------------------------------
 def session_exists(session_id: str) -> bool:
     return session_path(session_id).exists()
+
+
+# -----------------------------------------------------------
+# CLEANUP
+# -----------------------------------------------------------
+def cleanup_old_sessions(max_age_days: int = 30) -> int:
+    """
+    Delete session directories older than max_age_days.
+    Returns number of sessions deleted.
+    """
+    cutoff = time.time() - (max_age_days * 86400)
+    deleted = 0
+
+    sessions_root = Path(SESSION_DIR)
+    if not sessions_root.exists():
+        return 0
+
+    for session_dir in sessions_root.iterdir():
+        if not session_dir.is_dir():
+            continue
+        if session_dir.stat().st_mtime < cutoff:
+            try:
+                shutil.rmtree(session_dir)
+                log_info("SYSTEM", f"Cleaned up old session: {session_dir.name} (>{max_age_days}d old)")
+                deleted += 1
+            except Exception as e:
+                log_info("SYSTEM", f"Failed to delete session {session_dir.name}: {e}")
+
+    return deleted

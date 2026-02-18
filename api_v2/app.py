@@ -8,9 +8,10 @@ import gzip
 import shutil
 import subprocess
 import sqlite3
+import time
 from pathlib import Path
 
-from runtime.session import create_session, session_input_native, model_output_path, session_log, roast_output_path
+from runtime.session import create_session, session_input_native, model_output_path, session_log, roast_output_path, cleanup_old_sessions
 from runtime.scheduler import scheduler
 from runtime.roast_scheduler import roast_scheduler
 from runtime.inference import InferenceOrchestrator
@@ -36,6 +37,18 @@ async def lifespan(app: FastAPI):
     t2 = threading.Thread(target=roast_scheduler.scheduler_loop, daemon=True)
     t2.start()
     print("ROAST Scheduler started under lifespan()")
+
+    # Session cleanup loop (runs every 24h, deletes sessions >30 days old)
+    def cleanup_loop():
+        while True:
+            deleted = cleanup_old_sessions(max_age_days=30)
+            if deleted:
+                print(f"Session cleanup: removed {deleted} old session(s)")
+            time.sleep(86400)
+
+    t3 = threading.Thread(target=cleanup_loop, daemon=True)
+    t3.start()
+    print("Session cleanup scheduler started (30-day retention)")
 
     # Ensure ROAST binaries are executable
     import stat
