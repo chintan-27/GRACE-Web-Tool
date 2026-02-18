@@ -73,6 +73,14 @@ class ROASTRunner:
             shutil.copyfileobj(f_in, f_out)
         session_log(self.session_id, f"[ROAST] Mask gunzipped → {mask_nii}")
 
+        # Create a dummy c1T1_T1orT2.nii to bypass ROAST step 1 (SPM segmentation).
+        # ROAST checks for this file's existence to decide whether to run SPM.
+        # We already provide the final mask (step 2 output), so step 1 can be skipped.
+        # SPM's batch system (cfg_mlbatch_appcfg_master) cannot run in compiled MATLAB.
+        dummy_c1 = self.work_dir / "c1T1_T1orT2.nii"
+        shutil.copy(t1_nii, dummy_c1)
+        session_log(self.session_id, f"[ROAST] Dummy c1 written → {dummy_c1} (bypasses SPM step 1)")
+
         return str(t1_nii)
 
     # ------------------------------------------------------------------
