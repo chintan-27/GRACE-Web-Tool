@@ -18,13 +18,13 @@ DEFAULT_MESH_OPTIONS = {
     "maxvol": 10,
 }
 
-# Fast mode: coarser mesh, ~3x fewer elements, ~2-3x faster, slight accuracy loss
+# Fast mode: coarser mesh, ~5x fewer elements vs standard, ~3-4x faster, slight accuracy loss
 FAST_MESH_OPTIONS = {
-    "radbound": 8,
+    "radbound": 10,
     "angbound": 30,
-    "distbound": 0.5,
+    "distbound": 0.6,
     "reratio": 3,
-    "maxvol": 30,
+    "maxvol": 50,
 }
 
 DEFAULT_SIMULATION_TAG = "tDCSLAB"

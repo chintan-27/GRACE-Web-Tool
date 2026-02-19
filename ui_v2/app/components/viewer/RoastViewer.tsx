@@ -1,20 +1,22 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useId } from "react";
 import { Niivue } from "@niivue/niivue";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Eye, Palette } from "lucide-react";
 import { getSimulationResult } from "@/lib/api";
-import ViewerControls from "./ViewerControls";
+import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
+import { cn } from "@/lib/utils";
 
-// All three ROAST output types shown simultaneously
+// Two fixed panels — primary ROAST scalar outputs (2D only)
 const PANELS = [
-  { type: "emag",    label: "E-field Magnitude", unit: "V/m",  description: "Electric field intensity" },
-  { type: "voltage", label: "Voltage",           unit: "mV",   description: "Electric potential" },
-  { type: "efield",  label: "E-field Vector",    unit: "V/m",  description: "Electric field direction" },
+  { type: "emag",    label: "E-field Magnitude", unit: "V/m", description: "Electric field intensity in tissue" },
+  { type: "voltage", label: "Voltage",           unit: "mV",  description: "Electric potential distribution" },
 ] as const;
 
 type OutputType = typeof PANELS[number]["type"];
+
+const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 
 interface RoastViewerProps {
   inputUrl: string;
@@ -22,22 +24,30 @@ interface RoastViewerProps {
 }
 
 export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
-  const canvasRefs = [
-    useRef<HTMLCanvasElement>(null),
-    useRef<HTMLCanvasElement>(null),
-    useRef<HTMLCanvasElement>(null),
-  ];
-  const nvRefs = useRef<(Niivue | null)[]>([null, null, null]);
+  const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
+  const nvRefs = useRef<(Niivue | null)[]>([null, null]);
 
-  const [initialized, setInitialized] = useState(false);
-  const [viewMode, setViewMode]       = useState<"2d" | "3d">("2d");
+  const [initialized, setInitialized]       = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0.7);
-  const [colormap, setColormap]       = useState<ColormapId>("hot");
-  const [error, setError]             = useState<string | null>(null);
-  const [loading, setLoading]         = useState(false);
-  const [loadErrors, setLoadErrors]   = useState<Partial<Record<OutputType, string>>>({});
+  const [colormap, setColormap]             = useState<ColormapId>("hot");
+  const [colormapOpen, setColormapOpen]     = useState(false);
+  const [error, setError]                   = useState<string | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [loadErrors, setLoadErrors]         = useState<Partial<Record<OutputType, string>>>({});
 
-  const bufferCache = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
+  const colormapDropRef = useRef<HTMLDivElement>(null);
+  const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
+  const sliderId        = useId();
+
+  // Close colormap dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (colormapDropRef.current && !colormapDropRef.current.contains(e.target as Node))
+        setColormapOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const fetchOutput = useCallback(async (type: OutputType): Promise<ArrayBuffer | null> => {
     if (bufferCache.current[type]) return bufferCache.current[type]!;
@@ -46,7 +56,7 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
       const buf  = await blob.arrayBuffer();
       bufferCache.current[type] = buf;
       return buf;
-    } catch (e) {
+    } catch {
       return null;
     }
   }, [sessionId]);
@@ -65,13 +75,26 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
     await nv.loadFromArrayBuffer(buf.slice(0), `${type}.nii`);
     if (nv.volumes.length < 2) return false;
 
-    nv.setColormap(nv.volumes[1].id, cmap);
+    const vol = nv.volumes[1];
+
+    // Fix solid-box rendering: ROAST outputs have ~0 values in air (outside the head).
+    // colormapType=1 (ZERO_TO_MAX_TRANSPARENT_BELOW_MIN) makes voxels below cal_min
+    // fully transparent. We also push cal_min to 1% of max to guarantee air falls below it.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (vol as any).colormapType = 1;
+    const calMax = (vol.cal_max ?? 0) as number;
+    const calMin = (vol.cal_min ?? 0) as number;
+    if (calMax > 0 && calMin <= 0) {
+      vol.cal_min = calMax * 0.01;
+    }
+
+    nv.setColormap(vol.id, cmap); // calls updateGLVolume internally
     nv.setOpacity(1, opacity);
     nv.drawScene();
     return true;
   }, [fetchOutput]);
 
-  // Initialise all three viewers
+  // Initialise both viewers (2D multiplanar only)
   useEffect(() => {
     if (initialized) return;
     if (canvasRefs.some(r => !r.current)) return;
@@ -90,7 +113,6 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
         crosshairColor: [1, 0, 0, 1] as [number, number, number, number],
       };
 
-      // Create all 3 Niivue instances
       const nvs = canvasRefs.map((ref, i) => {
         const nv = new Niivue(opts);
         nv.attachToCanvas(ref.current!);
@@ -98,34 +120,31 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
         return nv;
       });
 
-      // Load T1 into all panels
+      // Load T1 into both panels
       const resp = await fetch(inputUrl);
       if (!resp.ok) throw new Error("Failed to fetch input image");
       const inputBuf = await resp.arrayBuffer();
       for (const nv of nvs) {
         await nv.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
         nv.setOpacity(0, 1.0);
-        nv.setSliceType(nv.sliceTypeMultiplanar);
+        nv.setSliceType(nv.sliceTypeMultiplanar); // 2D only
       }
 
-      // Sync all panels: each broadcasts to the other two
-      nvs[0].broadcastTo([nvs[1], nvs[2]], { "2d": true, "3d": true });
-      nvs[1].broadcastTo([nvs[0], nvs[2]], { "2d": true, "3d": true });
-      nvs[2].broadcastTo([nvs[0], nvs[1]], { "2d": true, "3d": true });
+      // Sync scroll/crosshair between panels
+      nvs[0].broadcastTo([nvs[1]], { "2d": true, "3d": false });
+      nvs[1].broadcastTo([nvs[0]], { "2d": true, "3d": false });
 
       if (!mounted) return;
       setInitialized(true);
 
-      // Load overlays in parallel
       setLoading(true);
       const results = await Promise.allSettled(
         PANELS.map((panel, i) => loadOverlay(nvs[i], panel.type, overlayOpacity, colormap))
       );
       const errs: Partial<Record<OutputType, string>> = {};
       results.forEach((r, i) => {
-        if (r.status === "rejected" || (r.status === "fulfilled" && !r.value)) {
+        if (r.status === "rejected" || (r.status === "fulfilled" && !r.value))
           errs[PANELS[i].type] = "Failed to load";
-        }
       });
       if (Object.keys(errs).length) setLoadErrors(errs);
       setLoading(false);
@@ -137,17 +156,7 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputUrl, initialized]);
 
-  // Sync view mode across all panels
-  useEffect(() => {
-    if (!initialized) return;
-    nvRefs.current.forEach(nv => {
-      if (!nv) return;
-      nv.setSliceType(viewMode === "3d" ? nv.sliceTypeRender : nv.sliceTypeMultiplanar);
-      nv.drawScene();
-    });
-  }, [viewMode, initialized]);
-
-  // Sync opacity across all panels
+  // Sync opacity
   useEffect(() => {
     if (!initialized) return;
     nvRefs.current.forEach(nv => {
@@ -155,16 +164,21 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
     });
   }, [overlayOpacity, initialized]);
 
-  // Sync colormap across all panels
+  // Sync colormap (re-apply transparent-below-min after each change)
   useEffect(() => {
     if (!initialized) return;
     nvRefs.current.forEach(nv => {
       if (nv && nv.volumes.length > 1) {
-        nv.setColormap(nv.volumes[1].id, colormap);
+        const vol = nv.volumes[1];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (vol as any).colormapType = 1;
+        nv.setColormap(vol.id, colormap);
         nv.drawScene();
       }
     });
   }, [colormap, initialized]);
+
+  const currentColormap = COLORMAPS.find(c => c.id === colormap) ?? COLORMAPS[0];
 
   return (
     <section aria-label="TES Simulation Viewer" className="space-y-4">
@@ -179,39 +193,101 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
         </div>
       )}
 
-      {/* Controls */}
-      <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-surface p-4" role="toolbar">
-        <ViewerControls
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          overlayOpacity={overlayOpacity}
-          onOpacityChange={setOverlayOpacity}
-          colormap={colormap}
-          onColormapChange={setColormap}
-        />
+      {/* Compact controls bar — colormap + opacity only (no 3D toggle) */}
+      <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+        {/* Colormap */}
+        <div className="flex items-center gap-2">
+          <Palette className="h-4 w-4 text-foreground-muted" />
+          <span className="text-sm text-foreground-muted">Colors:</span>
+          <div ref={colormapDropRef} className="relative">
+            <button
+              onClick={() => setColormapOpen(v => !v)}
+              aria-haspopup="listbox"
+              aria-expanded={colormapOpen}
+              className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm hover:bg-surface-elevated transition-colors focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <span className="font-medium">{currentColormap.label}</span>
+              <svg className={cn("h-4 w-4 transition-transform", colormapOpen && "rotate-180")} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {colormapOpen && (
+              <ul role="listbox" className="absolute left-0 top-full z-50 mt-1 max-h-60 w-48 overflow-auto rounded-lg border border-border bg-surface py-1 shadow-lg">
+                {COLORMAPS.map(cmap => (
+                  <li
+                    key={cmap.id}
+                    role="option"
+                    aria-selected={colormap === cmap.id}
+                    onClick={() => { setColormap(cmap.id); setColormapOpen(false); }}
+                    className={cn(
+                      "cursor-pointer px-3 py-2 text-sm transition-colors hover:bg-surface-elevated",
+                      colormap === cmap.id && "bg-accent/10 text-accent"
+                    )}
+                  >
+                    <div className="font-medium">{cmap.label}</div>
+                    <div className="text-xs text-foreground-muted">{cmap.description}</div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+
+        {/* Opacity */}
+        <div className="flex items-center gap-2">
+          <Eye className="h-4 w-4 text-foreground-muted" />
+          <span className="text-sm text-foreground-muted" id={`${sliderId}-label`}>Overlay:</span>
+          <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+            {OPACITY_PRESETS.map(v => (
+              <button
+                key={v}
+                onClick={() => setOverlayOpacity(v)}
+                aria-pressed={Math.abs(overlayOpacity - v) < 0.01}
+                className={cn(
+                  "rounded-md px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                  Math.abs(overlayOpacity - v) < 0.01
+                    ? "bg-accent text-accent-foreground"
+                    : "text-foreground-secondary hover:text-foreground"
+                )}
+              >
+                {Math.round(v * 100)}%
+              </button>
+            ))}
+          </div>
+          <input
+            id={sliderId}
+            type="range" min="0" max="1" step="0.05"
+            value={overlayOpacity}
+            onChange={e => setOverlayOpacity(parseFloat(e.target.value))}
+            aria-labelledby={`${sliderId}-label`}
+            className="h-2 w-24 cursor-pointer appearance-none rounded-lg bg-border accent-accent focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <span className="w-10 text-right text-xs text-foreground-muted">{Math.round(overlayOpacity * 100)}%</span>
+        </div>
+
         {loading && (
-          <div className="flex items-center gap-2 text-sm text-foreground-muted">
+          <div className="flex items-center gap-2 text-sm text-foreground-muted ml-auto">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-            Loading simulation outputs...
+            Loading outputs...
           </div>
         )}
       </div>
 
-      {/* Three panels — one per output type */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Full-width stacked panels */}
+      <div className="flex flex-col gap-4">
         {PANELS.map((panel, i) => (
           <article key={panel.type} className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
-            <header className="border-b border-border px-4 py-3">
-              <div className="flex items-center justify-between">
+            <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+              <div>
                 <h3 className="text-sm font-semibold text-foreground">{panel.label}</h3>
-                <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">
-                  {panel.unit}
-                </span>
+                <p className="text-xs text-foreground-muted mt-0.5">{panel.description}</p>
               </div>
-              <p className="text-xs text-foreground-muted mt-0.5">{panel.description}</p>
+              <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">
+                {panel.unit}
+              </span>
             </header>
 
-            <div className="relative bg-black" style={{ height: "380px" }}>
+            <div className="relative bg-black" style={{ height: "500px" }}>
               <canvas
                 ref={canvasRefs[i]}
                 width={512}
@@ -223,7 +299,7 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="flex flex-col items-center gap-2">
                     <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    <span className="text-sm text-foreground-muted">Initializing...</span>
+                    <span className="text-sm text-foreground-muted">Initializing viewer...</span>
                   </div>
                 </div>
               )}
@@ -241,7 +317,7 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
       </div>
 
       <p className="text-xs text-foreground-muted">
-        All three simulation outputs shown as overlays on T1 anatomy. Panels are synchronized — scroll or rotate one to move all.
+        Panels are scroll-synchronized. Results shown as overlay on T1 anatomy.
       </p>
     </section>
   );

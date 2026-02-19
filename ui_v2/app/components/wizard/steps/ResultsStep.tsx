@@ -6,6 +6,7 @@ import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
 import RoastViewer from "../../viewer/RoastViewer";
+import ElectrodeConfigPanel, { buildRecipe, buildElectype, type ElectrodeConfig } from "./ElectrodeConfigPanel";
 import { API_BASE, startSimulation, connectROASTSSE } from "@/lib/api";
 
 // -------------------------------------------------------------------
@@ -22,12 +23,12 @@ const ROAST_STEP_LABELS: Record<string, string> = {
   roast_seg8_done:         "Registration complete",
   // Step 2.5
   roast_step_csf_fix:      "Step 2.5: Fixing CSF...",
-  // Step 3: electrodes
+  // Step 3: electrodes (positions filled in dynamically via getStepLabels)
   roast_step_electrode:    "Step 3: Setting up electrodes...",
   roast_step_el_measure:   "Step 3: Measuring head...",
   roast_step_el_cap:       "Step 3: Fitting electrode cap...",
-  roast_step_el_f3:        "Step 3: Placing F3 electrode...",
-  roast_step_el_f4:        "Step 3: Placing F4 electrode...",
+  roast_step_el_f3:        "Step 3: Placing anode electrode...",
+  roast_step_el_f4:        "Step 3: Placing cathode electrode...",
   roast_step_el_cleanup:   "Step 3: Finalizing electrodes...",
   // Step 4: mesh
   roast_step_mesh:         "Step 4: Generating mesh...",
@@ -91,9 +92,19 @@ export default function ResultsStep() {
   const [roastOpen,     setRoastOpen]     = useState<Record<string, boolean>>({});
   const [roastQuality,  setRoastQuality]  = useState<Record<string, "fast" | "standard">>({});
 
+  // Shared electrode configuration — same montage applies to all models
+  const [electrodeConfig, setElectrodeConfig] = useState<ElectrodeConfig>({
+    anode: "F3",
+    cathode: "F4",
+    currentMa: 2,
+    electrodeType: "pad",
+  });
+
   const runSimulation = useCallback(async (model: string) => {
     if (!sessionId) return;
     const quality = roastQuality[model] ?? "fast";
+    const recipe   = buildRecipe(electrodeConfig);
+    const electype = buildElectype(electrodeConfig);
 
     setRoastStatus(p  => ({ ...p, [model]: "queued" }));
     setRoastProgress(p => ({ ...p, [model]: 0 }));
@@ -101,7 +112,7 @@ export default function ResultsStep() {
     setRoastError(p   => ({ ...p, [model]: null }));
 
     try {
-      await startSimulation(sessionId, model, quality);
+      await startSimulation(sessionId, model, quality, recipe, electype);
     } catch (e: any) {
       setRoastStatus(p => ({ ...p, [model]: "error" }));
       setRoastError(p  => ({ ...p, [model]: e.message || "Failed to start" }));
@@ -219,8 +230,15 @@ export default function ResultsStep() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
-              <p className="text-xs text-foreground-muted">F3(−2mA) / F4(+2mA) pad electrodes · ROAST-11</p>
+              <p className="text-xs text-foreground-muted">
+                {electrodeConfig.anode}(+{electrodeConfig.currentMa}mA) / {electrodeConfig.cathode}(−{electrodeConfig.currentMa}mA) · {electrodeConfig.electrodeType} · ROAST-11
+              </p>
             </div>
+          </div>
+
+          {/* Electrode montage configuration — shared across all models */}
+          <div className="mb-4">
+            <ElectrodeConfigPanel config={electrodeConfig} onChange={setElectrodeConfig} />
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
