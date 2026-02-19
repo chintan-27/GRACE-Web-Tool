@@ -56,6 +56,12 @@ ROAST_MAX_WORKERS = int(os.getenv("ROAST_MAX_WORKERS", "2"))
 ROAST_TIMEOUT_SECONDS = int(os.getenv("ROAST_TIMEOUT_SECONDS", "7200"))
 
 # -------------------------------------------------------
+# SIMNIBS CONFIG
+# -------------------------------------------------------
+SIMNIBS_MAX_WORKERS = int(os.getenv("SIMNIBS_MAX_WORKERS", "2"))
+SIMNIBS_TIMEOUT_SECONDS = int(os.getenv("SIMNIBS_TIMEOUT_SECONDS", "7200"))
+
+# -------------------------------------------------------
 # FREESURFER
 # -------------------------------------------------------
 # Path to FreeSurfer tools inside Docker

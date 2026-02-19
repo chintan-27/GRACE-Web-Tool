@@ -177,6 +177,46 @@ def get_roast_progress(session_id: str) -> float:
     return float(p) if p else 0.0
 
 
+# -------------------------------------------------------------
+# SIMNIBS queue  (mirrors ROAST queue pattern)
+# -------------------------------------------------------------
+SIMNIBS_JOB_QUEUE         = "simnibs_job_queue"
+SIMNIBS_JOB_DATA_PREFIX   = "simnibs_job_data:"
+SIMNIBS_JOB_STATUS_PREFIX = "simnibs_job_status:"
+SIMNIBS_PROGRESS_PREFIX   = "simnibs_progress:"
+
+
+def enqueue_simnibs_job(session_id: str, payload: dict):
+    redis_client.set(SIMNIBS_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.rpush(SIMNIBS_JOB_QUEUE, session_id)
+
+
+def pop_simnibs_job() -> str | None:
+    return redis_client.lpop(SIMNIBS_JOB_QUEUE)
+
+
+def get_simnibs_job_data(session_id: str) -> dict | None:
+    raw = redis_client.get(SIMNIBS_JOB_DATA_PREFIX + session_id)
+    return json.loads(raw) if raw else None
+
+
+def set_simnibs_status(session_id: str, status: str):
+    redis_client.set(SIMNIBS_JOB_STATUS_PREFIX + session_id, status)
+
+
+def get_simnibs_status(session_id: str) -> str | None:
+    return redis_client.get(SIMNIBS_JOB_STATUS_PREFIX + session_id)
+
+
+def set_simnibs_progress(session_id: str, progress: float):
+    redis_client.set(SIMNIBS_PROGRESS_PREFIX + session_id, progress)
+
+
+def get_simnibs_progress(session_id: str) -> float:
+    p = redis_client.get(SIMNIBS_PROGRESS_PREFIX + session_id)
+    return float(p) if p else 0.0
+
+
 # -------------------------------------------------------
 # CLEANUP
 # -------------------------------------------------------

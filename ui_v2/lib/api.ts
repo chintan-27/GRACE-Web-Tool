@@ -254,6 +254,84 @@ export async function getSimulationStatus(sessionId: string): Promise<{ status: 
 }
 
 // ---------------------------------------------------------------------
+// POST /simulate/simnibs
+// ---------------------------------------------------------------------
+export async function startSimNIBSSimulation(
+  sessionId: string,
+  recipe?: (string | number)[],
+  electrode_type?: string[]
+): Promise<SimulateResponse> {
+  const body: Record<string, unknown> = { session_id: sessionId };
+  if (recipe) body.recipe = recipe;
+  if (electrode_type) body.electrode_type = electrode_type;
+
+  const res = await fetch(`${API_BASE}/simulate/simnibs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    let detail = "Failed to start SimNIBS simulation";
+    try { const err = await res.json(); detail = err.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------
+// SSE for SimNIBS /stream/simnibs/{session_id}
+// ---------------------------------------------------------------------
+export function connectSimNIBSSSE(
+  sessionId: string,
+  onEvent: (event: ROASTSSEEvent) => void,
+  onDisconnect?: () => void
+): EventSource {
+  const evtSource = new EventSource(`${API_BASE}/stream/simnibs/${sessionId}`);
+
+  evtSource.onmessage = (e) => {
+    try {
+      const envelope = JSON.parse(e.data) as any;
+      const payload = envelope.event ?? envelope;
+
+      if (payload.event === "simnibs_complete") {
+        evtSource.close();
+        onEvent({ type: "complete", progress: 100 });
+        return;
+      }
+      if (payload.event === "simnibs_error") {
+        evtSource.close();
+        onEvent({ type: "error", detail: payload.detail || "SimNIBS simulation failed" });
+        return;
+      }
+      if (typeof payload.progress === "number") {
+        onEvent({ type: "progress", event: payload.event, progress: payload.progress });
+        return;
+      }
+    } catch {}
+  };
+
+  evtSource.onerror = () => {
+    evtSource.close();
+    onDisconnect?.();
+  };
+
+  return evtSource;
+}
+
+// ---------------------------------------------------------------------
+// GET /simulate/simnibs/results/{session}/{output_type}
+// ---------------------------------------------------------------------
+export async function getSimNIBSResult(
+  sessionId: string,
+  outputType: "emag" | "voltage"
+): Promise<Blob> {
+  const res = await fetch(`${API_BASE}/simulate/simnibs/results/${sessionId}/${outputType}`);
+  if (!res.ok) throw new Error(`SimNIBS result not found: ${outputType}`);
+  return await res.blob();
+}
+
+// ---------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------
 export async function getHealth(): Promise<HealthResponse> {
