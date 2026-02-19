@@ -258,10 +258,11 @@ export async function getSimulationStatus(sessionId: string): Promise<{ status: 
 // ---------------------------------------------------------------------
 export async function startSimNIBSSimulation(
   sessionId: string,
+  modelName: string,
   recipe?: (string | number)[],
   electrode_type?: string[]
 ): Promise<SimulateResponse> {
-  const body: Record<string, unknown> = { session_id: sessionId };
+  const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName };
   if (recipe) body.recipe = recipe;
   if (electrode_type) body.electrode_type = electrode_type;
 
@@ -324,9 +325,10 @@ export function connectSimNIBSSSE(
 // ---------------------------------------------------------------------
 export async function getSimNIBSResult(
   sessionId: string,
+  modelName: string,
   outputType: "emag" | "voltage"
 ): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/simulate/simnibs/results/${sessionId}/${outputType}`);
+  const res = await fetch(`${API_BASE}/simulate/simnibs/results/${sessionId}/${modelName}/${outputType}`);
   if (!res.ok) throw new Error(`SimNIBS result not found: ${outputType}`);
   return await res.blob();
 }

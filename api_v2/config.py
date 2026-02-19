@@ -60,6 +60,9 @@ ROAST_TIMEOUT_SECONDS = int(os.getenv("ROAST_TIMEOUT_SECONDS", "7200"))
 # -------------------------------------------------------
 SIMNIBS_MAX_WORKERS = int(os.getenv("SIMNIBS_MAX_WORKERS", "2"))
 SIMNIBS_TIMEOUT_SECONDS = int(os.getenv("SIMNIBS_TIMEOUT_SECONDS", "7200"))
+# Path to SimNIBS installation directory (contains bin/charm, bin/simnibs, etc.)
+# Set SIMNIBS_HOME in .env to e.g. /home/chintan/SimNIBS-4 or /usr/local/simnibs
+SIMNIBS_HOME = os.getenv("SIMNIBS_HOME", "")
 
 # -------------------------------------------------------
 # FREESURFER

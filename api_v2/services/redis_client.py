@@ -200,20 +200,24 @@ def get_simnibs_job_data(session_id: str) -> dict | None:
     return json.loads(raw) if raw else None
 
 
-def set_simnibs_status(session_id: str, status: str):
-    redis_client.set(SIMNIBS_JOB_STATUS_PREFIX + session_id, status)
+def set_simnibs_status(session_id: str, status: str, model_name: str = ""):
+    key = SIMNIBS_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, status)
 
 
-def get_simnibs_status(session_id: str) -> str | None:
-    return redis_client.get(SIMNIBS_JOB_STATUS_PREFIX + session_id)
+def get_simnibs_status(session_id: str, model_name: str = "") -> str | None:
+    key = SIMNIBS_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    return redis_client.get(key)
 
 
-def set_simnibs_progress(session_id: str, progress: float):
-    redis_client.set(SIMNIBS_PROGRESS_PREFIX + session_id, progress)
+def set_simnibs_progress(session_id: str, progress: float, model_name: str = ""):
+    key = SIMNIBS_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, progress)
 
 
-def get_simnibs_progress(session_id: str) -> float:
-    p = redis_client.get(SIMNIBS_PROGRESS_PREFIX + session_id)
+def get_simnibs_progress(session_id: str, model_name: str = "") -> float:
+    key = SIMNIBS_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    p = redis_client.get(key)
     return float(p) if p else 0.0
 
 

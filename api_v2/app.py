@@ -308,64 +308,69 @@ async def stream_roast(session_id: str):
 @app.post("/simulate/simnibs")
 async def simulate_simnibs(body: dict = Body(...)):
     session_id = body.get("session_id")
-    if not session_id:
-        raise HTTPException(status_code=400, detail="session_id is required")
+    model_name = body.get("model_name")
 
-    # SimNIBS only needs the T1 upload (charm does its own segmentation)
-    t1_path = session_input_native(session_id)
-    if not t1_path.exists():
-        raise HTTPException(status_code=404, detail="T1 not found. Upload a file first.")
+    if not session_id or not model_name:
+        raise HTTPException(status_code=400, detail="session_id and model_name are required")
+
+    # Validate the segmentation output from the chosen model exists
+    seg_path = model_output_path(session_id, model_name)
+    if not seg_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Segmentation output not found for model '{model_name}'. Run segmentation first."
+        )
 
     recipe = body.get("recipe")
-
     payload = {
+        "model_name": model_name,
         "recipe": recipe,
         "electrode_type": body.get("electrode_type"),
     }
 
-    set_simnibs_status(session_id, "queued")
+    set_simnibs_status(session_id, "queued", model_name)
     enqueue_simnibs_job(session_id, payload)
-    session_log(session_id, "[SimNIBS] Job enqueued")
+    session_log(session_id, f"[SimNIBS] Job enqueued for model={model_name}")
 
     from runtime.sse import push_event
-    push_event(session_id, {"event": "simnibs_queued", "progress": 0})
+    push_event(session_id, {"event": "simnibs_queued", "progress": 0, "model": model_name})
 
     return {"session_id": session_id, "status": "queued"}
 
 
 # ============================================================
-# GET /simulate/simnibs/results/{session_id}/{output_type}
+# GET /simulate/simnibs/results/{session_id}/{model_name}/{output_type}
 # ============================================================
-@app.get("/simulate/simnibs/results/{session_id}/{output_type}")
-async def get_simnibs_result(session_id: str, output_type: str):
+@app.get("/simulate/simnibs/results/{session_id}/{model_name}/{output_type}")
+async def get_simnibs_result(session_id: str, model_name: str, output_type: str):
     if output_type not in ("emag", "voltage"):
         raise HTTPException(status_code=400, detail="output_type must be: emag or voltage")
 
     try:
-        out_path = simnibs_output_path(session_id, output_type)
+        out_path = simnibs_output_path(session_id, model_name, output_type)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     if not out_path.exists():
         raise HTTPException(
             status_code=404,
-            detail=f"SimNIBS output '{output_type}' not found. Run simulation first."
+            detail=f"SimNIBS output '{output_type}' not found for model '{model_name}'. Run simulation first."
         )
 
     return FileResponse(
         path=str(out_path),
-        filename=f"simnibs_{output_type}.nii.gz",
+        filename=f"simnibs_{model_name}_{output_type}.nii.gz",
         media_type="application/gzip",
     )
 
 
 # ============================================================
-# GET /simulate/simnibs/status/{session_id}
+# GET /simulate/simnibs/status/{session_id}/{model_name}
 # ============================================================
-@app.get("/simulate/simnibs/status/{session_id}")
-async def get_simnibs_status_endpoint(session_id: str):
-    status = get_simnibs_status(session_id) or "not_started"
-    progress = get_simnibs_progress(session_id)
+@app.get("/simulate/simnibs/status/{session_id}/{model_name}")
+async def get_simnibs_status_endpoint(session_id: str, model_name: str):
+    status = get_simnibs_status(session_id, model_name) or "not_started"
+    progress = get_simnibs_progress(session_id, model_name)
     return {"status": status, "progress": progress}
 
 

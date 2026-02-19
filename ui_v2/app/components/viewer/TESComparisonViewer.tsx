@@ -23,9 +23,10 @@ const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 interface TESComparisonViewerProps {
   inputUrl: string;
   sessionId: string;
+  modelName: string;
 }
 
-export default function TESComparisonViewer({ inputUrl, sessionId }: TESComparisonViewerProps) {
+export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: TESComparisonViewerProps) {
   // One canvas per panel — 4 total
   const canvasRefs = [
     useRef<HTMLCanvasElement>(null),
@@ -62,14 +63,14 @@ export default function TESComparisonViewer({ inputUrl, sessionId }: TESComparis
     try {
       const blob = solver === "roast"
         ? await getSimulationResult(sessionId, type)
-        : await getSimNIBSResult(sessionId, type);
+        : await getSimNIBSResult(sessionId, modelName, type);
       const buf = await blob.arrayBuffer();
       bufferCache.current[key] = buf;
       return buf;
     } catch {
       return null;
     }
-  }, [sessionId]);
+  }, [sessionId, modelName]);
 
   const loadOverlay = useCallback(async (
     nv: Niivue,
@@ -282,10 +283,10 @@ export default function TESComparisonViewer({ inputUrl, sessionId }: TESComparis
       {/* Column headers */}
       <div className="grid grid-cols-2 gap-4">
         <div className="text-center text-sm font-semibold text-foreground px-3 py-1.5 rounded-lg bg-surface border border-border">
-          ROAST-11 <span className="text-xs font-normal text-foreground-muted">(GRACE seg)</span>
+          ROAST-11 <span className="text-xs font-normal text-foreground-muted">({modelName})</span>
         </div>
         <div className="text-center text-sm font-semibold text-foreground px-3 py-1.5 rounded-lg bg-surface border border-border">
-          SimNIBS <span className="text-xs font-normal text-foreground-muted">(charm seg)</span>
+          SimNIBS <span className="text-xs font-normal text-foreground-muted">({modelName})</span>
         </div>
       </div>
 
@@ -336,7 +337,7 @@ export default function TESComparisonViewer({ inputUrl, sessionId }: TESComparis
       ))}
 
       <p className="text-xs text-foreground-muted">
-        All panels are scroll-synchronized. Left: ROAST (uses GRACE segmentation) · Right: SimNIBS (uses charm segmentation).
+        All panels are scroll-synchronized. Both solvers use the {modelName} segmentation — differences reflect meshing and FEM solver variations.
       </p>
     </section>
   );

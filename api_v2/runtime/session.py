@@ -55,17 +55,17 @@ def roast_output_path(session_id: str, output_type: str) -> Path:
 # -----------------------------------------------------------
 # SIMNIBS HELPERS
 # -----------------------------------------------------------
-def simnibs_working_dir(session_id: str) -> Path:
-    d = session_path(session_id) / "simnibs"
+def simnibs_working_dir(session_id: str, model_name: str) -> Path:
+    d = session_path(session_id) / "simnibs" / model_name
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def simnibs_output_path(session_id: str, output_type: str) -> Path:
-    """Collected SimNIBS output NIfTIs (emag / voltage)."""
+def simnibs_output_path(session_id: str, model_name: str, output_type: str) -> Path:
+    """Collected SimNIBS output NIfTIs (emag / voltage), per segmentation model."""
     if output_type not in ("emag", "voltage"):
         raise ValueError(f"Unknown SimNIBS output type: {output_type}")
-    return simnibs_working_dir(session_id) / "outputs" / f"{output_type}.nii.gz"
+    return simnibs_working_dir(session_id, model_name) / "outputs" / f"{output_type}.nii.gz"
 
 
 # -----------------------------------------------------------

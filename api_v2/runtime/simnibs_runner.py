@@ -1,25 +1,45 @@
 """
-SimNIBSRunner — runs charm head meshing then a tDCS FEM solve via SimNIBS,
-streams granular SSE progress events, and collects output NIfTIs.
+SimNIBSRunner — runs SimNIBS tDCS FEM simulation using an existing
+GRACE/DOMINO/DOMINO++ segmentation mask (bypasses charm's own segmentation).
 
 Pipeline
 --------
 1. Gunzip T1 into working directory
-2. Run `charm <subject> <t1>` → builds m2m_<subject>/<subject>.msh
-3. Configure a SimNIBS TDCSLIST session (Python API) and call run_simnibs()
-4. Collect emag + voltage NIfTIs into session/simnibs/outputs/
+2. Load GRACE segmentation → remap 11-tissue labels to SimNIBS 5-tissue format
+3. Run `charm <subject> <t1> --precomputed_seg <remapped_seg>` (skips segmentation step)
+4. Configure a SimNIBS TDCSLIST session (Python API) and call run_simnibs()
+5. Collect emag + voltage NIfTIs into session/simnibs/<model_name>/outputs/
+
+Label mapping (GRACE 11-tissue → SimNIBS 5-tissue)
+----------------------------------------------------
+ 1 WM            → 1 WM
+ 2 GM            → 2 GM
+ 3 CSF           → 3 CSF
+ 4 compact bone  → 4 skull
+ 5 cancel. bone  → 4 skull
+ 6 scalp         → 5 scalp
+ 7 air           → 0 background
+ 8 muscle        → 5 scalp (soft tissue)
+ 9 fat           → 5 scalp (soft tissue)
+10 blood         → 0 background
+11 eye           → 6 eyes (SimNIBS optional label)
 """
 
 import gzip
+import os
 import shutil
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-from config import SIMNIBS_TIMEOUT_SECONDS
+import nibabel as nib
+import numpy as np
+
+from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME
 from runtime.session import (
     session_input_native,
+    model_output_path,
     simnibs_working_dir,
     simnibs_output_path,
     session_log,
@@ -31,8 +51,24 @@ from services.logger import log_event, log_error
 # Fixed subject name used for charm and SimNIBS session
 SUBJECT = "subject"
 
+# GRACE 11-tissue → SimNIBS tissue labels
+# SimNIBS: 0=bg, 1=WM, 2=GM, 3=CSF, 4=skull, 5=scalp, 6=eyes
+LABEL_MAP = {
+    0:  0,   # background
+    1:  1,   # white matter
+    2:  2,   # gray matter
+    3:  3,   # CSF
+    4:  4,   # compact bone → skull
+    5:  4,   # cancellous bone → skull
+    6:  5,   # scalp
+    7:  0,   # air → background
+    8:  5,   # muscle → scalp/soft tissue
+    9:  5,   # fat → scalp/soft tissue
+    10: 0,   # blood → background
+    11: 6,   # eye
+}
+
 # charm stdout substrings → (sse_event, overall_progress)
-# charm progress is coarse (it prints varying messages per version)
 CHARM_MAP = [
     ("registering",          "simnibs_charm_register",  10),
     ("segmenting",           "simnibs_charm_segment",   20),
@@ -44,20 +80,47 @@ CHARM_MAP = [
 ]
 
 
+def _find_charm() -> str:
+    """
+    Resolve the charm executable path.
+    Priority: SIMNIBS_HOME/bin/charm → which charm → fallback 'charm'.
+    """
+    if SIMNIBS_HOME:
+        candidate = Path(SIMNIBS_HOME) / "bin" / "charm"
+        if candidate.exists():
+            return str(candidate)
+
+    found = shutil.which("charm")
+    if found:
+        return found
+
+    return "charm"  # will raise FileNotFoundError with a clear message
+
+
+def _simnibs_env() -> dict:
+    """Build subprocess env that includes SIMNIBS_HOME/bin in PATH."""
+    env = os.environ.copy()
+    if SIMNIBS_HOME:
+        bin_dir = str(Path(SIMNIBS_HOME) / "bin")
+        env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
+    return env
+
+
 class SimNIBSRunner:
     def __init__(self, session_id: str, payload: dict):
         self.session_id = session_id
         self.payload    = payload
-        self.work_dir   = simnibs_working_dir(session_id)
+        self.model_name = payload.get("model_name", "")
+        self.work_dir   = simnibs_working_dir(session_id, self.model_name)
 
     # ------------------------------------------------------------------
     def _emit(self, event: str, progress: int, detail: str | None = None):
-        data: dict = {"event": event, "progress": progress}
+        data: dict = {"event": event, "progress": progress, "model": self.model_name}
         if detail:
             data["detail"] = detail
         push_event(self.session_id, data)
         log_event(self.session_id, data)
-        set_simnibs_progress(self.session_id, progress)
+        set_simnibs_progress(self.session_id, progress, self.model_name)
 
     # ------------------------------------------------------------------
     def prepare_t1(self) -> Path:
@@ -70,16 +133,52 @@ class SimNIBSRunner:
         return t1_nii
 
     # ------------------------------------------------------------------
-    def run_charm(self, t1_path: Path) -> Path:
+    def prepare_segmentation(self) -> Path:
         """
-        Run `charm <subject> <t1>` in the working directory.
+        Load the GRACE/DOMINO/DOMINO++ segmentation, remap to SimNIBS labels,
+        and save to the working directory.
+        """
+        seg_gz = model_output_path(self.session_id, self.model_name)
+        if not seg_gz.exists():
+            raise FileNotFoundError(
+                f"Segmentation not found for model '{self.model_name}'. "
+                "Run segmentation first."
+            )
+
+        session_log(self.session_id, f"[SimNIBS] Loading segmentation: {seg_gz}")
+        img  = nib.load(str(seg_gz))
+        data = np.asarray(img.dataobj, dtype=np.int16)
+
+        remapped = np.zeros_like(data, dtype=np.uint8)
+        for src, dst in LABEL_MAP.items():
+            remapped[data == src] = dst
+
+        out_path = self.work_dir / "seg_remapped.nii.gz"
+        nib.save(nib.Nifti1Image(remapped, img.affine), str(out_path))
+        session_log(self.session_id, f"[SimNIBS] Remapped segmentation → {out_path}")
+        return out_path
+
+    # ------------------------------------------------------------------
+    def run_charm(self, t1_path: Path, seg_path: Path) -> Path:
+        """
+        Run `charm <subject> <t1> --precomputed_seg <seg>` to build the head mesh
+        from the GRACE segmentation (skips charm's own segmentation step).
         Returns path to the generated head mesh (.msh).
         """
-        self._emit("simnibs_charm", 5)
-        session_log(self.session_id, "[SimNIBS] Running charm head meshing…")
+        self._emit("simnibs_charm", 8)
+        session_log(self.session_id, "[SimNIBS] Running charm (precomputed seg)…")
 
-        cmd      = ["charm", SUBJECT, str(t1_path)]
+        charm_bin = _find_charm()
+        cmd = [
+            charm_bin,
+            SUBJECT,
+            str(t1_path),
+            "--precomputed_seg", str(seg_path),
+        ]
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+        env = _simnibs_env()
+
+        session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
 
         proc = subprocess.Popen(
             cmd,
@@ -87,9 +186,10 @@ class SimNIBSRunner:
             stderr=subprocess.STDOUT,
             text=True,
             cwd=str(self.work_dir),
+            env=env,
         )
 
-        last_pct = 5
+        last_pct = 8
         for line in proc.stdout:
             line = line.rstrip()
             if line:
@@ -112,7 +212,7 @@ class SimNIBSRunner:
         if not mesh_path.exists():
             raise FileNotFoundError(f"charm did not produce expected mesh: {mesh_path}")
 
-        self._emit("simnibs_charm_done", 60)
+        self._emit("simnibs_charm_done", 62)
         session_log(self.session_id, f"[SimNIBS] charm complete → {mesh_path}")
         return mesh_path
 
@@ -127,17 +227,17 @@ class SimNIBSRunner:
             from simnibs import sim_struct, run_simnibs as _run_simnibs
         except ImportError:
             raise RuntimeError(
-                "SimNIBS is not installed. Install it with: pip install simnibs"
+                "SimNIBS Python package not installed. "
+                "Install it via: pip install simnibs"
             )
 
-        self._emit("simnibs_fem_setup", 62)
+        self._emit("simnibs_fem_setup", 65)
         session_log(self.session_id, "[SimNIBS] Configuring tDCS session…")
 
         fem_dir = self.work_dir / "fem"
         fem_dir.mkdir(exist_ok=True)
 
         # --- parse electrode recipe -----------------------------------
-        # Recipe format (same as ROAST): [pos1, mA1, pos2, mA2, ...]
         recipe   = self.payload.get("recipe") or ["F3", 2, "F4", -2]
         electype = self.payload.get("electrode_type") or []
 
@@ -151,11 +251,11 @@ class SimNIBSRunner:
         s = sim_struct.SESSION()
         s.fnamehead = str(mesh_path)
         s.pathfem   = str(fem_dir)
-        s.map_to_mni = False          # keep results in subject space
+        s.map_to_mni = False
 
         tdcs = s.add_tdcslist()
         tdcs.currents  = [p[1] for p in pairs]
-        tdcs.map_to_vol = True        # produce NIfTI volumes
+        tdcs.map_to_vol = True
 
         for idx, (pos, _) in enumerate(pairs):
             elec = tdcs.add_electrode()
@@ -172,7 +272,7 @@ class SimNIBSRunner:
             elec.thickness = [3, 3]
 
         # --- run solve in a background thread so we can heartbeat -----
-        self._emit("simnibs_fem_solve", 65)
+        self._emit("simnibs_fem_solve", 68)
         session_log(self.session_id, "[SimNIBS] FEM solve running…")
 
         solve_done  = threading.Event()
@@ -188,8 +288,8 @@ class SimNIBSRunner:
 
         threading.Thread(target=_solve, daemon=True).start()
 
-        # Heartbeat: increment 65 → 88 % while waiting (every 10 s)
-        progress = 65
+        # Heartbeat: increment 68 → 88 % while waiting (every 10 s)
+        progress = 68
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
         while not solve_done.wait(timeout=10):
             if time.time() > deadline:
@@ -211,13 +311,11 @@ class SimNIBSRunner:
         SimNIBS names outputs as:
           {subject}_TDCS_1_normE.nii.gz  → emag
           {subject}_TDCS_1_v.nii.gz      → voltage
-        We search recursively under fem/ in case of version-specific sub-dirs.
         """
         fem_dir = self.work_dir / "fem"
         out_dir = self.work_dir / "outputs"
         out_dir.mkdir(exist_ok=True)
 
-        # Candidate filenames per output type (ordered by preference)
         candidates: dict[str, list[str]] = {
             "emag":    [f"{SUBJECT}_TDCS_1_normE.nii.gz",
                         f"{SUBJECT}_TDCS_1_E.nii.gz"],
@@ -244,24 +342,27 @@ class SimNIBSRunner:
 
     # ------------------------------------------------------------------
     def run(self):
-        """Full pipeline: prepare → charm → FEM → collect."""
+        """Full pipeline: prepare T1 → remap seg → charm → FEM → collect."""
         try:
-            set_simnibs_status(self.session_id, "running")
+            set_simnibs_status(self.session_id, "running", self.model_name)
             self._emit("simnibs_start", 2)
 
-            t1_path   = self.prepare_t1()
+            t1_path  = self.prepare_t1()
             self._emit("simnibs_prepare", 4)
 
-            mesh_path = self.run_charm(t1_path)
+            seg_path = self.prepare_segmentation()
+            self._emit("simnibs_seg_ready", 6)
+
+            mesh_path = self.run_charm(t1_path, seg_path)
             self.run_fem(mesh_path)
             self.collect_outputs()
 
-            set_simnibs_status(self.session_id, "complete")
+            set_simnibs_status(self.session_id, "complete", self.model_name)
             self._emit("simnibs_complete", 100)
             session_log(self.session_id, "[SimNIBS] Completed successfully")
 
         except Exception as exc:
             log_error(self.session_id, f"[SimNIBS] Failed: {exc}")
-            set_simnibs_status(self.session_id, "error")
+            set_simnibs_status(self.session_id, "error", self.model_name)
             self._emit("simnibs_error", -1, detail=str(exc))
             raise
