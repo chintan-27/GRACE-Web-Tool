@@ -233,22 +233,23 @@ export function connectROASTSSE(
 }
 
 // ---------------------------------------------------------------------
-// GET /simulate/results/{session}/{output_type}
+// GET /simulate/results/{session}/{model}/{output_type}
 // ---------------------------------------------------------------------
 export async function getSimulationResult(
   sessionId: string,
+  modelName: string,
   outputType: "voltage" | "efield" | "emag"
 ): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/simulate/results/${sessionId}/${outputType}`);
+  const res = await fetch(`${API_BASE}/simulate/results/${sessionId}/${modelName}/${outputType}`);
   if (!res.ok) throw new Error(`Simulation result not found: ${outputType}`);
   return await res.blob();
 }
 
 // ---------------------------------------------------------------------
-// GET /simulate/status/{session}
+// GET /simulate/status/{session}/{model}
 // ---------------------------------------------------------------------
-export async function getSimulationStatus(sessionId: string): Promise<{ status: string; progress: number }> {
-  const res = await fetch(`${API_BASE}/simulate/status/${sessionId}`);
+export async function getSimulationStatus(sessionId: string, modelName: string): Promise<{ status: string; progress: number }> {
+  const res = await fetch(`${API_BASE}/simulate/status/${sessionId}/${modelName}`);
   if (!res.ok) throw new Error("Failed to get simulation status");
   return await res.json();
 }

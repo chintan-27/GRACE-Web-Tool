@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useId } from "react";
 import { Niivue } from "@niivue/niivue";
 import { AlertTriangle, Eye, Palette } from "lucide-react";
-import { getSimulationResult } from "@/lib/api";
+import { getSimulationResult, getSimNIBSResult } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 import { cn } from "@/lib/utils";
@@ -21,9 +21,11 @@ const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 interface RoastViewerProps {
   inputUrl: string;
   sessionId: string;
+  modelName: string;
+  solver?: "roast" | "simnibs";
 }
 
-export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
+export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "roast" }: RoastViewerProps) {
   const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
   const nvRefs = useRef<(Niivue | null)[]>([null, null]);
 
@@ -52,14 +54,16 @@ export default function RoastViewer({ inputUrl, sessionId }: RoastViewerProps) {
   const fetchOutput = useCallback(async (type: OutputType): Promise<ArrayBuffer | null> => {
     if (bufferCache.current[type]) return bufferCache.current[type]!;
     try {
-      const blob = await getSimulationResult(sessionId, type);
+      const blob = solver === "simnibs"
+        ? await getSimNIBSResult(sessionId, modelName, type)
+        : await getSimulationResult(sessionId, modelName, type);
       const buf  = await blob.arrayBuffer();
       bufferCache.current[type] = buf;
       return buf;
     } catch {
       return null;
     }
-  }, [sessionId]);
+  }, [sessionId, modelName, solver]);
 
   const loadOverlay = useCallback(async (
     nv: Niivue,

@@ -41,7 +41,7 @@ class ROASTScheduler:
             runner.run()
         except Exception as e:
             log_error(session_id, f"[ROAST] Job failed: {e}")
-            set_roast_status(session_id, "error")
+            set_roast_status(session_id, "error", model_name or "")
 
     def scheduler_loop(self):
         log_info("SYSTEM", f"[ROAST] Scheduler started ({self.max_workers} workers)")

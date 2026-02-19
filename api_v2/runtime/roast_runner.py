@@ -88,16 +88,16 @@ class ROASTRunner:
         self.session_id = session_id
         self.model_name = model_name
         self.payload = payload
-        self.work_dir = roast_working_dir(session_id)
+        self.work_dir = roast_working_dir(session_id, model_name)
 
     # ------------------------------------------------------------------
     def _emit(self, event: str, progress: int, detail: str | None = None):
-        data = {"event": event, "progress": progress}
+        data = {"event": event, "progress": progress, "model": self.model_name}
         if detail:
             data["detail"] = detail
         push_event(self.session_id, data)
         log_event(self.session_id, data)
-        set_roast_progress(self.session_id, progress)
+        set_roast_progress(self.session_id, progress, self.model_name)
 
     # ------------------------------------------------------------------
     def prepare_working_directory(self) -> str:
@@ -175,7 +175,7 @@ class ROASTRunner:
         Full ROAST pipeline: prepare → write config → launch binary → stream progress.
         """
         try:
-            set_roast_status(self.session_id, "running")
+            set_roast_status(self.session_id, "running", self.model_name)
             self._emit("roast_start", 2)
 
             t1_path = self.prepare_working_directory()
@@ -261,13 +261,13 @@ class ROASTRunner:
 
             self.collect_outputs()
 
-            set_roast_status(self.session_id, "complete")
+            set_roast_status(self.session_id, "complete", self.model_name)
             self._emit("roast_complete", 100)
             session_log(self.session_id, "[ROAST] Completed successfully")
 
         except Exception as e:
             log_error(self.session_id, f"[ROAST] Failed: {e}")
-            set_roast_status(self.session_id, "error")
+            set_roast_status(self.session_id, "error", self.model_name)
             self._emit("roast_error", -1, detail=str(e))
             raise
 
@@ -277,7 +277,7 @@ class ROASTRunner:
         expected = ["voltage", "efield", "emag"]
         missing = []
         for output_type in expected:
-            path = roast_output_path(self.session_id, output_type)
+            path = roast_output_path(self.session_id, output_type, self.model_name)
             if not path.exists():
                 missing.append(str(path))
 

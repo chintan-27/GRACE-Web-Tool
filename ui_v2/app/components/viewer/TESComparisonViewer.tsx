@@ -62,7 +62,7 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: 
     if (bufferCache.current[key]) return bufferCache.current[key];
     try {
       const blob = solver === "roast"
-        ? await getSimulationResult(sessionId, type)
+        ? await getSimulationResult(sessionId, modelName, type)
         : await getSimNIBSResult(sessionId, modelName, type);
       const buf = await blob.arrayBuffer();
       bufferCache.current[key] = buf;

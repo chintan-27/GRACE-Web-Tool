@@ -248,31 +248,31 @@ async def simulate(body: dict = Body(...)):
         "quality": body.get("quality", "standard"),  # "fast" or "standard"
     }
 
-    set_roast_status(session_id, "queued")
+    set_roast_status(session_id, "queued", model_name)
     enqueue_roast_job(session_id, payload)
     session_log(session_id, f"ROAST job enqueued for model={model_name}")
 
     from runtime.sse import push_event
-    push_event(session_id, {"event": "roast_queued", "progress": 0})
+    push_event(session_id, {"event": "roast_queued", "progress": 0, "model": model_name})
 
     return {"session_id": session_id, "status": "queued"}
 
 
 # ============================================================
-# GET /simulate/results/{session_id}/{output_type}
+# GET /simulate/results/{session_id}/{model_name}/{output_type}
 # ============================================================
-@app.get("/simulate/results/{session_id}/{output_type}")
-async def get_simulate_result(session_id: str, output_type: str):
+@app.get("/simulate/results/{session_id}/{model_name}/{output_type}")
+async def get_simulate_result(session_id: str, model_name: str, output_type: str):
     if output_type not in ("voltage", "efield", "emag"):
         raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag")
 
     try:
-        out_path = roast_output_path(session_id, output_type)
+        out_path = roast_output_path(session_id, output_type, model_name)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     if not out_path.exists():
-        raise HTTPException(status_code=404, detail=f"ROAST output '{output_type}' not found. Run simulation first.")
+        raise HTTPException(status_code=404, detail=f"ROAST output '{output_type}' not found for model '{model_name}'. Run simulation first.")
 
     return FileResponse(
         path=str(out_path),
@@ -282,12 +282,12 @@ async def get_simulate_result(session_id: str, output_type: str):
 
 
 # ============================================================
-# GET /simulate/status/{session_id}
+# GET /simulate/status/{session_id}/{model_name}
 # ============================================================
-@app.get("/simulate/status/{session_id}")
-async def get_simulate_status(session_id: str):
-    status = get_roast_status(session_id) or "not_started"
-    progress = get_roast_progress(session_id)
+@app.get("/simulate/status/{session_id}/{model_name}")
+async def get_simulate_status(session_id: str, model_name: str):
+    status = get_roast_status(session_id, model_name) or "not_started"
+    progress = get_roast_progress(session_id, model_name)
     return {"status": status, "progress": progress}
 
 

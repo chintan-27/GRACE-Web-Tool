@@ -1,199 +1,37 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { Download, RefreshCw, Check, AlertTriangle, Zap, ChevronDown, ChevronUp, GitCompare } from "lucide-react";
+import { Download, RefreshCw, Check, AlertTriangle } from "lucide-react";
 import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
-import RoastViewer from "../../viewer/RoastViewer";
-import TESComparisonViewer from "../../viewer/TESComparisonViewer";
-import ElectrodeConfigPanel, { buildRecipe, buildElectype, type ElectrodeConfig } from "./ElectrodeConfigPanel";
-import { API_BASE, startSimulation, connectROASTSSE, startSimNIBSSimulation, connectSimNIBSSSE } from "@/lib/api";
+import TESWizard from "../../tes/TESWizard";
+import { API_BASE } from "@/lib/api";
 
-// -------------------------------------------------------------------
-// ROAST state per model
-// -------------------------------------------------------------------
-type RoastStatus = "idle" | "queued" | "running" | "complete" | "error";
-
-const ROAST_STEP_LABELS: Record<string, string> = {
-  roast_queued:            "Queued...",
-  roast_start:             "Starting simulation...",
-  roast_prepare:           "Preparing files...",
-  // seg8 registration
-  roast_seg8:              "Registering T1 to template...",
-  roast_seg8_done:         "Registration complete",
-  // Step 2.5
-  roast_step_csf_fix:      "Step 2.5: Fixing CSF...",
-  // Step 3: electrodes (positions filled in dynamically via getStepLabels)
-  roast_step_electrode:    "Step 3: Setting up electrodes...",
-  roast_step_el_measure:   "Step 3: Measuring head...",
-  roast_step_el_cap:       "Step 3: Fitting electrode cap...",
-  roast_step_el_f3:        "Step 3: Placing anode electrode...",
-  roast_step_el_f4:        "Step 3: Placing cathode electrode...",
-  roast_step_el_cleanup:   "Step 3: Finalizing electrodes...",
-  // Step 4: mesh
-  roast_step_mesh:         "Step 4: Generating mesh...",
-  roast_step_mesh_sizing:  "Step 4: Computing mesh sizes...",
-  roast_step_mesh_done:    "Step 4: Mesh complete",
-  roast_step_mesh_saving:  "Step 4: Saving mesh...",
-  // Step 5: FEM solve
-  roast_step_solve:        "Step 5: Setting up FEM solver...",
-  roast_step_solve_pre:    "Step 5: FEM pre-processing...",
-  roast_step_solve_gen:    "Step 5: Assembling FEM system...",
-  roast_step_solve_fem:    "Step 5: Solving linear system...",
-  roast_step_solve_save:   "Step 5: Saving solution...",
-  roast_step_solve_post:   "Step 5: FEM post-processing...",
-  // Step 6: post-processing
-  roast_step_postprocess:  "Step 6: Post-processing...",
-  roast_step_post_convert: "Step 6: Converting results...",
-  roast_step_post_jroast:  "Step 6: Computing E-fields...",
-  roast_step_post_save:    "Step 6: Saving final results...",
-  roast_step_post_done:    "Step 6: Almost done...",
-  // Complete
-  roast_complete:          "Complete!",
-};
-
-// -------------------------------------------------------------------
 export default function ResultsStep() {
   const { sessionId, models, inputBlobUrl, resetJob, selectedFile, error } = useJob();
 
   const handleDownload = (model: string) => {
     if (!sessionId) return;
-    const url = `${API_BASE}/results/${sessionId}/${model}`;
+    const url  = `${API_BASE}/results/${sessionId}/${model}`;
     const link = document.createElement("a");
-    link.href = url;
+    link.href  = url;
     link.download = `${model}_segmentation.nii.gz`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleDownloadAll = () => {
-    models.forEach((model, index) => {
-      setTimeout(() => handleDownload(model), index * 200);
-    });
-  };
+  const handleDownloadAll = () =>
+    models.forEach((model, idx) => setTimeout(() => handleDownload(model), idx * 200));
 
-  const getDisplayName = (model: string): string =>
+  const getDisplayName = (model: string) =>
     model.replace("-native", "").replace("-fs", "").toUpperCase();
 
-  const getSpaceLabel = (model: string): string => {
+  const getSpaceLabel = (model: string) => {
     if (model.includes("-native")) return "Native";
     if (model.includes("-fs")) return "FreeSurfer";
     return "";
   };
-
-  // -------------------------------------------------------------------
-  // ROAST state (per model)
-  // -------------------------------------------------------------------
-  const [roastStatus,   setRoastStatus]   = useState<Record<string, RoastStatus>>({});
-  const [roastProgress, setRoastProgress] = useState<Record<string, number>>({});
-  const [roastStep,     setRoastStep]     = useState<Record<string, string>>({});
-  const [roastError,    setRoastError]    = useState<Record<string, string | null>>({});
-  const [roastOpen,     setRoastOpen]     = useState<Record<string, boolean>>({});
-  const [roastQuality,  setRoastQuality]  = useState<Record<string, "fast" | "standard">>({});
-
-  // -------------------------------------------------------------------
-  // SimNIBS state (per model — mirrors roastStatus)
-  // -------------------------------------------------------------------
-  const [simnibsStatus,   setSimnibsStatus]   = useState<Record<string, RoastStatus>>({});
-  const [simnibsProgress, setSimnibsProgress] = useState<Record<string, number>>({});
-  const [simnibsStep,     setSimnibsStep]     = useState<Record<string, string>>({});
-  const [simnibsError,    setSimnibsError]    = useState<Record<string, string | null>>({});
-
-  // Comparison viewer state
-  const [compareModel,    setCompareModel]    = useState<string | null>(null);
-  const [compareOpen,     setCompareOpen]     = useState(false);
-
-  // Shared electrode configuration — same montage applies to all solvers
-  const [electrodeConfig, setElectrodeConfig] = useState<ElectrodeConfig>({
-    anode: "F3",
-    cathode: "F4",
-    currentMa: 2,
-    electrodeType: "pad",
-  });
-
-  const runSimulation = useCallback(async (model: string) => {
-    if (!sessionId) return;
-    const quality = roastQuality[model] ?? "fast";
-    const recipe   = buildRecipe(electrodeConfig);
-    const electype = buildElectype(electrodeConfig);
-
-    setRoastStatus(p  => ({ ...p, [model]: "queued" }));
-    setRoastProgress(p => ({ ...p, [model]: 0 }));
-    setRoastStep(p    => ({ ...p, [model]: "Queued..." }));
-    setRoastError(p   => ({ ...p, [model]: null }));
-
-    try {
-      await startSimulation(sessionId, model, quality, recipe, electype);
-    } catch (e: any) {
-      setRoastStatus(p => ({ ...p, [model]: "error" }));
-      setRoastError(p  => ({ ...p, [model]: e.message || "Failed to start" }));
-      return;
-    }
-
-    connectROASTSSE(
-      sessionId,
-      (evt) => {
-        if (evt.type === "progress") {
-          setRoastStatus(p   => ({ ...p, [model]: "running" }));
-          setRoastProgress(p => ({ ...p, [model]: evt.progress ?? 0 }));
-          const label = evt.event ? (ROAST_STEP_LABELS[evt.event] ?? evt.event) : "";
-          if (label) setRoastStep(p => ({ ...p, [model]: label }));
-        }
-        if (evt.type === "complete") {
-          setRoastStatus(p   => ({ ...p, [model]: "complete" }));
-          setRoastProgress(p => ({ ...p, [model]: 100 }));
-          setRoastStep(p    => ({ ...p, [model]: "Complete!" }));
-          setRoastOpen(p    => ({ ...p, [model]: true }));
-        }
-        if (evt.type === "error") {
-          setRoastStatus(p => ({ ...p, [model]: "error" }));
-          setRoastError(p  => ({ ...p, [model]: evt.detail || "Simulation error" }));
-        }
-      },
-    );
-  }, [sessionId, roastQuality, electrodeConfig]);
-
-  const runSimNIBS = useCallback(async (model: string) => {
-    if (!sessionId) return;
-    const recipe   = buildRecipe(electrodeConfig);
-    const electype = buildElectype(electrodeConfig);
-
-    setSimnibsStatus(p  => ({ ...p, [model]: "queued" }));
-    setSimnibsProgress(p => ({ ...p, [model]: 0 }));
-    setSimnibsStep(p    => ({ ...p, [model]: "Queued..." }));
-    setSimnibsError(p   => ({ ...p, [model]: null }));
-
-    try {
-      await startSimNIBSSimulation(sessionId, model, recipe, electype);
-    } catch (e: any) {
-      setSimnibsStatus(p => ({ ...p, [model]: "error" }));
-      setSimnibsError(p  => ({ ...p, [model]: e.message || "Failed to start SimNIBS" }));
-      return;
-    }
-
-    connectSimNIBSSSE(
-      sessionId,
-      (evt) => {
-        // Events are tagged with model name — only update the matching model
-        if (evt.type === "progress") {
-          setSimnibsStatus(p   => ({ ...p, [model]: "running" }));
-          setSimnibsProgress(p => ({ ...p, [model]: evt.progress ?? 0 }));
-          if (evt.event) setSimnibsStep(p => ({ ...p, [model]: evt.event! }));
-        }
-        if (evt.type === "complete") {
-          setSimnibsStatus(p   => ({ ...p, [model]: "complete" }));
-          setSimnibsProgress(p => ({ ...p, [model]: 100 }));
-          setSimnibsStep(p    => ({ ...p, [model]: "Complete!" }));
-        }
-        if (evt.type === "error") {
-          setSimnibsStatus(p => ({ ...p, [model]: "error" }));
-          setSimnibsError(p  => ({ ...p, [model]: evt.detail || "SimNIBS error" }));
-        }
-      },
-    );
-  }, [sessionId, electrodeConfig]);
 
   // -------------------------------------------------------------------
   // Error / empty states
@@ -230,9 +68,7 @@ export default function ResultsStep() {
           <AlertTriangle className="h-8 w-8 text-warning" />
         </div>
         <h2 className="text-xl font-semibold text-foreground mb-2">No Results Available</h2>
-        <p className="text-foreground-secondary text-center mb-6">
-          No segmentation models completed successfully.
-        </p>
+        <p className="text-foreground-secondary text-center mb-6">No segmentation models completed successfully.</p>
         <Button variant="accent" onClick={resetJob}>Try Again</Button>
       </div>
     );
@@ -267,210 +103,13 @@ export default function ResultsStep() {
         </div>
       </div>
 
-      {/* Segmentation Viewer + TES Simulation wrapper */}
-      <div className="rounded-2xl border border-accent/30 bg-accent/5 shadow-medical overflow-hidden">
-        {/* Viewer */}
-        <div className="p-4 pb-0">
-          <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
-        </div>
-
-        {/* TES Simulation bar */}
-        <div className="p-5 border-t border-accent/20 mt-4">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="rounded-lg bg-accent/15 p-2">
-              <Zap className="h-5 w-5 text-accent" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
-              <p className="text-xs text-foreground-muted">
-                {electrodeConfig.anode}(+{electrodeConfig.currentMa}mA) / {electrodeConfig.cathode}(−{electrodeConfig.currentMa}mA) · {electrodeConfig.electrodeType} · ROAST-11 + SimNIBS
-              </p>
-            </div>
-          </div>
-
-          {/* Electrode montage configuration — shared across all models */}
-          <div className="mb-4">
-            <ElectrodeConfigPanel config={electrodeConfig} onChange={setElectrodeConfig} />
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            {models.map((model) => {
-              const rs    = roastStatus[model]    ?? "idle";
-              const rp    = roastProgress[model]  ?? 0;
-              const rStep = roastStep[model]      ?? "";
-              const rErr  = roastError[model];
-              const isViewerOpen = roastOpen[model] ?? false;
-              const quality = roastQuality[model] ?? "fast";
-
-              const ss    = simnibsStatus[model]   ?? "idle";
-              const sp    = simnibsProgress[model] ?? 0;
-              const sStep = simnibsStep[model]     ?? "";
-              const sErr  = simnibsError[model];
-              const bothDone = rs === "complete" && ss === "complete";
-
-              return (
-                <div key={model} className="flex flex-col gap-3 rounded-xl border border-accent/20 bg-background p-4">
-                  <div>
-                    <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
-                    <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
-                  </div>
-
-                  {/* ---- ROAST section ---- */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-foreground-muted">ROAST-11</p>
-
-                    {rs === "idle" && (
-                      <>
-                        <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
-                          <button
-                            onClick={() => setRoastQuality(p => ({ ...p, [model]: "fast" }))}
-                            className={`flex-1 py-1.5 transition-colors ${quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface"}`}
-                          >
-                            ⚡ Fast
-                          </button>
-                          <button
-                            onClick={() => setRoastQuality(p => ({ ...p, [model]: "standard" }))}
-                            className={`flex-1 py-1.5 transition-colors ${quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface"}`}
-                          >
-                            🎯 Standard
-                          </button>
-                        </div>
-                        <p className="text-xs text-foreground-muted">
-                          {quality === "fast" ? "~1–2 min · coarser mesh" : "~3–5 min · full accuracy"}
-                        </p>
-                        <Button variant="accent" onClick={() => runSimulation(model)} className="gap-2 w-full">
-                          <Zap className="h-4 w-4" />Run ROAST
-                        </Button>
-                      </>
-                    )}
-
-                    {(rs === "queued" || rs === "running") && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs text-foreground-muted">
-                          <span>{rStep || "Queued..."}</span>
-                          <span>{rp}%</span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
-                          <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${rp}%` }} />
-                        </div>
-                      </div>
-                    )}
-
-                    {rs === "error" && rErr && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs text-error">{rErr}</p>
-                        <Button variant="outline" onClick={() => runSimulation(model)} className="gap-1.5 w-full text-xs">
-                          <Zap className="h-3.5 w-3.5" />Retry ROAST
-                        </Button>
-                      </div>
-                    )}
-
-                    {rs === "complete" && (
-                      <Button
-                        variant="outline"
-                        onClick={() => setRoastOpen(p => ({ ...p, [model]: !isViewerOpen }))}
-                        className="gap-2 w-full border-accent/40 text-accent hover:bg-accent/10 text-xs"
-                      >
-                        {isViewerOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-                        {isViewerOpen ? "Hide" : "View"} ROAST
-                      </Button>
-                    )}
-                  </div>
-
-                  {/* ---- SimNIBS section ---- */}
-                  <div className="space-y-2 pt-2 border-t border-border/50">
-                    <p className="text-xs font-semibold text-foreground-muted">SimNIBS</p>
-
-                    {ss === "idle" && (
-                      <Button variant="outline" onClick={() => runSimNIBS(model)} className="gap-2 w-full">
-                        <Zap className="h-4 w-4" />Run SimNIBS
-                      </Button>
-                    )}
-
-                    {(ss === "queued" || ss === "running") && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-xs text-foreground-muted">
-                          <span>{sStep || "Queued..."}</span>
-                          <span>{sp}%</span>
-                        </div>
-                        <div className="h-1.5 w-full rounded-full bg-border overflow-hidden">
-                          <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${sp}%` }} />
-                        </div>
-                      </div>
-                    )}
-
-                    {ss === "error" && sErr && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs text-error">{sErr}</p>
-                        <Button variant="outline" onClick={() => runSimNIBS(model)} className="gap-1.5 w-full text-xs">
-                          <Zap className="h-3.5 w-3.5" />Retry SimNIBS
-                        </Button>
-                      </div>
-                    )}
-
-                    {ss === "complete" && !bothDone && (
-                      <p className="text-xs text-success">Done — run ROAST to compare</p>
-                    )}
-                  </div>
-
-                  {/* ---- Compare button (both done) ---- */}
-                  {bothDone && (
-                    <Button
-                      variant="outline"
-                      onClick={() => { setCompareModel(model); setCompareOpen(true); }}
-                      className="gap-2 w-full border-accent/60 text-accent hover:bg-accent/10"
-                    >
-                      <GitCompare className="h-4 w-4" />
-                      Compare ROAST vs SimNIBS
-                    </Button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      {/* Segmentation Viewer — always visible */}
+      <div className="rounded-2xl border border-border bg-surface p-4 shadow-medical">
+        <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
       </div>
 
-      {/* ROAST Viewers — one per completed model */}
-      {models.map((model) => {
-        const rs = roastStatus[model];
-        const isViewerOpen = roastOpen[model] ?? false;
-
-        if (rs !== "complete" || !isViewerOpen || !inputBlobUrl) return null;
-
-        return (
-          <div key={`roast-viewer-${model}`} className="rounded-2xl border border-border bg-surface p-6 shadow-medical space-y-4">
-            <div className="flex items-center gap-2">
-              <Zap className="h-5 w-5 text-accent" />
-              <h2 className="text-lg font-semibold text-foreground">
-                TES Simulation — {getDisplayName(model)} <span className="text-foreground-muted text-sm">({getSpaceLabel(model)})</span>
-              </h2>
-            </div>
-            <RoastViewer inputUrl={inputBlobUrl} sessionId={sessionId} />
-          </div>
-        );
-      })}
-
-      {/* ROAST vs SimNIBS Comparison Viewer */}
-      {compareOpen && compareModel && simnibsStatus === "complete" && inputBlobUrl && (
-        <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <GitCompare className="h-5 w-5 text-accent" />
-              <h2 className="text-lg font-semibold text-foreground">
-                ROAST vs SimNIBS — {getDisplayName(compareModel)}
-              </h2>
-            </div>
-            <button
-              onClick={() => setCompareOpen(false)}
-              className="text-foreground-muted hover:text-foreground text-sm underline"
-            >
-              Close
-            </button>
-          </div>
-          <TESComparisonViewer inputUrl={inputBlobUrl} sessionId={sessionId} modelName={compareModel} />
-        </div>
-      )}
+      {/* TES Simulation Wizard */}
+      <TESWizard sessionId={sessionId} models={models} inputBlobUrl={inputBlobUrl} />
 
       {/* Download Cards */}
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
@@ -478,7 +117,7 @@ export default function ResultsStep() {
           Download Segmentations
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
-          {models.map((model) => (
+          {models.map(model => (
             <div key={model} className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
               <div>
                 <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
@@ -498,7 +137,7 @@ export default function ResultsStep() {
         <h3 className="text-sm font-medium text-foreground">About Your Results</h3>
         <ul className="mt-2 space-y-1 text-sm text-foreground-secondary">
           <li>Segmentation results are in NIfTI format with FreeSurfer-compatible labels</li>
-          <li>TES simulation uses ROAST with F3(-2mA)/F4(+2mA) pad electrodes by default</li>
+          <li>TES simulation uses ROAST-11 (MATLAB MCR) and/or SimNIBS FEM solvers</li>
           <li>Simulation outputs include E-field magnitude and voltage maps</li>
           <li>Session data is automatically deleted after 24 hours</li>
         </ul>

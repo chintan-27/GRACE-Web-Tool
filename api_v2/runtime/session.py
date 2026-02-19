@@ -35,13 +35,16 @@ def model_output_path(session_id: str, model_name: str) -> Path:
 # -----------------------------------------------------------
 # ROAST HELPERS
 # -----------------------------------------------------------
-def roast_working_dir(session_id: str) -> Path:
-    d = session_path(session_id) / "roast"
+def roast_working_dir(session_id: str, model_name: str = "") -> Path:
+    if model_name:
+        d = session_path(session_id) / "roast" / model_name
+    else:
+        d = session_path(session_id) / "roast"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def roast_output_path(session_id: str, output_type: str) -> Path:
+def roast_output_path(session_id: str, output_type: str, model_name: str = "") -> Path:
     filenames = {
         "voltage": "T1_tDCSLAB_v.nii",
         "efield":  "T1_tDCSLAB_e.nii",
@@ -49,7 +52,7 @@ def roast_output_path(session_id: str, output_type: str) -> Path:
     }
     if output_type not in filenames:
         raise ValueError(f"Unknown ROAST output type: {output_type}")
-    return roast_working_dir(session_id) / filenames[output_type]
+    return roast_working_dir(session_id, model_name) / filenames[output_type]
 
 
 # -----------------------------------------------------------
