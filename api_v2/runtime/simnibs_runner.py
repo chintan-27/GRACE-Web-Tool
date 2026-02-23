@@ -483,16 +483,10 @@ class SimNIBSRunner:
     def run_fem(self, mesh_path: Path) -> None:
         """
         Configure and run a SimNIBS tDCS FEM simulation.
-        Uses the Python API (imported inline) so import errors are caught cleanly.
+        Delegates to run_fem.py via the SimNIBS Python interpreter (which has simnibs).
         Progress is approximated via heartbeat ticks during the blocking solve.
         """
-        try:
-            from simnibs import sim_struct, run_simnibs as _run_simnibs
-        except ImportError:
-            raise RuntimeError(
-                "SimNIBS Python package not installed. "
-                "Install it via: pip install simnibs"
-            )
+        import json
 
         self._emit("simnibs_fem_setup", 65)
         session_log(self.session_id, "[SimNIBS] Configuring tDCS session…")
@@ -500,41 +494,22 @@ class SimNIBSRunner:
         fem_dir = self.work_dir / "fem"
         fem_dir.mkdir(exist_ok=True)
 
-        # --- parse electrode recipe -----------------------------------
         recipe   = self.payload.get("recipe") or ["F3", 2, "F4", -2]
         electype = self.payload.get("electrode_type") or []
 
-        pairs: list[tuple[str, float]] = []
-        for i in range(0, len(recipe), 2):
-            pos = str(recipe[i])
-            ma  = float(recipe[i + 1])
-            pairs.append((pos, ma / 1000.0))   # SimNIBS wants amperes
+        simnibs_python = _find_simnibs_python()
+        fem_script     = Path(__file__).parent / "run_fem.py"
+        cmd = [
+            simnibs_python,
+            str(fem_script),
+            str(mesh_path),
+            str(fem_dir),
+            json.dumps(recipe),
+            json.dumps(electype),
+        ]
+        session_log(self.session_id, f"[SimNIBS] cmd: {' '.join(cmd)}")
 
-        # --- build SimNIBS session ------------------------------------
-        s = sim_struct.SESSION()
-        s.fnamehead = str(mesh_path)
-        s.pathfem   = str(fem_dir)
-        s.map_to_mni = False
-
-        tdcs = s.add_tdcslist()
-        tdcs.currents  = [p[1] for p in pairs]
-        tdcs.map_to_vol = True
-
-        for idx, (pos, _) in enumerate(pairs):
-            elec = tdcs.add_electrode()
-            elec.channelnr = idx + 1
-            elec.centre    = pos
-            etype = electype[idx] if idx < len(electype) else "pad"
-            if etype == "ring":
-                elec.shape      = "ellipse"
-                elec.dimensions = [40, 40]
-                elec.dimensions_sponge = [70, 70]
-            else:
-                elec.shape      = "rect"
-                elec.dimensions = [70, 50]
-            elec.thickness = [3, 3]
-
-        # --- run solve in a background thread so we can heartbeat -----
+        # Run FEM subprocess in a background thread so we can emit heartbeats
         self._emit("simnibs_fem_solve", 68)
         session_log(self.session_id, "[SimNIBS] FEM solve running…")
 
@@ -543,7 +518,23 @@ class SimNIBSRunner:
 
         def _solve():
             try:
-                _run_simnibs(s)
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    cwd=str(self.work_dir),
+                    env=_simnibs_env(),
+                )
+                for line in proc.stdout:
+                    line = line.rstrip()
+                    if line:
+                        session_log(self.session_id, f"[fem] {line}")
+                proc.wait()
+                if proc.returncode != 0:
+                    solve_error.append(
+                        RuntimeError(f"SimNIBS FEM solve exited with code {proc.returncode}")
+                    )
             except Exception as exc:
                 solve_error.append(exc)
             finally:
