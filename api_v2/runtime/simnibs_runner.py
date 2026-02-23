@@ -91,13 +91,30 @@ CHARM_MAP = [
 ]
 
 
+def _find_simnibs_home() -> str:
+    """
+    Return the SimNIBS installation root directory.
+    Priority: SIMNIBS_HOME env var → parent of the charm binary directory.
+    """
+    if SIMNIBS_HOME:
+        return SIMNIBS_HOME
+    charm_path = shutil.which("charm")
+    if charm_path:
+        # charm lives at $SIMNIBS_HOME/bin/charm → go up two levels
+        candidate = Path(charm_path).resolve().parent.parent
+        if (candidate / "simnibs_env" / "bin" / "python3").exists():
+            return str(candidate)
+    return ""
+
+
 def _find_charm() -> str:
     """
     Resolve the charm executable path.
     Priority: SIMNIBS_HOME/bin/charm → which charm → fallback 'charm'.
     """
-    if SIMNIBS_HOME:
-        candidate = Path(SIMNIBS_HOME) / "bin" / "charm"
+    home = _find_simnibs_home()
+    if home:
+        candidate = Path(home) / "bin" / "charm"
         if candidate.exists():
             return str(candidate)
 
@@ -116,12 +133,13 @@ def _find_mni_template() -> str | None:
     if MNI_TEMPLATE and Path(MNI_TEMPLATE).exists():
         return MNI_TEMPLATE
 
-    # Search directly inside SIMNIBS_HOME (works even if simnibs is not importable
-    # in the current venv, e.g. when the API runs in a separate virtualenv).
+    # Search directly inside SimNIBS installation (works even if simnibs is not
+    # importable in the current venv, e.g. when the API runs in a separate virtualenv).
     # Scan simnibs_env/lib/python3.x/ directories rather than using rglob,
     # which can fail with PermissionError on some subdirectories.
-    if SIMNIBS_HOME:
-        lib_dir = Path(SIMNIBS_HOME) / "simnibs_env" / "lib"
+    simnibs_home = _find_simnibs_home()
+    if simnibs_home:
+        lib_dir = Path(simnibs_home) / "simnibs_env" / "lib"
         if lib_dir.exists():
             for py_dir in lib_dir.iterdir():
                 if not py_dir.name.startswith("python"):
@@ -274,9 +292,11 @@ class SimNIBSRunner:
                 "MNI template not found in SimNIBS installation. "
                 "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
             )
-        if not SIMNIBS_HOME:
+        simnibs_home = _find_simnibs_home()
+        if not simnibs_home:
             raise RuntimeError(
-                "SIMNIBS_HOME is not set; cannot locate SimNIBS Python to extract MNI warp matrix."
+                "Cannot locate SimNIBS installation. "
+                "Set SIMNIBS_HOME in api_v2/.env (e.g. SIMNIBS_HOME=/home/chintan/SimNIBS-4.5.0)."
             )
 
         m2m_dir  = base_work / f"m2m_{SUBJECT}"
@@ -284,7 +304,7 @@ class SimNIBSRunner:
         w2w_npy  = m2m_dir / "W2W.npy"
 
         # Step 2a: use SimNIBS Python (has scipy) to extract W2W matrix → W2W.npy
-        simnibs_python = str(Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "python3")
+        simnibs_python = str(Path(simnibs_home) / "simnibs_env" / "bin" / "python3")
         extract_oneliner = (
             "import scipy.io, numpy as np, sys; "
             "m = scipy.io.loadmat(sys.argv[1]); "

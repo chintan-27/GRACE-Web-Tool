@@ -62,7 +62,7 @@ SIMNIBS_MAX_WORKERS = int(os.getenv("SIMNIBS_MAX_WORKERS", "2"))
 SIMNIBS_TIMEOUT_SECONDS = int(os.getenv("SIMNIBS_TIMEOUT_SECONDS", "7200"))
 # Path to SimNIBS installation directory (contains bin/charm, bin/simnibs, etc.)
 # Set SIMNIBS_HOME in .env to e.g. /home/chintan/SimNIBS-4 or /usr/local/simnibs
-SIMNIBS_HOME = os.getenv("SIMNIBS_HOME", "")
+SIMNIBS_HOME = os.getenv("SIMNIBS_HOME", "") or os.getenv("SIM_NIBS", "")
 # Number of threads for ANTs registration (antsRegistrationSyNQuick.sh -n)
 SIMNIBS_N_THREADS = int(os.getenv("SIMNIBS_N_THREADS", "8"))
 # Optional override for MNI152 T1 template path (auto-discovered from SimNIBS if unset)
