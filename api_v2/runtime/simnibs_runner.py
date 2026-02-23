@@ -133,12 +133,18 @@ def _find_mni_template() -> str | None:
 
     # Search directly inside SIMNIBS_HOME (works even if simnibs is not importable
     # in the current venv, e.g. when the API runs in a separate virtualenv).
+    # Scan simnibs_env/lib/python3.x/ directories rather than using rglob,
+    # which can fail with PermissionError on some subdirectories.
     if SIMNIBS_HOME:
-        simnibs_env = Path(SIMNIBS_HOME) / "simnibs_env"
-        for name in ("MNI152_T1_1mm.nii.gz", "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz"):
-            for match in simnibs_env.rglob(name):
-                if "templates" in str(match):
-                    return str(match)
+        lib_dir = Path(SIMNIBS_HOME) / "simnibs_env" / "lib"
+        if lib_dir.exists():
+            for py_dir in lib_dir.iterdir():
+                if not py_dir.name.startswith("python"):
+                    continue
+                for name in ("MNI152_T1_1mm.nii.gz", "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz"):
+                    tmpl = py_dir / "site-packages" / "simnibs" / "resources" / "templates" / name
+                    if tmpl.exists():
+                        return str(tmpl)
 
     # Fallback: try importing simnibs from the current Python environment
     try:
