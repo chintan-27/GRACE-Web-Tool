@@ -1,10 +1,10 @@
 "use client";
 
-import { Download, RefreshCw, Check, AlertTriangle } from "lucide-react";
+import { Download, RefreshCw, Check, AlertTriangle, Zap } from "lucide-react";
+import Link from "next/link";
 import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
-import TESWizard from "../../tes/TESWizard";
 import { API_BASE } from "@/lib/api";
 
 export default function ResultsStep() {
@@ -91,15 +91,21 @@ export default function ResultsStep() {
             <p className="mt-2 text-foreground-secondary">{selectedFile.name}</p>
           )}
         </div>
-        <div className="mt-4 flex gap-3 md:mt-0">
+        <div className="mt-4 flex flex-wrap gap-3 md:mt-0">
           <Button variant="outline" onClick={resetJob} className="gap-2">
             <RefreshCw className="h-4 w-4" />
             New Segmentation
           </Button>
-          <Button variant="accent" onClick={handleDownloadAll} className="gap-2">
+          <Button variant="outline" onClick={handleDownloadAll} className="gap-2">
             <Download className="h-4 w-4" />
             Download All
           </Button>
+          <Link href="/tes">
+            <Button variant="accent" className="gap-2">
+              <Zap className="h-4 w-4" />
+              TES Simulation
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -107,9 +113,6 @@ export default function ResultsStep() {
       <div className="rounded-2xl border border-border bg-surface p-4 shadow-medical">
         <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
       </div>
-
-      {/* TES Simulation Wizard */}
-      <TESWizard sessionId={sessionId} models={models} inputBlobUrl={inputBlobUrl} />
 
       {/* Download Cards */}
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
