@@ -36,20 +36,31 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME
+from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME, SIMNIBS_N_THREADS, MNI_TEMPLATE
 from runtime.session import (
     session_input_native,
     model_output_path,
     simnibs_working_dir,
+    simnibs_charm_base_dir,
     simnibs_output_path,
     session_log,
 )
 from runtime.sse import push_event
-from services.redis_client import set_simnibs_status, set_simnibs_progress
+from services.redis_client import (
+    set_simnibs_status,
+    set_simnibs_progress,
+    acquire_charm_base_lock,
+    release_charm_base_lock,
+    set_charm_base_ready,
+    is_charm_base_ready,
+)
 from services.logger import log_event, log_error
 
 # Fixed subject name used for charm and SimNIBS session
 SUBJECT = "subject"
+
+# Seconds to sleep between polls when waiting for another model to build the charm base
+CHARM_BASE_POLL_INTERVAL = 10
 
 # GRACE 11-tissue → SimNIBS tissue labels
 # SimNIBS: 0=bg, 1=WM, 2=GM, 3=CSF, 4=skull, 5=scalp, 6=eyes
@@ -95,6 +106,47 @@ def _find_charm() -> str:
         return found
 
     return "charm"  # will raise FileNotFoundError with a clear message
+
+
+def _find_ants() -> str:
+    """
+    Resolve antsRegistrationSyNQuick.sh from the SimNIBS-bundled ANTs or PATH.
+    SimNIBS 4.x ships ANTs at $SIMNIBS_HOME/simnibs_env/bin/.
+    """
+    if SIMNIBS_HOME:
+        candidate = Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "antsRegistrationSyNQuick.sh"
+        if candidate.exists():
+            return str(candidate)
+    found = shutil.which("antsRegistrationSyNQuick.sh")
+    if found:
+        return found
+    return "antsRegistrationSyNQuick.sh"
+
+
+def _find_mni_template() -> str | None:
+    """
+    Find the MNI152 T1 template used for ANTs registration.
+    Priority: MNI_TEMPLATE env var → auto-discover from simnibs package.
+    """
+    if MNI_TEMPLATE and Path(MNI_TEMPLATE).exists():
+        return MNI_TEMPLATE
+    try:
+        import simnibs
+        pkg = Path(simnibs.__file__).parent
+        for rel in [
+            "resources/templates/mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+            "resources/templates/MNI152_T1_1mm.nii.gz",
+        ]:
+            tmpl = pkg / rel
+            if tmpl.exists():
+                return str(tmpl)
+        # Broader fallback search
+        matches = list(pkg.rglob("mni_icbm152_t1*.nii.gz"))
+        if matches:
+            return str(matches[0])
+    except ImportError:
+        pass
+    return None
 
 
 def _simnibs_env() -> dict:
@@ -159,58 +211,218 @@ class SimNIBSRunner:
         return out_path
 
     # ------------------------------------------------------------------
+    def _run_proc(self, cmd: list, tag: str, cwd: Path, deadline: float) -> None:
+        """Run a subprocess, streaming stdout to the session log. Raises on failure."""
+        session_log(self.session_id, f"[SimNIBS] cmd: {' '.join(cmd)}")
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(cwd),
+            env=_simnibs_env(),
+        )
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                session_log(self.session_id, f"[{tag}] {line}")
+            if time.time() > deadline:
+                proc.kill()
+                raise TimeoutError(f"{tag} timed out")
+        proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"{tag} exited with code {proc.returncode}")
+
+    # ------------------------------------------------------------------
+    def _build_charm_base(self) -> None:
+        """
+        Build the session-level shared charm base (Option A+B):
+          1. Gunzip T1 → _charm_base/T1.nii
+          2. charm --initatlas   (atlas registration, creates m2m_subject/)
+          3. antsRegistrationSyNQuick.sh  (nonlinear MNI warp, ~5–10 min)
+             Replaces the slow charm --segment step (~20–40 min).
+
+        The resulting m2m_subject/ (with toMNI/ warp) is then copied by each
+        model that needs it, so this work is paid only once per session.
+        """
+        base_work = simnibs_charm_base_dir(self.session_id)
+        deadline  = time.time() + SIMNIBS_TIMEOUT_SECONDS
+
+        # Gunzip the session T1 into the shared base directory
+        t1_gz  = session_input_native(self.session_id)
+        t1_nii = base_work / "T1.nii"
+        if not t1_nii.exists():
+            with gzip.open(t1_gz, "rb") as fi, open(t1_nii, "wb") as fo:
+                shutil.copyfileobj(fi, fo)
+        session_log(self.session_id, f"[SimNIBS] Base T1 → {t1_nii}")
+
+        # Step 1: atlas registration
+        session_log(self.session_id, "[SimNIBS] Charm base 1/2: initatlas…")
+        self._run_proc(
+            [_find_charm(), SUBJECT, str(t1_nii), "--initatlas"],
+            "charm-base",
+            base_work,
+            deadline,
+        )
+
+        # Step 2: ANTs nonlinear MNI registration (replaces --segment for MNI warp)
+        mni_template = _find_mni_template()
+        if not mni_template:
+            raise RuntimeError(
+                "MNI template not found in SimNIBS installation. "
+                "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
+            )
+
+        to_mni_dir  = base_work / f"m2m_{SUBJECT}" / "toMNI"
+        to_mni_dir.mkdir(parents=True, exist_ok=True)
+        ants_prefix = str(to_mni_dir / "ants_")
+
+        session_log(self.session_id, "[SimNIBS] Charm base 2/2: ANTs MNI registration…")
+        self._run_proc(
+            [
+                _find_ants(),
+                "-d", "3",
+                "-f", mni_template,    # fixed = MNI  →  warp defined on MNI grid
+                "-m", str(t1_nii),     # moving = subject T1
+                "-o", ants_prefix,
+                "-t", "s",
+                "-n", str(SIMNIBS_N_THREADS),
+            ],
+            "ants-mni",
+            base_work,
+            deadline,
+        )
+
+        # ANTs output with -f MNI, -m subject:
+        #   1Warp.nii.gz        = forward warp, defined on MNI grid → MNI2Conform
+        #   1InverseWarp.nii.gz = inverse warp, defined on subject grid → Conform2MNI
+        warp     = Path(ants_prefix + "1Warp.nii.gz")
+        inv_warp = Path(ants_prefix + "1InverseWarp.nii.gz")
+        if not warp.exists():
+            raise FileNotFoundError(f"ANTs did not produce expected warp: {warp}")
+
+        shutil.copy2(str(warp), str(to_mni_dir / "MNI2Conform_nonl.nii.gz"))
+        if inv_warp.exists():
+            shutil.copy2(str(inv_warp), str(to_mni_dir / "Conform2MNI_nonl.nii.gz"))
+
+        session_log(self.session_id, f"[SimNIBS] Charm base ready → {base_work / f'm2m_{SUBJECT}'}")
+
+    # ------------------------------------------------------------------
+    def _ensure_charm_base(self) -> Path:
+        """
+        Return the shared m2m_subject/ path, building it if this is the first
+        model in the session.  Uses a Redis lock so only one model builds;
+        the rest wait and then reuse the result.
+        """
+        base_m2m = simnibs_charm_base_dir(self.session_id) / f"m2m_{SUBJECT}"
+
+        # Fast path: another model already finished building
+        if is_charm_base_ready(self.session_id) and base_m2m.exists():
+            session_log(self.session_id, "[SimNIBS] Reusing existing charm base.")
+            return base_m2m
+
+        if acquire_charm_base_lock(self.session_id):
+            # This model won the lock — it is responsible for building
+            session_log(self.session_id, "[SimNIBS] Building charm base (first model in session)…")
+            try:
+                self._build_charm_base()
+                set_charm_base_ready(self.session_id)
+            except Exception:
+                release_charm_base_lock(self.session_id)
+                raise
+        else:
+            # Another model is building — wait for it to finish
+            session_log(self.session_id, "[SimNIBS] Waiting for charm base (built by another model)…")
+            deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+            while not is_charm_base_ready(self.session_id):
+                if time.time() > deadline:
+                    raise TimeoutError("Timed out waiting for shared charm base")
+                time.sleep(CHARM_BASE_POLL_INTERVAL)
+            session_log(self.session_id, "[SimNIBS] Charm base is ready.")
+
+        return base_m2m
+
+    # ------------------------------------------------------------------
     def run_charm(self, t1_path: Path, seg_path: Path) -> Path:
         """
-        Build a head mesh using a precomputed segmentation.
+        Build a head mesh from our precomputed segmentation.
 
-        SimNIBS 4.5 charm does not support --precomputed_seg.  We use the
-        documented "manual editing" workflow instead:
-          1. charm subID T1 --initatlas  — register atlas, create m2m dir
-          2. copy seg → m2m_subID/label_prep/tissue_labeling_upsampled.nii.gz
-          3. charm subID --mesh          — build mesh from our label image
+        Option A — cross-model caching:
+          The charm base (initatlas + ANTs MNI warp) is built once per session
+          and shared across all models.  Each model only pays for --mesh.
+
+        Option B — ANTs MNI registration:
+          antsRegistrationSyNQuick.sh (~5–10 min) replaces charm's --segment
+          (SAMSEG, ~20–40 min) for creating the MNI warp.
+
+        Per-model workflow:
+          1. Ensure shared charm base exists (build or wait).
+          2. Copy base m2m_subject/ into this model's working directory.
+          3. Update settings.ini to reflect the new path.
+          4. Replace tissue_labeling_upsampled.nii.gz with our segmentation.
+          5. Run charm --mesh to build the FEM mesh (~5–10 min).
         """
-        charm_bin = _find_charm()
-        env      = _simnibs_env()
-        deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
-
-        def _run(cmd: list, tag: str) -> None:
-            session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                cwd=str(self.work_dir),
-                env=env,
-            )
-            for line in proc.stdout:
-                line = line.rstrip()
-                if line:
-                    session_log(self.session_id, f"[{tag}] {line}")
-                if time.time() > deadline:
-                    proc.kill()
-                    raise TimeoutError("charm timed out")
-            proc.wait()
-            if proc.returncode != 0:
-                raise RuntimeError(f"charm exited with code {proc.returncode}")
-
-        # Step 1 — atlas registration (creates m2m_subID directory)
         self._emit("simnibs_charm", 8)
-        session_log(self.session_id, "[SimNIBS] charm step 1/2: initatlas…")
-        _run([charm_bin, SUBJECT, str(t1_path), "--initatlas"], "charm-initatlas")
+
+        # Step 1 — get (or wait for) the shared charm base
+        base_m2m = self._ensure_charm_base()
         self._emit("simnibs_charm_register", 20)
 
-        # Step 2 — inject precomputed segmentation
-        label_prep = self.work_dir / f"m2m_{SUBJECT}" / "label_prep"
+        # Step 2 — copy base into this model's working directory
+        model_m2m = self.work_dir / f"m2m_{SUBJECT}"
+        if model_m2m.exists():
+            shutil.rmtree(str(model_m2m))
+        shutil.copytree(str(base_m2m), str(model_m2m))
+        session_log(self.session_id, f"[SimNIBS] Copied charm base → {model_m2m}")
+
+        # Step 3 — rewrite absolute paths in settings.ini to the model dir
+        settings_file = model_m2m / "settings.ini"
+        if settings_file.exists():
+            base_work_str = str(simnibs_charm_base_dir(self.session_id))
+            model_work_str = str(self.work_dir)
+            content = settings_file.read_text()
+            content = content.replace(base_work_str, model_work_str)
+            settings_file.write_text(content)
+
+        # Step 4 — inject our precomputed segmentation
+        label_prep = model_m2m / "label_prep"
         label_prep.mkdir(parents=True, exist_ok=True)
         seg_dest = label_prep / "tissue_labeling_upsampled.nii.gz"
         shutil.copy2(str(seg_path), str(seg_dest))
-        session_log(self.session_id, f"[SimNIBS] Injected precomputed seg → {seg_dest}")
+        session_log(self.session_id, f"[SimNIBS] Injected segmentation → {seg_dest}")
         self._emit("simnibs_charm_segment", 30)
 
-        # Step 3 — build mesh from label image
-        session_log(self.session_id, "[SimNIBS] charm step 2/2: mesh…")
-        _run([charm_bin, SUBJECT, "--mesh"], "charm-mesh")
+        # Step 5 — build mesh from our label image
+        session_log(self.session_id, "[SimNIBS] charm --mesh…")
+        cmd      = [_find_charm(), SUBJECT, "--mesh"]
+        deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+        session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
+
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(self.work_dir),
+            env=_simnibs_env(),
+        )
+        last_pct = 30
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                session_log(self.session_id, f"[charm-mesh] {line}")
+            line_l = line.lower()
+            for substr, evt, pct in CHARM_MAP:
+                if substr in line_l and pct > last_pct:
+                    self._emit(evt, pct)
+                    last_pct = pct
+                    break
+            if time.time() > deadline:
+                proc.kill()
+                raise TimeoutError("charm --mesh timed out")
+        proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"charm exited with code {proc.returncode}")
 
         mesh_path = self.work_dir / f"m2m_{SUBJECT}" / f"{SUBJECT}.msh"
         if not mesh_path.exists():

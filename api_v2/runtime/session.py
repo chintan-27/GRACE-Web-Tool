@@ -64,6 +64,17 @@ def simnibs_working_dir(session_id: str, model_name: str) -> Path:
     return d
 
 
+def simnibs_charm_base_dir(session_id: str) -> Path:
+    """
+    Shared charm base directory for a session.
+    Contains T1.nii + m2m_subject/ (atlas registration + ANTs MNI warp).
+    Built once and reused by all models within the same session.
+    """
+    d = session_path(session_id) / "simnibs" / "_charm_base"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
 def simnibs_output_path(session_id: str, model_name: str, output_type: str) -> Path:
     """Collected SimNIBS output NIfTIs (emag / voltage), per segmentation model."""
     if output_type not in ("emag", "voltage"):

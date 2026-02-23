@@ -225,6 +225,37 @@ def get_simnibs_progress(session_id: str, model_name: str = "") -> float:
     return float(p) if p else 0.0
 
 
+# -------------------------------------------------------------
+# SimNIBS charm base lock  (one-per-session build coordination)
+# -------------------------------------------------------------
+CHARM_BASE_LOCK_PREFIX  = "simnibs_charm_base_lock:"
+CHARM_BASE_READY_PREFIX = "simnibs_charm_base_ready:"
+
+
+def acquire_charm_base_lock(session_id: str, ttl: int = 7200) -> bool:
+    """
+    Try to acquire the build lock for the session's shared charm base.
+    Returns True if this caller won the lock (should build).
+    Returns False if another worker already holds it (should wait).
+    TTL is a safety expiry so the lock never hangs permanently.
+    """
+    key = CHARM_BASE_LOCK_PREFIX + session_id
+    return bool(redis_client.set(key, "1", nx=True, ex=ttl))
+
+
+def release_charm_base_lock(session_id: str) -> None:
+    redis_client.delete(CHARM_BASE_LOCK_PREFIX + session_id)
+
+
+def set_charm_base_ready(session_id: str) -> None:
+    """Mark the session's charm base as fully built and ready to copy."""
+    redis_client.set(CHARM_BASE_READY_PREFIX + session_id, "1", ex=86400)
+
+
+def is_charm_base_ready(session_id: str) -> bool:
+    return bool(redis_client.exists(CHARM_BASE_READY_PREFIX + session_id))
+
+
 # -------------------------------------------------------
 # CLEANUP
 # -------------------------------------------------------

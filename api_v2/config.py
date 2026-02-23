@@ -63,6 +63,10 @@ SIMNIBS_TIMEOUT_SECONDS = int(os.getenv("SIMNIBS_TIMEOUT_SECONDS", "7200"))
 # Path to SimNIBS installation directory (contains bin/charm, bin/simnibs, etc.)
 # Set SIMNIBS_HOME in .env to e.g. /home/chintan/SimNIBS-4 or /usr/local/simnibs
 SIMNIBS_HOME = os.getenv("SIMNIBS_HOME", "")
+# Number of threads for ANTs registration (antsRegistrationSyNQuick.sh -n)
+SIMNIBS_N_THREADS = int(os.getenv("SIMNIBS_N_THREADS", "8"))
+# Optional override for MNI152 T1 template path (auto-discovered from SimNIBS if unset)
+MNI_TEMPLATE = os.getenv("MNI_TEMPLATE", "")
 
 # -------------------------------------------------------
 # FREESURFER
