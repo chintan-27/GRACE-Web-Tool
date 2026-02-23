@@ -34,7 +34,21 @@ def main() -> None:
     # subpath = m2m directory (parent of the .msh file)
     # Required for map_to_vol so SimNIBS can find the T1 for interpolation.
     from pathlib import Path as _Path
+    import shutil as _shutil
     m2m_dir = str(_Path(mesh_path).parent)
+
+    # map_to_vol needs T1fs_conform.nii.gz as the reference volume.
+    # When charm runs without --segment (our pipeline), this file is never
+    # created.  T1.nii.gz is already in the same 1 mm isotropic RAS space,
+    # so we copy it as a stand-in before launching the FEM solve.
+    t1fs_conform = _Path(m2m_dir) / "T1fs_conform.nii.gz"
+    if not t1fs_conform.exists():
+        t1_src = _Path(m2m_dir) / "T1.nii.gz"
+        if t1_src.exists():
+            _shutil.copy2(str(t1_src), str(t1fs_conform))
+            print("Created T1fs_conform.nii.gz from T1.nii.gz for map_to_vol", flush=True)
+        else:
+            print("WARNING: T1.nii.gz not found in m2m dir — map_to_vol may fail", flush=True)
 
     s = sim_struct.SESSION()
     s.fnamehead  = mesh_path
