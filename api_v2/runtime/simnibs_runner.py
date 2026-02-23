@@ -36,7 +36,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME, SIMNIBS_N_THREADS, MNI_TEMPLATE
+from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME, MNI_TEMPLATE
 from runtime.session import (
     session_input_native,
     model_output_path,
@@ -108,19 +108,18 @@ def _find_charm() -> str:
     return "charm"  # will raise FileNotFoundError with a clear message
 
 
-def _find_ants() -> str:
+def _find_simnibs_python() -> str:
     """
-    Resolve antsRegistrationSyNQuick.sh from the SimNIBS-bundled ANTs or PATH.
-    SimNIBS 4.x ships ANTs at $SIMNIBS_HOME/simnibs_env/bin/.
+    Resolve the Python interpreter bundled with SimNIBS.
+    SimNIBS 4.x ships its own venv at $SIMNIBS_HOME/simnibs_env/.
+    Falls back to the current interpreter if not found.
     """
     if SIMNIBS_HOME:
-        candidate = Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "antsRegistrationSyNQuick.sh"
+        candidate = Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "python3"
         if candidate.exists():
             return str(candidate)
-    found = shutil.which("antsRegistrationSyNQuick.sh")
-    if found:
-        return found
-    return "antsRegistrationSyNQuick.sh"
+    import sys
+    return sys.executable
 
 
 def _find_mni_template() -> str | None:
@@ -279,7 +278,9 @@ class SimNIBSRunner:
             deadline,
         )
 
-        # Step 2: ANTs nonlinear MNI registration (replaces --segment for MNI warp)
+        # Step 2: Create affine MNI warp from the coregistrationMatrices.mat
+        # produced by --initatlas (no external tools required).
+        # Uses SimNIBS's own Python interpreter (which has scipy + nibabel).
         mni_template = _find_mni_template()
         if not mni_template:
             raise RuntimeError(
@@ -287,37 +288,19 @@ class SimNIBSRunner:
                 "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
             )
 
-        to_mni_dir  = base_work / f"m2m_{SUBJECT}" / "toMNI"
-        to_mni_dir.mkdir(parents=True, exist_ok=True)
-        ants_prefix = str(to_mni_dir / "ants_")
-
-        session_log(self.session_id, "[SimNIBS] Charm base 2/2: ANTs MNI registration…")
+        warp_script = Path(__file__).parent / "create_mni_warp.py"
+        session_log(self.session_id, "[SimNIBS] Charm base 2/2: creating affine MNI warp…")
         self._run_proc(
             [
-                _find_ants(),
-                "-d", "3",
-                "-f", mni_template,    # fixed = MNI  →  warp defined on MNI grid
-                "-m", str(t1_nii),     # moving = subject T1
-                "-o", ants_prefix,
-                "-t", "s",
-                "-n", str(SIMNIBS_N_THREADS),
+                _find_simnibs_python(),
+                str(warp_script),
+                str(base_work / f"m2m_{SUBJECT}"),
+                mni_template,
             ],
-            "ants-mni",
+            "mni-warp",
             base_work,
             deadline,
         )
-
-        # ANTs output with -f MNI, -m subject:
-        #   1Warp.nii.gz        = forward warp, defined on MNI grid → MNI2Conform
-        #   1InverseWarp.nii.gz = inverse warp, defined on subject grid → Conform2MNI
-        warp     = Path(ants_prefix + "1Warp.nii.gz")
-        inv_warp = Path(ants_prefix + "1InverseWarp.nii.gz")
-        if not warp.exists():
-            raise FileNotFoundError(f"ANTs did not produce expected warp: {warp}")
-
-        shutil.copy2(str(warp), str(to_mni_dir / "MNI2Conform_nonl.nii.gz"))
-        if inv_warp.exists():
-            shutil.copy2(str(inv_warp), str(to_mni_dir / "Conform2MNI_nonl.nii.gz"))
 
         session_log(self.session_id, f"[SimNIBS] Charm base ready → {base_work / f'm2m_{SUBJECT}'}")
 
