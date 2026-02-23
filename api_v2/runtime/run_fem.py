@@ -31,8 +31,14 @@ def main() -> None:
         ma  = float(recipe[i + 1])
         pairs.append((pos, ma / 1000.0))   # SimNIBS wants amperes
 
+    # subpath = m2m directory (parent of the .msh file)
+    # Required for map_to_vol so SimNIBS can find the T1 for interpolation.
+    from pathlib import Path as _Path
+    m2m_dir = str(_Path(mesh_path).parent)
+
     s = sim_struct.SESSION()
     s.fnamehead  = mesh_path
+    s.subpath    = m2m_dir
     s.pathfem    = fem_dir
     s.map_to_mni = False
 

@@ -562,16 +562,23 @@ class SimNIBSRunner:
         """
         Find SimNIBS output NIfTIs and copy them to a canonical location.
 
-        SimNIBS names outputs as:
-          {subject}_TDCS_1_normE.nii.gz  → emag
+        SimNIBS 4.x names volume outputs as:
+          {subject}_TDCS_1_magnE.nii.gz  → emag  (magnitude of E-field)
           {subject}_TDCS_1_v.nii.gz      → voltage
+        Older or ROAST-style names (normE, E) are kept as fallbacks.
         """
         fem_dir = self.work_dir / "fem"
         out_dir = self.work_dir / "outputs"
         out_dir.mkdir(exist_ok=True)
 
+        # Log all NIfTI files found for diagnostics
+        all_niftis = list(fem_dir.rglob("*.nii.gz"))
+        session_log(self.session_id,
+                    f"[SimNIBS] NIfTI files in fem/: {[str(f.relative_to(fem_dir)) for f in all_niftis]}")
+
         candidates: dict[str, list[str]] = {
-            "emag":    [f"{SUBJECT}_TDCS_1_normE.nii.gz",
+            "emag":    [f"{SUBJECT}_TDCS_1_magnE.nii.gz",
+                        f"{SUBJECT}_TDCS_1_normE.nii.gz",
                         f"{SUBJECT}_TDCS_1_E.nii.gz"],
             "voltage": [f"{SUBJECT}_TDCS_1_v.nii.gz"],
         }
@@ -591,7 +598,8 @@ class SimNIBSRunner:
         missing = [t for t in ("emag", "voltage") if t not in found]
         if missing:
             raise FileNotFoundError(
-                f"SimNIBS finished but output files are missing: {missing}"
+                f"SimNIBS finished but output files are missing: {missing}. "
+                f"Found NIfTIs: {[str(f.name) for f in all_niftis]}"
             )
 
     # ------------------------------------------------------------------
