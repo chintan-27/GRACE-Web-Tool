@@ -161,52 +161,56 @@ class SimNIBSRunner:
     # ------------------------------------------------------------------
     def run_charm(self, t1_path: Path, seg_path: Path) -> Path:
         """
-        Run `charm <subject> <t1> --precomputed_seg <seg>` to build the head mesh
-        from the GRACE segmentation (skips charm's own segmentation step).
-        Returns path to the generated head mesh (.msh).
+        Build a head mesh using a precomputed segmentation.
+
+        SimNIBS 4.5 charm does not support --precomputed_seg.  We use the
+        documented "manual editing" workflow instead:
+          1. charm subID T1 --initatlas  — register atlas, create m2m dir
+          2. copy seg → m2m_subID/label_prep/tissue_labeling_upsampled.nii.gz
+          3. charm subID --mesh          — build mesh from our label image
         """
-        self._emit("simnibs_charm", 8)
-        session_log(self.session_id, "[SimNIBS] Running charm (precomputed seg)…")
-
         charm_bin = _find_charm()
-        cmd = [
-            charm_bin,
-            SUBJECT,
-            str(t1_path),
-            "--precomputed_seg", str(seg_path),
-        ]
+        env      = _simnibs_env()
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
-        env = _simnibs_env()
 
-        session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
+        def _run(cmd: list, tag: str) -> None:
+            session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                cwd=str(self.work_dir),
+                env=env,
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                if line:
+                    session_log(self.session_id, f"[{tag}] {line}")
+                if time.time() > deadline:
+                    proc.kill()
+                    raise TimeoutError("charm timed out")
+            proc.wait()
+            if proc.returncode != 0:
+                raise RuntimeError(f"charm exited with code {proc.returncode}")
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(self.work_dir),
-            env=env,
-        )
+        # Step 1 — atlas registration (creates m2m_subID directory)
+        self._emit("simnibs_charm", 8)
+        session_log(self.session_id, "[SimNIBS] charm step 1/2: initatlas…")
+        _run([charm_bin, SUBJECT, str(t1_path), "--initatlas"], "charm-initatlas")
+        self._emit("simnibs_charm_register", 20)
 
-        last_pct = 8
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                session_log(self.session_id, f"[charm] {line}")
-            line_l = line.lower()
-            for substr, evt, pct in CHARM_MAP:
-                if substr in line_l and pct > last_pct:
-                    self._emit(evt, pct)
-                    last_pct = pct
-                    break
-            if time.time() > deadline:
-                proc.kill()
-                raise TimeoutError("charm timed out")
+        # Step 2 — inject precomputed segmentation
+        label_prep = self.work_dir / f"m2m_{SUBJECT}" / "label_prep"
+        label_prep.mkdir(parents=True, exist_ok=True)
+        seg_dest = label_prep / "tissue_labeling_upsampled.nii.gz"
+        shutil.copy2(str(seg_path), str(seg_dest))
+        session_log(self.session_id, f"[SimNIBS] Injected precomputed seg → {seg_dest}")
+        self._emit("simnibs_charm_segment", 30)
 
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"charm exited with code {proc.returncode}")
+        # Step 3 — build mesh from label image
+        session_log(self.session_id, "[SimNIBS] charm step 2/2: mesh…")
+        _run([charm_bin, SUBJECT, "--mesh"], "charm-mesh")
 
         mesh_path = self.work_dir / f"m2m_{SUBJECT}" / f"{SUBJECT}.msh"
         if not mesh_path.exists():
