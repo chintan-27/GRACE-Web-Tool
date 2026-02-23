@@ -102,9 +102,39 @@ def _find_simnibs_home() -> str:
     if charm_path:
         # charm lives at $SIMNIBS_HOME/bin/charm → go up two levels
         candidate = Path(charm_path).resolve().parent.parent
-        if (candidate / "simnibs_env" / "bin" / "python3").exists():
+        if (candidate / "simnibs_env").exists():
             return str(candidate)
     return ""
+
+
+def _find_simnibs_python() -> str:
+    """
+    Find the Python interpreter bundled with SimNIBS.
+
+    Tries two candidate roots in order:
+      1. Parent of the resolved charm binary (most reliable — charm actually ran)
+      2. SIMNIBS_HOME / SIM_NIBS env var
+    Searches for python3 and python inside <root>/simnibs_env/bin/.
+    """
+    homes_to_try: list[str] = []
+    charm_path = shutil.which("charm")
+    if charm_path:
+        homes_to_try.append(str(Path(charm_path).resolve().parent.parent))
+    configured = _find_simnibs_home()
+    if configured and configured not in homes_to_try:
+        homes_to_try.append(configured)
+
+    for home in homes_to_try:
+        env_bin = Path(home) / "simnibs_env" / "bin"
+        for name in ("python3", "python"):
+            candidate = env_bin / name
+            if candidate.exists():
+                return str(candidate)
+
+    raise RuntimeError(
+        "Cannot find Python in SimNIBS virtual environment. "
+        "Check your SIMNIBS_HOME / SIM_NIBS setting."
+    )
 
 
 def _find_charm() -> str:
@@ -292,19 +322,12 @@ class SimNIBSRunner:
                 "MNI template not found in SimNIBS installation. "
                 "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
             )
-        simnibs_home = _find_simnibs_home()
-        if not simnibs_home:
-            raise RuntimeError(
-                "Cannot locate SimNIBS installation. "
-                "Set SIMNIBS_HOME in api_v2/.env (e.g. SIMNIBS_HOME=/home/chintan/SimNIBS-4.5.0)."
-            )
-
         m2m_dir  = base_work / f"m2m_{SUBJECT}"
         mat_file = m2m_dir / "segmentation" / "coregistrationMatrices.mat"
         w2w_npy  = m2m_dir / "W2W.npy"
 
         # Step 2a: use SimNIBS Python (has scipy) to extract W2W matrix → W2W.npy
-        simnibs_python = str(Path(simnibs_home) / "simnibs_env" / "bin" / "python3")
+        simnibs_python = _find_simnibs_python()
         extract_oneliner = (
             "import scipy.io, numpy as np, sys; "
             "m = scipy.io.loadmat(sys.argv[1]); "
