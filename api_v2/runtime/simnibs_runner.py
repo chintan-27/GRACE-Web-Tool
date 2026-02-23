@@ -108,20 +108,6 @@ def _find_charm() -> str:
     return "charm"  # will raise FileNotFoundError with a clear message
 
 
-def _find_simnibs_python() -> str:
-    """
-    Resolve the Python interpreter bundled with SimNIBS.
-    SimNIBS 4.x ships its own venv at $SIMNIBS_HOME/simnibs_env/.
-    Falls back to the current interpreter if not found.
-    """
-    if SIMNIBS_HOME:
-        candidate = Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "python3"
-        if candidate.exists():
-            return str(candidate)
-    import sys
-    return sys.executable
-
-
 def _find_mni_template() -> str | None:
     """
     Find the MNI152 T1 template used for ANTs registration.
@@ -279,24 +265,45 @@ class SimNIBSRunner:
         )
 
         # Step 2: Create affine MNI warp from the coregistrationMatrices.mat
-        # produced by --initatlas (no external tools required).
-        # Uses SimNIBS's own Python interpreter (which has scipy + nibabel).
+        # produced by --initatlas.  Split into two sub-steps because scipy is
+        # only available in the SimNIBS Python env, while nibabel is only in
+        # the API Python env.
         mni_template = _find_mni_template()
         if not mni_template:
             raise RuntimeError(
                 "MNI template not found in SimNIBS installation. "
                 "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
             )
+        if not SIMNIBS_HOME:
+            raise RuntimeError(
+                "SIMNIBS_HOME is not set; cannot locate SimNIBS Python to extract MNI warp matrix."
+            )
 
-        warp_script = Path(__file__).parent / "create_mni_warp.py"
-        session_log(self.session_id, "[SimNIBS] Charm base 2/2: creating affine MNI warp…")
+        m2m_dir  = base_work / f"m2m_{SUBJECT}"
+        mat_file = m2m_dir / "segmentation" / "coregistrationMatrices.mat"
+        w2w_npy  = m2m_dir / "W2W.npy"
+
+        # Step 2a: use SimNIBS Python (has scipy) to extract W2W matrix → W2W.npy
+        simnibs_python = str(Path(SIMNIBS_HOME) / "simnibs_env" / "bin" / "python3")
+        extract_oneliner = (
+            "import scipy.io, numpy as np, sys; "
+            "m = scipy.io.loadmat(sys.argv[1]); "
+            "np.save(sys.argv[2], m['worldToWorldTransformMatrix'].astype('float64'))"
+        )
+        session_log(self.session_id, "[SimNIBS] Charm base 2/3: extracting MNI→T1 matrix…")
         self._run_proc(
-            [
-                _find_simnibs_python(),
-                str(warp_script),
-                str(base_work / f"m2m_{SUBJECT}"),
-                mni_template,
-            ],
+            [simnibs_python, "-c", extract_oneliner, str(mat_file), str(w2w_npy)],
+            "mni-matrix",
+            base_work,
+            deadline,
+        )
+
+        # Step 2b: use API Python (has nibabel) to create the warp NIfTIs
+        import sys as _sys
+        warp_script = Path(__file__).parent / "create_mni_warp.py"
+        session_log(self.session_id, "[SimNIBS] Charm base 3/3: creating affine MNI warp…")
+        self._run_proc(
+            [_sys.executable, str(warp_script), str(m2m_dir), mni_template],
             "mni-warp",
             base_work,
             deadline,

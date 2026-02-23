@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
 Create MNI2Conform_nonl.nii.gz and Conform2MNI_nonl.nii.gz (affine approximation)
-from the coregistrationMatrices.mat produced by charm --initatlas.
+from W2W.npy produced by the scipy extraction step in _build_charm_base().
 
 The warp format matches what charm --mesh expects (saveWarpField convention):
   MNI2Conform_nonl.nii.gz  : 4D NIfTI on MNI grid, values = T1 RAS world coords
   Conform2MNI_nonl.nii.gz  : 4D NIfTI on T1 grid,  values = MNI RAS world coords
 
-worldToWorldTransformMatrix (from coregistrationMatrices.mat) is the affine that
-maps MNI RAS world coordinates to T1 RAS world coordinates, output of initatlas.
+W2W.npy contains the worldToWorldTransformMatrix from coregistrationMatrices.mat:
+  an affine that maps MNI RAS world coordinates to T1 RAS world coordinates.
 Using an affine-only warp gives electrode positions accurate to ~5-10 mm, which
 is sufficient for tDCS electrode placement.
 
@@ -20,17 +20,16 @@ from pathlib import Path
 
 import numpy as np
 import nibabel as nib
-import scipy.io
 
 
 def create_affine_mni_warp(m2m_dir: str, mni_template_path: str) -> None:
     m2m_dir = Path(m2m_dir)
 
-    # Load MNI→T1 affine from coregistrationMatrices.mat (written by --initatlas)
-    mat_path = m2m_dir / "segmentation" / "coregistrationMatrices.mat"
-    matrices  = scipy.io.loadmat(str(mat_path))
-    W2W     = matrices["worldToWorldTransformMatrix"].astype(np.float64)  # MNI→T1
-    W2W_inv = np.linalg.inv(W2W)                                          # T1→MNI
+    # Load MNI→T1 affine from W2W.npy (extracted from coregistrationMatrices.mat
+    # by a prior step using SimNIBS Python which has scipy).
+    w2w_npy = m2m_dir / "W2W.npy"
+    W2W     = np.load(str(w2w_npy)).astype(np.float64)  # MNI→T1
+    W2W_inv = np.linalg.inv(W2W)                         # T1→MNI
 
     # MNI template — defines the output grid for MNI2Conform
     mni_img   = nib.load(mni_template_path)
