@@ -126,26 +126,34 @@ def _find_ants() -> str:
 def _find_mni_template() -> str | None:
     """
     Find the MNI152 T1 template used for ANTs registration.
-    Priority: MNI_TEMPLATE env var → auto-discover from simnibs package.
+    Priority: MNI_TEMPLATE env var → SIMNIBS_HOME glob → simnibs import fallback.
     """
     if MNI_TEMPLATE and Path(MNI_TEMPLATE).exists():
         return MNI_TEMPLATE
+
+    # Search directly inside SIMNIBS_HOME (works even if simnibs is not importable
+    # in the current venv, e.g. when the API runs in a separate virtualenv).
+    if SIMNIBS_HOME:
+        simnibs_env = Path(SIMNIBS_HOME) / "simnibs_env"
+        for name in ("MNI152_T1_1mm.nii.gz", "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz"):
+            for match in simnibs_env.rglob(name):
+                if "templates" in str(match):
+                    return str(match)
+
+    # Fallback: try importing simnibs from the current Python environment
     try:
         import simnibs
         pkg = Path(simnibs.__file__).parent
-        for rel in [
-            "resources/templates/mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+        for rel in (
             "resources/templates/MNI152_T1_1mm.nii.gz",
-        ]:
+            "resources/templates/mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+        ):
             tmpl = pkg / rel
             if tmpl.exists():
                 return str(tmpl)
-        # Broader fallback search
-        matches = list(pkg.rglob("mni_icbm152_t1*.nii.gz"))
-        if matches:
-            return str(matches[0])
     except ImportError:
         pass
+
     return None
 
 
