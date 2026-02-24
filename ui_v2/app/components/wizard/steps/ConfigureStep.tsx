@@ -34,7 +34,7 @@ const spaceOptions: SpaceOption[] = [
 const modelOptions: ModelOption[] = [
   {
     id: "grace",
-    name: "CROWN",
+    name: "GRACE",
     description: "Fast accurate whole-head segmentation",
     icon: <Brain className="h-5 w-5" />,
   },
