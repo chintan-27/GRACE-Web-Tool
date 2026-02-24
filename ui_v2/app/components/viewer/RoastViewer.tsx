@@ -310,31 +310,32 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
               </span>
             </header>
 
-            <div className="relative bg-black" style={{ height: "500px" }}>
-              <canvas
-                ref={canvasRefs[i]}
-                width={512}
-                height={512}
-                style={{ width: "100%", height: "100%" }}
-                aria-label={`${panel.label} ROAST viewer`}
-              />
-              {!initialized && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    <span className="text-sm text-foreground-muted">Initializing viewer...</span>
+            {initialized && loadErrors[panel.type] ? (
+              <div className="flex items-center gap-3 px-4 py-5 text-foreground-muted">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-foreground-muted/60" />
+                <p className="text-sm">
+                  {panel.label} output was not produced by the solver — only E-field magnitude is available.
+                </p>
+              </div>
+            ) : (
+              <div className="relative bg-black" style={{ height: "500px" }}>
+                <canvas
+                  ref={canvasRefs[i]}
+                  width={512}
+                  height={512}
+                  style={{ width: "100%", height: "100%" }}
+                  aria-label={`${panel.label} ROAST viewer`}
+                />
+                {!initialized && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                      <span className="text-sm text-foreground-muted">Initializing viewer...</span>
+                    </div>
                   </div>
-                </div>
-              )}
-              {initialized && loadErrors[panel.type] && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                  <div className="flex flex-col items-center gap-2 text-center px-4">
-                    <AlertTriangle className="h-6 w-6 text-warning" />
-                    <p className="text-sm text-foreground-muted">Could not load {panel.label}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
 
             {/* Scalar colorbar */}
             {initialized && !loadErrors[panel.type] && (

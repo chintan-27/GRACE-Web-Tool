@@ -595,12 +595,15 @@ class SimNIBSRunner:
                                 f"[SimNIBS] Collected {output_type} → {dest}")
                     break
 
-        missing = [t for t in ("emag", "voltage") if t not in found]
-        if missing:
+        # emag is required; voltage is optional (SimNIBS map_to_vol often skips it)
+        if "emag" not in found:
             raise FileNotFoundError(
-                f"SimNIBS finished but output files are missing: {missing}. "
+                f"SimNIBS finished but required output 'emag' is missing. "
                 f"Found NIfTIs: {[str(f.name) for f in all_niftis]}"
             )
+        if "voltage" not in found:
+            session_log(self.session_id,
+                        "[SimNIBS] Voltage NIfTI not produced — continuing with emag only")
 
     # ------------------------------------------------------------------
     def run(self):
