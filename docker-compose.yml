@@ -54,19 +54,19 @@ services:
               count: all
               capabilities: [gpu]
 
-  # Frontend (optional - uncomment to include)
-  # ui:
-  #   build:
-  #     context: ./ui_v2
-  #     dockerfile: Dockerfile
-  #   container_name: whs-ui
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     - NEXT_PUBLIC_API_URL=http://api:8100
-  #   depends_on:
-  #     - api
+  # CROWN frontend
+  ui:
+    build:
+      context: ./ui_v2
+      dockerfile: Dockerfile
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://10.15.224.253:8000}
+    container_name: whs-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
 
 volumes:
   redis_data:

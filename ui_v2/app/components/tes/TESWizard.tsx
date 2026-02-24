@@ -400,7 +400,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
         </div>
         <p className="mt-2 text-xs text-foreground-muted">
           {solver === "roast"   && "ROAST-11 uses compiled MATLAB MCR with 11-tissue conductivities."}
-          {solver === "simnibs" && "SimNIBS uses FEM with charm meshing on the GRACE segmentation."}
+          {solver === "simnibs" && "SimNIBS uses FEM with charm meshing on the CROWN segmentation."}
           {solver === "both"    && "Run both solvers for direct comparison. Runs sequentially."}
         </p>
       </div>

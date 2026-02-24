@@ -178,7 +178,7 @@ export default function TESPage() {
 
   // Config
   const [selectedModels, setSelectedModels]     = useState<string[]>([]);
-  const [solver, setSolver]                     = useState<Solver>("simnibs");
+  const [solver, setSolver]                     = useState<Solver>("roast");
   const [quality, setQuality]                   = useState<"fast" | "standard">("fast");
   const [electrodeConfig, setElectrodeConfig]   = useState<ElectrodeConfig>({
     anode: "F3", cathode: "F4", currentMa: 2, electrodeType: "pad",
@@ -426,7 +426,7 @@ export default function TESPage() {
               ))}
             </div>
             <p className="mt-1.5 text-[11px] leading-snug text-foreground-muted">
-              {solver === "simnibs" && "FEM with charm meshing on GRACE segmentation"}
+              {solver === "simnibs" && "FEM with charm meshing on CROWN segmentation"}
               {solver === "roast"   && "MATLAB MCR pipeline, 11-tissue conductivities"}
               {solver === "both"    && "Both solvers run sequentially — enables side-by-side comparison"}
             </p>

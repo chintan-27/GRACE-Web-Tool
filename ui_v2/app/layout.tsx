@@ -9,8 +9,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "GRACE - MRI Segmentation Suite",
-  description: "Whole-head MRI segmentation with GRACE, DOMINO, and DOMINO++ models",
+  title: "CROWN - MRI Segmentation Suite",
+  description: "Whole-head MRI segmentation with CROWN, DOMINO, and DOMINO++ models",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

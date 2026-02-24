@@ -1,10 +1,11 @@
-name: Deploy API v2 to fanglab
+name: Deploy to fanglab
 
 on:
   push:
     branches: [ main ]
     paths:
       - 'api_v2/**'
+      - 'ui_v2/**'
       - 'docker-compose.yml'
       - '.github/workflows/deploy-api.yml'
 
@@ -38,7 +39,7 @@ jobs:
             echo "[deploy] Rebuilding and restarting containers..."
             cd /home/chintan/GRACE-Web-Tool
             docker compose down || true
-            docker compose build api
+            docker compose build api ui
             docker compose up -d
 
             echo "[deploy] Checking container status..."
