@@ -183,8 +183,8 @@ export default function UploadStep() {
           {/* Text */}
           {selectedFile && !error ? (
             <div>
-              <p className="font-medium text-success">{selectedFile.name}</p>
-              <p className="mt-1 text-sm text-foreground-muted">
+              <p className="font-mono font-medium text-success">{selectedFile.name}</p>
+              <p className="mt-1 font-mono text-xs text-foreground-muted">
                 {formatFileSize(selectedFile.size)}
               </p>
               <p className="mt-2 text-sm text-foreground-muted">
@@ -208,8 +208,8 @@ export default function UploadStep() {
               <p className="mt-1 text-sm text-foreground-muted">
                 or click to browse
               </p>
-              <p className="mt-3 text-xs text-foreground-muted">
-                Supported formats: .nii, .nii.gz
+              <p className="mt-3 font-mono text-xs text-foreground-muted">
+                Accepted: <span className="text-accent">.nii</span> · <span className="text-accent">.nii.gz</span>
               </p>
             </div>
           )}
@@ -225,10 +225,10 @@ export default function UploadStep() {
             <div className="flex items-center gap-3">
               <FileCheck className="h-5 w-5 text-success" aria-hidden="true" />
               <div>
-                <p className="text-sm font-medium text-foreground">
+                <p className="font-mono text-sm font-medium text-foreground">
                   {selectedFile.name}
                 </p>
-                <p className="text-xs text-foreground-muted">
+                <p className="font-mono text-xs text-foreground-muted">
                   {formatFileSize(selectedFile.size)}
                 </p>
               </div>
@@ -248,8 +248,8 @@ export default function UploadStep() {
           className="mt-6 rounded-lg border border-border-subtle bg-background-secondary p-4"
           aria-labelledby="requirements-title"
         >
-          <h3 id="requirements-title" className="text-sm font-medium text-foreground">
-            File Requirements
+          <h3 id="requirements-title" className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">
+            // Input Spec
           </h3>
           <ul className="mt-2 space-y-1 text-sm text-foreground-secondary list-disc list-inside">
             <li>T1-weighted MRI scan in NIfTI format</li>

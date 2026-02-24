@@ -59,7 +59,7 @@ export default function ModelProgressCard({ model, progress, gpu }: ModelProgres
           </div>
 
           <div>
-            <h3 className="font-semibold text-foreground">
+            <h3 className="font-mono font-bold tracking-widest text-foreground">
               {getDisplayName(model)}
             </h3>
             <div className="flex items-center gap-2 text-xs text-foreground-muted">
@@ -85,7 +85,7 @@ export default function ModelProgressCard({ model, progress, gpu }: ModelProgres
         <div className="text-right">
           <span
             className={cn(
-              "text-lg font-bold",
+              "font-mono text-lg font-bold",
               isComplete && "text-success",
               isRunning && "text-accent",
               isPending && "text-foreground-muted"
@@ -93,8 +93,13 @@ export default function ModelProgressCard({ model, progress, gpu }: ModelProgres
           >
             {Math.round(progress)}%
           </span>
-          <p className="text-xs text-foreground-muted">
-            {isComplete ? "Complete" : isRunning ? "Processing" : "Waiting"}
+          <p className={cn(
+            "font-mono text-[10px] uppercase tracking-widest",
+            isComplete && "text-success",
+            isRunning && "text-accent",
+            isPending && "text-foreground-muted"
+          )}>
+            {isComplete ? "done" : isRunning ? "running" : "queued"}
           </p>
         </div>
       </div>

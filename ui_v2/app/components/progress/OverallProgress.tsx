@@ -47,18 +47,21 @@ export default function OverallProgress({ progress, status }: OverallProgressPro
         <div className="absolute inset-0 flex flex-col items-center justify-center">
           <span
             className={cn(
-              "text-3xl font-bold",
+              "font-mono text-3xl font-bold",
               status === "complete" ? "text-success" : "text-foreground"
             )}
           >
             {Math.round(progress)}%
           </span>
-          <span className="text-xs text-foreground-muted">
+          <span className={cn(
+            "font-mono text-[10px] uppercase tracking-widest",
+            status === "complete" ? "text-success" : status === "running" ? "text-accent" : "text-foreground-muted"
+          )}>
             {status === "queued"
-              ? "Queued"
+              ? "queued"
               : status === "running"
-              ? "Processing"
-              : "Complete"}
+              ? "running"
+              : "done"}
           </span>
         </div>
       </div>

@@ -82,13 +82,13 @@ export default function ResultsStep() {
       {/* Header */}
       <div className="flex flex-col items-center text-center md:flex-row md:items-start md:justify-between md:text-left">
         <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-success/10 px-3 py-1 text-sm text-success">
-            <Check className="h-4 w-4" />
-            Segmentation Complete
+          <div className="mb-2 inline-flex items-center gap-2 rounded border border-success/40 bg-success/10 px-3 py-1 font-mono text-xs font-bold uppercase tracking-widest text-success">
+            <Check className="h-3.5 w-3.5" />
+            ✓ inference complete
           </div>
           <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">View Results</h1>
           {selectedFile && (
-            <p className="mt-2 text-foreground-secondary">{selectedFile.name}</p>
+            <p className="mt-2 font-mono text-sm text-foreground-secondary">{selectedFile.name}</p>
           )}
         </div>
         <div className="mt-4 flex flex-wrap gap-3 md:mt-0">
@@ -116,15 +116,15 @@ export default function ResultsStep() {
 
       {/* Download Cards */}
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
-        <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-          Download Segmentations
+        <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest font-mono text-accent">
+          // Output Files
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           {models.map(model => (
             <div key={model} className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
               <div>
-                <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
-                <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
+                <h3 className="font-mono font-bold tracking-wide text-foreground">{getDisplayName(model)}</h3>
+                <span className="mt-1 inline-block rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
               </div>
               <Button variant="success" size="sm" onClick={() => handleDownload(model)} className="gap-1.5">
                 <Download className="h-3.5 w-3.5" />
@@ -137,7 +137,7 @@ export default function ResultsStep() {
 
       {/* Info */}
       <div className="rounded-xl border border-border-subtle bg-background-secondary p-4">
-        <h3 className="text-sm font-medium text-foreground">About Your Results</h3>
+        <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">// Output Info</h3>
         <ul className="mt-2 space-y-1 text-sm text-foreground-secondary">
           <li>Segmentation results are in NIfTI format with FreeSurfer-compatible labels</li>
           <li>TES simulation uses ROAST-11 (MATLAB MCR) and/or SimNIBS FEM solvers</li>

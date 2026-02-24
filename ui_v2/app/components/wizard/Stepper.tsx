@@ -117,21 +117,23 @@ export default function Stepper({
                 </span>
 
                 {/* Label (hidden on mobile) */}
-                <span className="hidden text-sm font-medium md:block">
+                <span className="hidden text-[11px] font-bold tracking-widest uppercase font-mono md:block">
                   {step.label}
                 </span>
               </button>
 
               {/* Connector line */}
               {index < steps.length - 1 && (
-                <div
-                  className={cn(
-                    "mx-2 h-0.5 w-8 md:w-12 rounded-full transition-colors",
+                <div className="relative mx-2 flex w-8 items-center md:w-12" aria-hidden="true" role="presentation">
+                  <div className={cn(
+                    "h-px w-full transition-colors",
                     step.id < currentStep ? "bg-success" : "bg-border"
-                  )}
-                  aria-hidden="true"
-                  role="presentation"
-                />
+                  )} />
+                  <div className={cn(
+                    "absolute right-0 h-1.5 w-1.5 rounded-full border transition-colors",
+                    step.id < currentStep ? "border-success bg-success" : "border-border bg-background"
+                  )} />
+                </div>
               )}
             </li>
           );

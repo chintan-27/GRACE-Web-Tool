@@ -100,8 +100,8 @@ export default function ConfigureStep() {
       <div className="space-y-8">
         {/* Space Selection */}
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-            Processing Space
+          <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest font-mono text-accent">
+            // Processing Space
           </h2>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -124,7 +124,7 @@ export default function ConfigureStep() {
                 )}
 
                 <div className="pr-8">
-                  <h3 className="font-medium text-foreground">{option.name}</h3>
+                  <h3 className="font-mono font-semibold tracking-wide text-foreground">{option.name}</h3>
                   <p className="mt-1 text-sm text-foreground-secondary">
                     {option.description}
                   </p>
@@ -157,8 +157,8 @@ export default function ConfigureStep() {
 
         {/* Model Selection */}
         <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
-          <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-            Models to Run
+          <h2 className="mb-4 text-[10px] font-bold uppercase tracking-widest font-mono text-accent">
+            // Models to Run
           </h2>
 
           <div className="grid gap-3 md:grid-cols-3">
@@ -201,7 +201,7 @@ export default function ConfigureStep() {
                   </div>
 
                   {/* Text */}
-                  <h3 className="font-semibold text-foreground">{option.name}</h3>
+                  <h3 className="font-mono font-bold tracking-widest text-foreground">{option.name}</h3>
                   <p className="mt-1 text-xs text-foreground-secondary">
                     {option.description}
                   </p>
@@ -219,10 +219,10 @@ export default function ConfigureStep() {
 
         {/* Info Card */}
         <div className="rounded-xl border border-border-subtle bg-background-secondary p-4">
-          <h3 className="text-sm font-medium text-foreground">
-            About Processing
+          <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">
+            // Pipeline Info
           </h3>
-          <p className="mt-1 text-sm text-foreground-secondary">
+          <p className="text-sm text-foreground-secondary">
             Selected models will run sequentially on GPU. Results are available for
             download upon completion. All data is processed securely and not stored
             after your session ends.

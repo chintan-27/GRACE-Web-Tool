@@ -50,8 +50,8 @@ export default function ProcessingStep() {
 
           {sessionId && (
             <div className="mt-4 text-center">
-              <p className="text-xs text-foreground-muted">Session ID</p>
-              <p className="mt-1 font-mono text-xs text-foreground-secondary">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-accent">session</p>
+              <p className="mt-1 font-mono text-xs text-foreground-secondary border border-border rounded px-2 py-0.5 inline-block">
                 {sessionId.slice(0, 8)}...
               </p>
             </div>
@@ -60,8 +60,8 @@ export default function ProcessingStep() {
 
         {/* Right: Model Cards */}
         <div className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-            Model Progress
+          <h2 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent">
+            // Model Pipeline
           </h2>
 
           <div className="space-y-3">
@@ -84,13 +84,13 @@ export default function ProcessingStep() {
 
       {/* Info Box */}
       <div className="mt-6 rounded-xl border border-border-subtle bg-background-secondary p-4">
-        <h3 className="text-sm font-medium text-foreground">
-          Processing Information
+        <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">
+          // Runtime Info
         </h3>
         <ul className="mt-2 space-y-1 text-sm text-foreground-secondary">
           <li>Models are processed sequentially on available GPUs</li>
-          <li>Progress updates are streamed in real-time</li>
-          <li>You can stay on this page or leave - your session will continue</li>
+          <li>Progress updates are streamed in real-time via SSE</li>
+          <li>You can stay on this page or leave — your session will continue</li>
         </ul>
       </div>
     </div>
