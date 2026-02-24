@@ -323,6 +323,64 @@ def _load_mesh_msh(msh_file: str):
                 print(f"  Field '{fname}' ({n_hit:,} elements matched)", flush=True)
 
             # ================================================================
+            elif section == 'NodeData':
+                # Electric potential 'v' is node-based in some SimNIBS versions.
+                # Interpolate to element centroids via nearest-neighbour lookup.
+                if n_ids_s is None or centroids is None:
+                    end_tag = b'$EndNodeData'
+                    for skip in fh:
+                        if skip.strip() == end_tag:
+                            break
+                    continue
+
+                n_str  = int(fh.readline())
+                fname  = fh.readline().decode('ascii').strip().strip('"')
+                for _ in range(n_str - 1):
+                    fh.readline()
+                n_real = int(fh.readline())
+                for _ in range(n_real):
+                    fh.readline()
+                n_int  = int(fh.readline())
+                itags  = [int(fh.readline()) for _ in range(n_int)]
+                n_comp = itags[1] if len(itags) > 1 else 1
+                n_data = itags[2] if len(itags) > 2 else 0
+
+                if n_data == 0:
+                    continue
+
+                if is_bin:
+                    dt   = np.dtype([('id', f'{endian}i4'),
+                                     ('v',  f'{endian}f8', n_comp)])
+                    arr  = np.frombuffer(fh.read(n_data * dt.itemsize), dtype=dt)
+                    nids = arr['id'].astype(np.int64)
+                    vraw = arr['v'].reshape(-1, n_comp)
+                    fh.readline()   # trailing \n
+                else:
+                    lines = [fh.readline() for _ in range(n_data)]
+                    flat  = np.fromstring(
+                        b''.join(lines).replace(b'\n', b' '), sep=' ', dtype=np.float64)
+                    da   = flat.reshape(-1, 1 + n_comp)
+                    nids = da[:, 0].astype(np.int64)
+                    vraw = da[:, 1:].reshape(-1, n_comp)
+
+                vals_1d = vraw[:, 0] if n_comp == 1 else np.linalg.norm(vraw, axis=1)
+
+                # Build dense node-value array (indexed in sorted node order)
+                pos     = np.searchsorted(n_ids_s, nids)
+                pos     = np.clip(pos, 0, len(n_ids_s) - 1)
+                matched = n_ids_s[pos] == nids
+                node_vals = np.zeros(len(n_ids_s), dtype=np.float64)
+                node_vals[pos[matched]] = vals_1d[matched]
+
+                # Nearest-node interpolation to element centroids
+                from scipy.spatial import cKDTree as _nd_cKDTree
+                ntree          = _nd_cKDTree(n_xyz_s)
+                _, nn_idx      = ntree.query(centroids)
+                fields[fname]  = node_vals[nn_idx]
+                print(f"  NodeData '{fname}' interpolated to {n_elems:,} elements",
+                      flush=True)
+
+            # ================================================================
             else:
                 # Unknown section — skip to its end marker
                 end_tag = f'$End{section}'.encode()
@@ -497,16 +555,27 @@ def main() -> None:
     run_simnibs(s)
     print("SimNIBS FEM solve complete.", flush=True)
 
-    # Check whether map_to_vol produced NIfTI files.
-    # If not, fall back to manual mesh→NIfTI interpolation.
+    # Check whether map_to_vol produced BOTH required NIfTI files.
+    # map_to_vol reliably exports magnE but often skips the voltage (v) NIfTI.
+    # When any required output is missing, fall back to manual mesh→NIfTI
+    # interpolation from the _scalar.msh which contains both magnE and v fields.
     import glob as _glob
-    niftis = _glob.glob(str(_Path(fem_dir) / "**" / "*.nii.gz"), recursive=True)
-    if not niftis:
-        print("map_to_vol produced no NIfTI files — running manual interpolation fallback",
-              flush=True)
+    emag_niftis = _glob.glob(str(_Path(fem_dir) / "**" / "*_magnE.nii.gz"), recursive=True)
+    volt_niftis = _glob.glob(str(_Path(fem_dir) / "**" / "*_v.nii.gz"),     recursive=True)
+
+    if not emag_niftis or not volt_niftis:
+        missing = []
+        if not emag_niftis:
+            missing.append("magnE")
+        if not volt_niftis:
+            missing.append("voltage (v)")
+        print(
+            f"map_to_vol did not produce: {missing} — running manual interpolation fallback",
+            flush=True,
+        )
         _export_fields_to_nifti(fem_dir, m2m_dir)
     else:
-        print(f"map_to_vol produced {len(niftis)} NIfTI file(s).", flush=True)
+        print("map_to_vol produced both magnE and voltage NIfTIs.", flush=True)
 
 
 if __name__ == "__main__":

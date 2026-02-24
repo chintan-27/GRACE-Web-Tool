@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback, useId } from "react";
-import { Niivue } from "@niivue/niivue";
+import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
+import { Niivue, cmapper } from "@niivue/niivue";
 import { AlertTriangle, Eye, Palette } from "lucide-react";
 import { getSimulationResult, getSimNIBSResult } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
@@ -31,11 +31,12 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
 
   const [initialized, setInitialized]       = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0.7);
-  const [colormap, setColormap]             = useState<ColormapId>("hot");
+  const [colormap, setColormap]             = useState<ColormapId>("jet");
   const [colormapOpen, setColormapOpen]     = useState(false);
   const [error, setError]                   = useState<string | null>(null);
   const [loading, setLoading]               = useState(false);
   const [loadErrors, setLoadErrors]         = useState<Partial<Record<OutputType, string>>>({});
+  const [calRanges, setCalRanges]           = useState<Partial<Record<OutputType, { min: number; max: number }>>>({});
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
   const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
@@ -91,6 +92,9 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     if (calMax > 0 && calMin <= 0) {
       vol.cal_min = calMax * 0.01;
     }
+
+    // Store physical range for the colorbar (0 → peak)
+    setCalRanges(prev => ({ ...prev, [type]: { min: 0, max: calMax } }));
 
     nv.setColormap(vol.id, cmap); // calls updateGLVolume internally
     nv.setOpacity(1, opacity);
@@ -183,6 +187,21 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   }, [colormap, initialized]);
 
   const currentColormap = COLORMAPS.find(c => c.id === colormap) ?? COLORMAPS[0];
+
+  // Build a CSS linear-gradient string from a Niivue colormap LUT
+  const colormapGradient = useMemo(() => {
+    try {
+      const lut = cmapper.colormap(colormap);
+      // Sample 12 evenly-spaced stops from the 256-entry LUT
+      const stops = Array.from({ length: 12 }, (_, i) => {
+        const idx = Math.round((i / 11) * 255) * 4;
+        return `rgb(${lut[idx]},${lut[idx + 1]},${lut[idx + 2]}) ${Math.round((i / 11) * 100)}%`;
+      });
+      return `linear-gradient(to right, ${stops.join(", ")})`;
+    } catch {
+      return "linear-gradient(to right, #000, #fff)";
+    }
+  }, [colormap]);
 
   return (
     <section aria-label="TES Simulation Viewer" className="space-y-4">
@@ -316,6 +335,27 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
                 </div>
               )}
             </div>
+
+            {/* Scalar colorbar */}
+            {initialized && !loadErrors[panel.type] && (
+              <div className="px-4 py-3 border-t border-border bg-surface">
+                <div className="flex items-center gap-3">
+                  <span className="w-10 text-right text-xs font-mono text-foreground-muted tabular-nums">
+                    {calRanges[panel.type] ? calRanges[panel.type]!.min.toFixed(2) : "0.00"}
+                  </span>
+                  <div
+                    className="flex-1 h-4 rounded"
+                    style={{ background: colormapGradient }}
+                    aria-label={`${panel.label} colormap scale`}
+                  />
+                  <span className="w-14 text-left text-xs font-mono text-foreground-muted tabular-nums">
+                    {calRanges[panel.type]
+                      ? `${calRanges[panel.type]!.max.toFixed(2)} ${panel.unit}`
+                      : `— ${panel.unit}`}
+                  </span>
+                </div>
+              </div>
+            )}
           </article>
         ))}
       </div>

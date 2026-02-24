@@ -214,7 +214,10 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
                 await nv.loadFromArrayBuffer(buffer.slice(0), `${model}.nii.gz`);
 
                 if (nv.volumes.length > 1) {
-                  nv.setColormap(nv.volumes[1].id, "freesurfer");
+                  const vol = nv.volumes[1];
+                  vol.cal_min = 0;
+                  vol.cal_max = 11;
+                  nv.setColormap(vol.id, "freesurfer");
                   nv.setOpacity(1, 0.5);
                   nv.drawScene();
                   console.log(`${model} loaded to ${panelName} panel successfully`);
@@ -302,8 +305,11 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           // Check if the volume was actually loaded
           if (nv.volumes.length > 1) {
             console.log(`Volume loaded successfully, total volumes: ${nv.volumes.length}`);
-            // Use the selected colormap
-            nv.setColormap(nv.volumes[1].id, currentColormap);
+            // Fix the cal range so all 12 tissue labels map across the full LUT
+            const vol = nv.volumes[1];
+            vol.cal_min = 0;
+            vol.cal_max = 11;
+            nv.setColormap(vol.id, currentColormap);
             nv.setOpacity(1, currentOpacity);
             nv.drawScene();
             return true;
@@ -381,7 +387,10 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       { nv: rightNvRef.current, hasOverlay: rightModel !== null },
     ].forEach(({ nv, hasOverlay }) => {
       if (nv && hasOverlay && nv.volumes.length > 1) {
-        nv.setColormap(nv.volumes[1].id, colormap);
+        const vol = nv.volumes[1];
+        vol.cal_min = 0;
+        vol.cal_max = 11;
+        nv.setColormap(vol.id, colormap);
         nv.drawScene();
       }
     });
