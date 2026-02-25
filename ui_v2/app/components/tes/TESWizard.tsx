@@ -453,7 +453,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              ⚡ Fast (~5–10 min)
+              ⚡ Fast (~20–35 min)
             </button>
             <button
               type="button"
@@ -463,7 +463,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              🎯 Standard (~15–25 min)
+              🎯 Standard (~40–60 min)
             </button>
           </div>
           <p className="text-xs text-foreground-muted">
