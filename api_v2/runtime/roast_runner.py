@@ -186,7 +186,17 @@ class ROASTRunner:
 
         mcr = _resolve_mcr(MATLAB_RUNTIME)
         session_log(self.session_id, f"[ROAST] Using MCR at: {mcr}")
-        return [str(launcher), str(mcr), str(config_path)]
+
+        cmd = [str(launcher), str(mcr), str(config_path)]
+
+        # MCR initialises GUI plugins (CEF/web window manager) even in headless
+        # environments.  Wrap with xvfb-run so it gets a virtual display instead
+        # of hard-failing with missing libgbm / libnss3 errors.
+        import shutil as _shutil
+        if _shutil.which("xvfb-run"):
+            cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1x1x24"] + cmd
+
+        return cmd
 
     # ------------------------------------------------------------------
     def run(self):
