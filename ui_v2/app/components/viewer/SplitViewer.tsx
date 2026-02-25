@@ -8,6 +8,23 @@ import ViewerControls, { ColormapId } from "./ViewerControls";
 import ComparisonSelector from "./ComparisonSelector";
 import SegmentationLegend from "./SegmentationLegend";
 
+// Explicit per-label RGBA for the 12-class GRACE/DOMINO segmentation.
+// Using setColormapLabel (instead of setColormap) avoids cal_min/cal_max
+// auto-detection causing labels to land on transparent LUT entries.
+const TISSUE_R = [  0, 240, 120, 100, 200, 230, 250,  40, 180, 255, 210,   0];
+const TISSUE_G = [  0, 240, 100, 180, 160, 200, 170,  40,  40, 230,  10, 200];
+const TISSUE_B = [  0, 240, 100, 230,  80, 130, 100,  80,  40, 100,  30, 180];
+const TISSUE_A = [  0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+
+function buildLabelColormap(showBackground: boolean) {
+  return {
+    R: TISSUE_R,
+    G: TISSUE_G,
+    B: TISSUE_B,
+    A: TISSUE_A.map((a, i) => (i === 0 ? (showBackground ? 180 : 0) : a)),
+  };
+}
+
 interface SplitViewerProps {
   inputUrl: string;
   sessionId: string;
@@ -33,9 +50,35 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [colormap, setColormap] = useState<ColormapId>("freesurfer");
   const [error, setError] = useState<string | null>(null);
+  const [showBgLeft, setShowBgLeft] = useState(false);
+  const [showBgRight, setShowBgRight] = useState(false);
 
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
+
+  // Apply colormap to an overlay volume.
+  // For "freesurfer" we use setColormapLabel with explicit RGBA so no label
+  // ever lands on a transparent LUT entry. Other colormaps use setColormap
+  // with cal range set AFTER the call (setColormap resets it internally).
+  const applySegColormap = useCallback((
+    nv: Niivue,
+    cmap: ColormapId,
+    showBg: boolean,
+    opacity: number,
+  ) => {
+    if (nv.volumes.length < 2) return;
+    const vol = nv.volumes[1];
+    if (cmap === "freesurfer") {
+      (vol as any).setColormapLabel(buildLabelColormap(showBg));
+    } else {
+      nv.setColormap(vol.id, cmap);
+      vol.cal_min = 0;
+      vol.cal_max = 11;
+    }
+    nv.updateGLVolume();
+    nv.setOpacity(1, opacity);
+    nv.drawScene();
+  }, []);
 
   // Load a result from the API
   const loadResult = useCallback(async (model: string): Promise<ArrayBuffer | null> => {
@@ -214,12 +257,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
                 await nv.loadFromArrayBuffer(buffer.slice(0), `${model}.nii.gz`);
 
                 if (nv.volumes.length > 1) {
-                  const vol = nv.volumes[1];
-                  vol.cal_min = 0;
-                  vol.cal_max = 11;
-                  nv.setColormap(vol.id, "freesurfer");
-                  nv.setOpacity(1, 0.5);
-                  nv.drawScene();
+                  const showBg = panelName === "left" ? showBgLeft : showBgRight;
+                  applySegColormap(nv, colormap, showBg, overlayOpacity);
                   console.log(`${model} loaded to ${panelName} panel successfully`);
                   return true;
                 }
@@ -280,7 +319,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     nv: Niivue | null,
     model: string | null,
     currentOpacity: number,
-    currentColormap: ColormapId
+    currentColormap: ColormapId,
+    showBg: boolean = false,
   ): Promise<boolean> => {
     if (!nv) {
       console.log("loadOverlayToPanel: nv is null");
@@ -305,13 +345,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           // Check if the volume was actually loaded
           if (nv.volumes.length > 1) {
             console.log(`Volume loaded successfully, total volumes: ${nv.volumes.length}`);
-            // Fix the cal range so all 12 tissue labels map across the full LUT
-            const vol = nv.volumes[1];
-            vol.cal_min = 0;
-            vol.cal_max = 11;
-            nv.setColormap(vol.id, currentColormap);
-            nv.setOpacity(1, currentOpacity);
-            nv.drawScene();
+            applySegColormap(nv, currentColormap, showBg, currentOpacity);
             return true;
           } else {
             console.error(`Volume was not added after loadFromArrayBuffer for ${model}`);
@@ -335,7 +369,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for left panel
   const handleLeftModelChange = async (model: string | null) => {
-    const success = await loadOverlayToPanel(leftNvRef.current, model, overlayOpacity, colormap);
+    const success = await loadOverlayToPanel(leftNvRef.current, model, overlayOpacity, colormap, showBgLeft);
     if (success) {
       setLeftModel(model);
     }
@@ -343,7 +377,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for right panel
   const handleRightModelChange = async (model: string | null) => {
-    const success = await loadOverlayToPanel(rightNvRef.current, model, overlayOpacity, colormap);
+    const success = await loadOverlayToPanel(rightNvRef.current, model, overlayOpacity, colormap, showBgRight);
     if (success) {
       setRightModel(model);
     }
@@ -363,38 +397,15 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     });
   }, [viewMode, initialized]);
 
-  // Update opacity
+
+  // Update colormap or background toggle for either panel
   useEffect(() => {
     if (!initialized) return;
-
-    [
-      { nv: leftNvRef.current, hasOverlay: leftModel !== null },
-      { nv: rightNvRef.current, hasOverlay: rightModel !== null },
-    ].forEach(({ nv, hasOverlay }) => {
-      if (nv && hasOverlay && nv.volumes.length > 1) {
-        nv.setOpacity(1, overlayOpacity);
-        nv.drawScene();
-      }
-    });
-  }, [overlayOpacity, initialized, leftModel, rightModel]);
-
-  // Update colormap
-  useEffect(() => {
-    if (!initialized) return;
-
-    [
-      { nv: leftNvRef.current, hasOverlay: leftModel !== null },
-      { nv: rightNvRef.current, hasOverlay: rightModel !== null },
-    ].forEach(({ nv, hasOverlay }) => {
-      if (nv && hasOverlay && nv.volumes.length > 1) {
-        const vol = nv.volumes[1];
-        vol.cal_min = 0;
-        vol.cal_max = 11;
-        nv.setColormap(vol.id, colormap);
-        nv.drawScene();
-      }
-    });
-  }, [colormap, initialized, leftModel, rightModel]);
+    if (leftNvRef.current && leftModel !== null)
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity);
+    if (rightNvRef.current && rightModel !== null)
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity);
+  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
@@ -509,16 +520,29 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           aria-label={leftModel ? `Left panel: ${getDisplayName(leftModel)} segmentation` : "Left panel: Input MRI only"}
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h3 className="text-sm font-medium text-foreground" id="left-panel-title">
-              {leftModel ? (
-                <>
-                  {getDisplayName(leftModel)}{" "}
-                  <span className="text-foreground-muted">({getSpaceLabel(leftModel)})</span>
-                </>
-              ) : (
-                "Input Only"
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-medium text-foreground" id="left-panel-title">
+                {leftModel ? (
+                  <>
+                    {getDisplayName(leftModel)}{" "}
+                    <span className="text-foreground-muted">({getSpaceLabel(leftModel)})</span>
+                  </>
+                ) : (
+                  "Input Only"
+                )}
+              </h3>
+              {leftModel && (
+                <label className="flex items-center gap-1.5 text-xs text-foreground-muted cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showBgLeft}
+                    onChange={(e) => setShowBgLeft(e.target.checked)}
+                    className="accent-amber-400 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  Show bg
+                </label>
               )}
-            </h3>
+            </div>
             <ComparisonSelector
               models={models}
               selectedModel={leftModel}
@@ -564,16 +588,29 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           aria-label={rightModel ? `Right panel: ${getDisplayName(rightModel)} segmentation` : "Right panel: Input MRI only"}
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
-            <h3 className="text-sm font-medium text-foreground" id="right-panel-title">
-              {rightModel ? (
-                <>
-                  {getDisplayName(rightModel)}{" "}
-                  <span className="text-foreground-muted">({getSpaceLabel(rightModel)})</span>
-                </>
-              ) : (
-                "Input Only"
+            <div className="flex items-center gap-3">
+              <h3 className="text-sm font-medium text-foreground" id="right-panel-title">
+                {rightModel ? (
+                  <>
+                    {getDisplayName(rightModel)}{" "}
+                    <span className="text-foreground-muted">({getSpaceLabel(rightModel)})</span>
+                  </>
+                ) : (
+                  "Input Only"
+                )}
+              </h3>
+              {rightModel && (
+                <label className="flex items-center gap-1.5 text-xs text-foreground-muted cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showBgRight}
+                    onChange={(e) => setShowBgRight(e.target.checked)}
+                    className="accent-amber-400 w-3.5 h-3.5 cursor-pointer"
+                  />
+                  Show bg
+                </label>
               )}
-            </h3>
+            </div>
             <ComparisonSelector
               models={models}
               selectedModel={rightModel}
