@@ -140,7 +140,8 @@ def _find_simnibs_python() -> str:
 def _find_charm() -> str:
     """
     Resolve the charm executable path.
-    Priority: SIMNIBS_HOME/bin/charm → which charm → fallback 'charm'.
+    Priority: SIMNIBS_HOME/bin/charm → which charm (using augmented PATH).
+    Raises FileNotFoundError with a descriptive message if nothing found.
     """
     home = _find_simnibs_home()
     if home:
@@ -148,11 +149,19 @@ def _find_charm() -> str:
         if candidate.exists():
             return str(candidate)
 
-    found = shutil.which("charm")
+    # Try system PATH augmented with SIMNIBS_HOME/bin
+    augmented_path = _simnibs_env().get("PATH")
+    found = shutil.which("charm", path=augmented_path)
     if found:
         return found
 
-    return "charm"  # will raise FileNotFoundError with a clear message
+    tried = str(Path(home) / "bin" / "charm") if home else "(SIMNIBS_HOME not set)"
+    raise FileNotFoundError(
+        f"SimNIBS 'charm' binary not found. Tried: {tried}. "
+        f"SIMNIBS_HOME={SIMNIBS_HOME!r}. "
+        "Ensure SIMNIBS_HOME env var points to your SimNIBS install directory "
+        "and that it is mounted/accessible inside the container."
+    )
 
 
 def _find_mni_template() -> str | None:
