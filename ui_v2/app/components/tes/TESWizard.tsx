@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import {
-  Zap, ChevronRight, ChevronLeft, Check, AlertTriangle,
+  Zap, ChevronRight, ChevronLeft, Check, AlertTriangle, Construction,
   GitCompare, RotateCcw, Eye, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -128,7 +128,7 @@ function TESSubStepper({ current }: { current: TESStep }) {
               )}>
                 {done ? <Check className="h-3 w-3" /> : idx + 1}
               </span>
-              <span>{step.label}</span>
+              <span className="font-mono text-[11px] font-bold uppercase tracking-widest">{step.label}</span>
             </div>
             {idx < STEPS.length - 1 && (
               <div className={cn(
@@ -341,7 +341,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
   const renderSelect = () => (
     <div className="space-y-6">
       <div>
-        <h3 className="text-sm font-semibold text-foreground mb-1">Which segmentations to simulate?</h3>
+        <h3 className="mb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// Target Models</h3>
         <p className="text-xs text-foreground-muted mb-3">Select one or more completed segmentation models.</p>
         <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-3">
           {models.map(model => {
@@ -368,8 +368,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                   </span>
                 )}
                 <Layers className="h-5 w-5 text-accent" />
-                <span className="font-semibold text-foreground text-sm">{getDisplayName(model)}</span>
-                <span className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</span>
+                <span className="font-mono font-bold tracking-wide text-foreground text-sm">{getDisplayName(model)}</span>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
               </button>
             );
           })}
@@ -377,7 +377,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       </div>
 
       <div>
-        <h3 className="text-sm font-semibold text-foreground mb-1">Which solver?</h3>
+        <h3 className="mb-1 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// Solver</h3>
         <p className="text-xs text-foreground-muted mb-3">ROAST and SimNIBS use different meshing pipelines.</p>
         <div className="flex gap-2">
           {(["roast", "simnibs", "both"] as Solver[]).map(s => (
@@ -390,6 +390,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 solver === s
                   ? "border-accent bg-accent/10 text-accent"
                   : "border-border bg-surface text-foreground-muted hover:border-accent/40",
+                s === "simnibs" && "opacity-60",
               )}
             >
               {s === "roast"   && "ROAST-11"}
@@ -403,6 +404,20 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
           {solver === "simnibs" && "SimNIBS uses FEM with charm meshing on the CROWN segmentation."}
           {solver === "both"    && "Run both solvers for direct comparison. Runs sequentially."}
         </p>
+        {(solver === "simnibs" || solver === "both") && (
+          <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
+            <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+            <div className="space-y-0.5">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">Under Development</p>
+              <p className="text-[11px] leading-snug text-foreground-muted">
+                SimNIBS integration is not yet at the correct version. Please use{" "}
+                <button type="button" onClick={() => setSolver("roast")} className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover">
+                  ROAST
+                </button>{" "}for reliable results.
+              </p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end">
@@ -428,7 +443,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
 
       {(solver === "roast" || solver === "both") && (
         <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
-          <h3 className="text-sm font-semibold text-foreground">ROAST Quality</h3>
+          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// ROAST Quality</h3>
           <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
             <button
               type="button"
@@ -438,7 +453,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              ⚡ Fast (~1–2 min)
+              ⚡ Fast (~5–10 min)
             </button>
             <button
               type="button"
@@ -448,7 +463,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              🎯 Standard (~3–5 min)
+              🎯 Standard (~15–25 min)
             </button>
           </div>
           <p className="text-xs text-foreground-muted">
@@ -459,7 +474,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
 
       {/* Summary */}
       <div className="rounded-lg bg-surface-elevated border border-border/60 px-4 py-3 text-sm">
-        <p className="font-medium text-foreground mb-1">Simulation summary</p>
+        <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent mb-1">// Sim Summary</p>
         <p className="text-xs text-foreground-muted">
           <span className="font-medium text-foreground">{selectedModels.map(getDisplayName).join(", ")}</span>
           {" · "}{solver === "both" ? "ROAST + SimNIBS" : solver === "roast" ? "ROAST-11" : "SimNIBS"}
@@ -501,13 +516,19 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       <div className="space-y-4">
         {/* Overall progress */}
         <div className="space-y-1.5">
-          <div className="flex justify-between text-sm">
-            <span className="text-foreground-muted">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
+              {!allDone && (
+                <span className="relative flex h-2 w-2">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+                  <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+                </span>
+              )}
               {allDone
-                ? anyComplete ? "All simulations complete" : "All simulations finished (some with errors)"
-                : `Running ${doneCount + 1} of ${totalRuns}...`}
+                ? anyComplete ? "// inference complete" : "// finished with errors"
+                : `// running ${doneCount + 1} of ${totalRuns}`}
             </span>
-            <span className="font-medium text-foreground">{totalProgress}%</span>
+            <span className="font-mono text-sm font-bold text-foreground">{totalProgress}%</span>
           </div>
           <div className="h-2 w-full rounded-full bg-border overflow-hidden">
             <div
@@ -539,8 +560,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
               >
                 <div className="flex items-center justify-between">
                   <div>
-                    <span className="text-sm font-semibold text-foreground">{getDisplayName(model)}</span>
-                    <span className="ml-2 text-xs text-foreground-muted">{getSpaceLabel(model)}</span>
+                    <span className="font-mono text-sm font-bold tracking-wide text-foreground">{getDisplayName(model)}</span>
+                    <span className="ml-2 font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
                   </div>
                   <span className={cn(
                     "text-xs font-medium px-2 py-0.5 rounded-full",
@@ -625,8 +646,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
           {Object.entries(completedByModel).map(([model, solvers]) => (
             <div key={model} className="rounded-xl border border-border bg-surface p-4 space-y-3">
               <div>
-                <h3 className="font-semibold text-foreground">{getDisplayName(model)}</h3>
-                <p className="text-xs text-foreground-muted">{getSpaceLabel(model)} space</p>
+                <h3 className="font-mono font-bold tracking-wide text-foreground">{getDisplayName(model)}</h3>
+                <span className="font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {solvers.includes("roast") && (
@@ -736,7 +757,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
           <div className="rounded-lg bg-accent/15 p-1.5">
             <Zap className="h-4 w-4 text-accent" />
           </div>
-          <h2 className="text-base font-semibold text-foreground">TES Simulation</h2>
+          <h2 className="font-mono text-xs font-bold uppercase tracking-widest text-foreground">TES Simulation</h2>
         </div>
         <TESSubStepper current={step} />
       </div>

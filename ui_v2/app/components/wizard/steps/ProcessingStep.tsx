@@ -29,12 +29,22 @@ export default function ProcessingStep() {
     <div className="mx-auto max-w-3xl">
       {/* Header */}
       <div className="mb-8 text-center">
+        <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
+          {status === "running" && (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+          )}
+          {status === "complete" && <span className="text-success">✓</span>}
+          // {status === "uploading" ? "uploading" : status === "queued" ? "queued" : status === "running" ? "inference running" : "done"}
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
           {getStatusLabel()}
         </h1>
         {selectedFile && (
-          <p className="mt-2 text-foreground-secondary">
-            Processing: {selectedFile.name}
+          <p className="mt-2 font-mono text-sm text-foreground-secondary">
+            {selectedFile.name}
           </p>
         )}
       </div>

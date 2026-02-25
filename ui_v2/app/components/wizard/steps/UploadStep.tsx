@@ -97,13 +97,15 @@ export default function UploadStep() {
       >
         <div className="flex gap-3">
           <ShieldAlert className="h-5 w-5 text-warning flex-shrink-0 mt-0.5" aria-hidden="true" />
-          <div className="space-y-1 text-sm">
-            <p className="font-semibold text-warning">Important Notice</p>
-            <p className="text-foreground-secondary">
+          <div className="space-y-1.5">
+            <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">
+              // Research Use Only
+            </p>
+            <p className="text-sm text-foreground-secondary">
               This tool is for <strong>research and prototyping only</strong> and does not provide medical advice, diagnosis, or treatment.
             </p>
-            <p className="text-foreground-secondary">
-              Upload only <strong>de-identified MRI data</strong>. Ensure your use complies with all applicable ethics, privacy, and data governance requirements.
+            <p className="text-sm text-foreground-secondary">
+              Upload only <strong>de-identified MRI data</strong>. Ensure your use complies with applicable ethics, privacy, and data governance requirements.
             </p>
           </div>
         </div>
