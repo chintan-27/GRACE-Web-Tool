@@ -4,6 +4,24 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { getResult } from "../../lib/api";
 import { Niivue } from "@niivue/niivue";
 
+// Explicit RGBA per tissue label (0–11) for GRACE/DOMINO 12-class segmentation.
+// Using setColormapLabel bypasses cal_min/cal_max auto-detection entirely,
+// so no label is ever accidentally mapped to a transparent LUT entry.
+const TISSUE_R = [  0, 240, 120, 100, 200, 230, 250,  40, 180, 255, 210,   0];
+const TISSUE_G = [  0, 240, 100, 180, 160, 200, 170,  40,  40, 230,  10, 200];
+const TISSUE_B = [  0, 240, 100, 230,  80, 130, 100,  80,  40, 100,  30, 180];
+// Label 0 = background (transparent by default; toggled by showBackground)
+const TISSUE_A = [  0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255];
+
+function buildColormap(showBackground: boolean) {
+  return {
+    R: TISSUE_R,
+    G: TISSUE_G,
+    B: TISSUE_B,
+    A: TISSUE_A.map((a, i) => (i === 0 ? (showBackground ? 180 : 0) : a)),
+  };
+}
+
 interface Props {
   inputUrl: string; // blob URL of original file for immediate display
   sessionId: string;
@@ -19,6 +37,7 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const [loadedResults, setLoadedResults] = useState<Record<string, boolean>>({});
   const [initialized, setInitialized] = useState(false);
+  const [showBackground, setShowBackground] = useState(false);
 
   // Get layout class based on number of models
   const getWidthClass = (count: number) => {
@@ -104,17 +123,17 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
             const blob = await getResult(sessionId, model);
             const buffer = await blob.arrayBuffer();
 
-            // Add segmentation as overlay (volume index 1) with FreeSurfer colormap
+            // Add segmentation as overlay (volume index 1)
             await nv.loadFromArrayBuffer(buffer, `${model}.nii.gz`);
 
-            // Set colormap for segmentation - use freesurfer for label visualization
+            // Use explicit per-label RGBA (setColormapLabel) instead of a
+            // named colormap — avoids cal_min/cal_max auto-detection issues
+            // that cause individual tissue classes to map to transparent LUT entries.
             if (nv.volumes.length > 1) {
-              const vol = nv.volumes[1];
-              vol.cal_min = 0;
-              vol.cal_max = 11; // 12 tissue classes: labels 0-11
-              nv.setColormap(vol.id, "freesurfer");
+              (nv.volumes[1] as any).setColormapLabel(buildColormap(showBackground));
             }
-            nv.setOpacity(1, 0.5); // Semi-transparent overlay
+            nv.setOpacity(1, 0.5);
+            nv.updateGLVolume();
             nv.drawScene();
 
             setLoadedResults((prev) => ({ ...prev, [model]: true }));
@@ -129,6 +148,19 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
       loadResults();
     }
   }, [progress, sessionId, models, initialized, loadedResults]);
+
+  // Re-apply colormap when background visibility is toggled
+  useEffect(() => {
+    if (!initialized) return;
+    for (const model of models) {
+      const nv = nvRefs.current[model];
+      if (nv && nv.volumes.length > 1) {
+        (nv.volumes[1] as any).setColormapLabel(buildColormap(showBackground));
+        nv.updateGLVolume();
+        nv.drawScene();
+      }
+    }
+  }, [showBackground, models, initialized]);
 
   // Update view mode for all instances
   useEffect(() => {
@@ -197,14 +229,23 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
 
   return (
     <div className="w-full bg-black p-4">
-      {/* View toggle button */}
-      <div className="flex justify-center mb-4">
+      {/* Controls */}
+      <div className="flex justify-center items-center gap-6 mb-4">
         <button
           onClick={toggleViewMode}
           className="px-4 py-2 text-sm bg-gray-800 text-white rounded-sm hover:bg-gray-700"
         >
           Switch to {viewMode === "2d" ? "3D" : "2D"} View
         </button>
+        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={showBackground}
+            onChange={(e) => setShowBackground(e.target.checked)}
+            className="accent-amber-400 w-4 h-4 cursor-pointer"
+          />
+          Show background
+        </label>
       </div>
 
       {/* Canvases in side-by-side layout (matching v1) */}
