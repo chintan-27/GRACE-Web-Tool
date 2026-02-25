@@ -70,19 +70,19 @@ services:
               count: all
               capabilities: [gpu]
 
-  # CROWN frontend
-  ui:
-    build:
-      context: ./ui_v2
-      dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://10.15.224.253:8000}
-    container_name: whs-ui
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
-    depends_on:
-      - api
+  # CROWN frontend — deployed on Vercel, not run here
+  # ui:
+  #   build:
+  #     context: ./ui_v2
+  #     dockerfile: Dockerfile
+  #     args:
+  #       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://10.15.224.253:8000}
+  #   container_name: whs-ui
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   depends_on:
+  #     - api
 
 volumes:
   redis_data:
