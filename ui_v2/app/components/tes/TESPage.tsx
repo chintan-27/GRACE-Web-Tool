@@ -3,7 +3,7 @@
 import { useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, Zap, Check, AlertTriangle,
+  ArrowLeft, Zap, Check, AlertTriangle, Construction,
   RotateCcw, GitCompare, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -108,8 +108,8 @@ function getSpaceLabel(model: string) {
 // ─── Small helpers ────────────────────────────────────────────────────────────
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-foreground-muted">
-      {children}
+    <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
+      // {children}
     </p>
   );
 }
@@ -355,7 +355,7 @@ export default function TESPage() {
             <div className="rounded-md bg-accent/15 p-1">
               <Zap className="h-3.5 w-3.5 text-accent" />
             </div>
-            <span className="text-sm font-semibold text-foreground">TES Simulation</span>
+            <span className="font-mono text-xs font-bold uppercase tracking-widest text-foreground">TES Simulation</span>
           </div>
         </div>
 
@@ -391,7 +391,7 @@ export default function TESPage() {
                       )}>
                         {on && <Check className="h-2.5 w-2.5 text-white" />}
                       </div>
-                      <span className="font-medium">{getDisplayName(model)}</span>
+                      <span className="font-mono font-semibold tracking-wide">{getDisplayName(model)}</span>
                     </div>
                     <span className={cn(
                       "rounded-full px-1.5 py-0.5 text-[10px] font-medium",
@@ -409,7 +409,7 @@ export default function TESPage() {
           <div>
             <SectionLabel>Solver</SectionLabel>
             <div className="grid grid-cols-3 gap-1.5">
-              {(["simnibs", "roast", "both"] as Solver[]).map(s => (
+              {(["roast", "simnibs", "both"] as Solver[]).map(s => (
                 <button
                   key={s}
                   type="button"
@@ -419,6 +419,7 @@ export default function TESPage() {
                     solver === s
                       ? "border-accent bg-accent/10 text-accent"
                       : "border-border bg-background text-foreground-muted hover:border-accent/30",
+                    s === "simnibs" && "opacity-60",
                   )}
                 >
                   {s === "simnibs" ? "SimNIBS" : s === "roast" ? "ROAST" : "Both"}
@@ -430,6 +431,29 @@ export default function TESPage() {
               {solver === "roast"   && "MATLAB MCR pipeline, 11-tissue conductivities"}
               {solver === "both"    && "Both solvers run sequentially — enables side-by-side comparison"}
             </p>
+
+            {/* SimNIBS not-ready notice */}
+            {(solver === "simnibs" || solver === "both") && (
+              <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
+                <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                <div className="space-y-0.5">
+                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">
+                    Under Development
+                  </p>
+                  <p className="text-[11px] leading-snug text-foreground-muted">
+                    SimNIBS integration is not yet at the correct version. Please use{" "}
+                    <button
+                      type="button"
+                      onClick={() => setSolver("roast")}
+                      className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover"
+                    >
+                      ROAST
+                    </button>{" "}
+                    for reliable results.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* ── Montage presets ── */}
@@ -581,7 +605,7 @@ export default function TESPage() {
                 ))}
               </div>
               <p className="mt-1.5 text-[11px] text-foreground-muted">
-                {quality === "fast" ? "~1–2 min, coarser mesh" : "~3–5 min, full resolution"}
+                {quality === "fast" ? "~5–10 min, coarser mesh" : "~15–25 min, full resolution"}
               </p>
             </div>
           )}
