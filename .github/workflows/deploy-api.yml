@@ -36,10 +36,12 @@ jobs:
             git checkout main
             git reset --hard origin/main
 
-            echo "[deploy] Rebuilding and restarting containers..."
+            echo "[deploy] Building new image (old container stays up during build)..."
             cd /home/chintan/GRACE-Web-Tool
+            DOCKER_BUILDKIT=1 docker compose --env-file ./api_v2/.env build api
+
+            echo "[deploy] Swapping containers (minimal downtime)..."
             docker compose --env-file ./api_v2/.env down || true
-            docker compose --env-file ./api_v2/.env build api
             docker compose --env-file ./api_v2/.env up -d
 
             echo "[deploy] Checking container status..."
