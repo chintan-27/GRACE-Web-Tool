@@ -38,9 +38,9 @@ jobs:
 
             echo "[deploy] Rebuilding and restarting containers..."
             cd /home/chintan/GRACE-Web-Tool
-            docker compose down || true
-            docker compose build api
-            docker compose up -d
+            docker compose --env-file ./api_v2/.env down || true
+            docker compose --env-file ./api_v2/.env build api
+            docker compose --env-file ./api_v2/.env up -d
 
             echo "[deploy] Checking container status..."
             docker compose ps
