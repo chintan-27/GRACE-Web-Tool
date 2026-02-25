@@ -108,7 +108,12 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
             await nv.loadFromArrayBuffer(buffer, `${model}.nii.gz`);
 
             // Set colormap for segmentation - use freesurfer for label visualization
-            nv.setColormap(nv.volumes[1].id, "freesurfer");
+            if (nv.volumes.length > 1) {
+              const vol = nv.volumes[1];
+              vol.cal_min = 0;
+              vol.cal_max = 11; // 12 tissue classes: labels 0-11
+              nv.setColormap(vol.id, "freesurfer");
+            }
             nv.setOpacity(1, 0.5); // Semi-transparent overlay
             nv.drawScene();
 

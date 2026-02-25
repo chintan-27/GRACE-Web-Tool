@@ -453,7 +453,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              ⚡ Fast (~20–35 min)
+              ⚡ Fast (~10–15 min)
             </button>
             <button
               type="button"
@@ -463,11 +463,14 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
               )}
             >
-              🎯 Standard (~40–60 min)
+              🎯 Standard (~20–30 min)
             </button>
           </div>
           <p className="text-xs text-foreground-muted">
             {quality === "fast" ? "Coarser mesh, faster solve — good for exploration." : "Full mesh resolution — recommended for final results."}
+          </p>
+          <p className="text-[11px] text-foreground-muted/60 mt-1">
+            First run after deploy may take 3–5 min longer (runtime cache cold start).
           </p>
         </div>
       )}
