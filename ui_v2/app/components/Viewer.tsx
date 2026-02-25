@@ -37,7 +37,7 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const [loadedResults, setLoadedResults] = useState<Record<string, boolean>>({});
   const [initialized, setInitialized] = useState(false);
-  const [showBackground, setShowBackground] = useState(false);
+  const [showBackground, setShowBackground] = useState<Record<string, boolean>>({});
 
   // Get layout class based on number of models
   const getWidthClass = (count: number) => {
@@ -130,7 +130,7 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
             // named colormap — avoids cal_min/cal_max auto-detection issues
             // that cause individual tissue classes to map to transparent LUT entries.
             if (nv.volumes.length > 1) {
-              (nv.volumes[1] as any).setColormapLabel(buildColormap(showBackground));
+              (nv.volumes[1] as any).setColormapLabel(buildColormap(showBackground[model] ?? false));
             }
             nv.setOpacity(1, 0.5);
             nv.updateGLVolume();
@@ -149,18 +149,15 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
     }
   }, [progress, sessionId, models, initialized, loadedResults]);
 
-  // Re-apply colormap when background visibility is toggled
-  useEffect(() => {
-    if (!initialized) return;
-    for (const model of models) {
-      const nv = nvRefs.current[model];
-      if (nv && nv.volumes.length > 1) {
-        (nv.volumes[1] as any).setColormapLabel(buildColormap(showBackground));
-        nv.updateGLVolume();
-        nv.drawScene();
-      }
+  // Re-apply colormap for a single model when its background toggle changes
+  const applyColormap = useCallback((model: string, showBg: boolean) => {
+    const nv = nvRefs.current[model];
+    if (nv && nv.volumes.length > 1) {
+      (nv.volumes[1] as any).setColormapLabel(buildColormap(showBg));
+      nv.updateGLVolume();
+      nv.drawScene();
     }
-  }, [showBackground, models, initialized]);
+  }, []);
 
   // Update view mode for all instances
   useEffect(() => {
@@ -229,23 +226,14 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
 
   return (
     <div className="w-full bg-black p-4">
-      {/* Controls */}
-      <div className="flex justify-center items-center gap-6 mb-4">
+      {/* View toggle button */}
+      <div className="flex justify-center mb-4">
         <button
           onClick={toggleViewMode}
           className="px-4 py-2 text-sm bg-gray-800 text-white rounded-sm hover:bg-gray-700"
         >
           Switch to {viewMode === "2d" ? "3D" : "2D"} View
         </button>
-        <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={showBackground}
-            onChange={(e) => setShowBackground(e.target.checked)}
-            className="accent-amber-400 w-4 h-4 cursor-pointer"
-          />
-          Show background
-        </label>
       </div>
 
       {/* Canvases in side-by-side layout (matching v1) */}
@@ -273,9 +261,26 @@ export default function Viewer({ inputUrl, sessionId, models, progress }: Props)
                 height={height}
               />
 
-              {/* Model label */}
-              <div className="text-center mt-2 font-semibold text-white">
-                {model.toUpperCase().replace("-NATIVE", "").replace("-FS", "")}
+              {/* Model label + background toggle */}
+              <div className="flex items-center justify-center gap-3 mt-2">
+                <div className="font-semibold text-white">
+                  {model.toUpperCase().replace("-NATIVE", "").replace("-FS", "")}
+                </div>
+                {loadedResults[model] && (
+                  <label className="flex items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showBackground[model] ?? false}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setShowBackground((prev) => ({ ...prev, [model]: val }));
+                        applyColormap(model, val);
+                      }}
+                      className="accent-amber-400 w-3.5 h-3.5 cursor-pointer"
+                    />
+                    Show bg
+                  </label>
+                )}
               </div>
 
               {/* Progress or Download button (matching v1) */}
