@@ -31,12 +31,12 @@ services:
       - ./api_v2/logs:/app/logs
       # FreeSurfer license file
       - ${FREESURFER_LICENSE_PATH:-/home/chintan/licenses/freesurfer.txt}:/usr/local/freesurfer/license.txt:ro
-      # ROAST-11 compiled binary directory
-      - ${ROAST_HOST_PATH:-/home/chintan/roast11/build}:/opt/roast/build:ro
-      # MATLAB Component Runtime (required by ROAST)
-      - ${MATLAB_RUNTIME_HOST:-/home/chintan/MATLAB/MATLAB_Runtime/R2025b}:/opt/mcr/R2025b:ro
-      # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)
-      - ${SIMNIBS_HOST_PATH:-/home/chintan/SimNIBS-4.5.0}:/opt/simnibs:ro
+      # ROAST-11 compiled binary directory  (api_v2/.env: ROAST_BUILD_DIR)
+      - ${ROAST_BUILD_DIR:-/home/chintan/roast11/build}:/opt/roast/build:ro
+      # MATLAB Component Runtime (required by ROAST)  (api_v2/.env: MATLAB_RUNTIME)
+      - ${MATLAB_RUNTIME:-/home/chintan/MATLAB/MATLAB_Runtime/R2025b}:/opt/mcr/R2025b:ro
+      # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)  (api_v2/.env: SIMNIBS_HOME)
+      - ${SIMNIBS_HOME:-/home/chintan/SimNIBS-4.5}:/opt/simnibs:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
