@@ -29,10 +29,11 @@ class ModelRunner:
       - log & SSE events
     """
 
-    def __init__(self, model_name: str, session_id: str, gpu_id: int):
+    def __init__(self, model_name: str, session_id: str, gpu_id: int, input_space: str = "native"):
         self.model_name = model_name
         self.session_id = session_id
         self.gpu_id = gpu_id
+        self.input_space = input_space  # "native" or "freesurfer"
 
         self.config = get_model_config(model_name)
         self.spatial_size = self.config["spatial_size"]
@@ -196,24 +197,31 @@ class ModelRunner:
 
         session_log(self.session_id, f"[{self.model_name}] Saved to {out_path}")
 
-        # For FreeSurfer models, convert segmentation back to native space orientation
-        if self.config.get("space") == "freesurfer":
+        # For FreeSurfer models whose input was native-space, convert the FS-space
+        # output back to native space so the caller gets a native-space result.
+        # If the input was already in FreeSurfer space there is no native reference
+        # to register against — skip the conversion entirely.
+        is_fs_model = self.config.get("space") == "freesurfer"
+        input_was_native = self.input_space != "freesurfer"
+
+        if is_fs_model and input_was_native:
             self._emit("native_conversion_start", 85)
             session_log(self.session_id, f"[{self.model_name}] Converting output to native space orientation")
 
             native_input = session_input_native(self.session_id)
-            fs_output = out_path  # Current output in FS space
+            fs_output = out_path
             native_output = out_path.parent / "output_native.nii.gz"
 
             ok = convert_to_native(fs_output, native_input, native_output, self.session_id)
 
             if ok:
-                # Replace FS output with native output
-                fs_output.rename(out_path.parent / "output_fs.nii.gz")  # Keep FS version
-                native_output.rename(out_path)  # Make native version the default
+                fs_output.rename(out_path.parent / "output_fs.nii.gz")
+                native_output.rename(out_path)
                 session_log(self.session_id, f"[{self.model_name}] Native space output saved as default")
             else:
                 session_log(self.session_id, f"[{self.model_name}] WARNING: Native conversion failed, keeping FS-space output")
+        elif is_fs_model:
+            session_log(self.session_id, f"[{self.model_name}] Input was FreeSurfer space — skipping native conversion")
 
         self._emit("model_complete", 100)
 

@@ -137,30 +137,55 @@ def _find_simnibs_python() -> str:
     )
 
 
-def _find_charm() -> str:
+def _charm_cmd() -> list[str]:
     """
-    Resolve the charm executable path.
-    Priority: SIMNIBS_HOME/bin/charm → which charm (using augmented PATH).
-    Raises FileNotFoundError with a descriptive message if nothing found.
+    Return the command list prefix for running charm.
+
+    The shell wrapper at SIMNIBS_HOME/bin/charm contains a hardcoded absolute
+    Python path written at install time (e.g. /home/chintan/SimNIBS-4.5/...).
+    When SimNIBS is bind-mounted at a different path inside the container
+    (e.g. /opt/simnibs), that hardcoded path no longer exists and the wrapper
+    fails with "No such file or directory".
+
+    This function detects that case and bypasses the broken wrapper by calling
+    the SimNIBS Python interpreter directly:
+        [simnibs_env/bin/python3, -m, simnibs.cli.charm]
     """
     home = _find_simnibs_home()
     if home:
-        candidate = Path(home) / "bin" / "charm"
-        if candidate.exists():
-            return str(candidate)
+        wrapper = Path(home) / "bin" / "charm"
+        if wrapper.exists():
+            # Check whether the Python path hardcoded in the wrapper is usable.
+            # If not (e.g. installed on host, mounted at a different container path),
+            # fall through to the direct Python invocation below.
+            try:
+                first_lines = wrapper.read_text(errors="ignore")[:512]
+                import re as _re
+                m = _re.search(r'(/\S+/simnibs_env/bin/python\S*)', first_lines)
+                if m and Path(m.group(1)).exists():
+                    return [str(wrapper)]   # wrapper's Python path is reachable
+                elif not m:
+                    return [str(wrapper)]   # no hardcoded path → assume it works
+            except Exception:
+                return [str(wrapper)]
 
-    # Try system PATH augmented with SIMNIBS_HOME/bin
+        # Wrapper has a broken hardcoded Python path → call simnibs_env Python directly
+        for pyname in ("python3", "python"):
+            py = Path(home) / "simnibs_env" / "bin" / pyname
+            if py.exists():
+                return [str(py), "-m", "simnibs.cli.charm"]
+
+    # Try system PATH as last resort
     augmented_path = _simnibs_env().get("PATH")
     found = shutil.which("charm", path=augmented_path)
     if found:
-        return found
+        return [found]
 
     tried = str(Path(home) / "bin" / "charm") if home else "(SIMNIBS_HOME not set)"
     raise FileNotFoundError(
-        f"SimNIBS 'charm' binary not found. Tried: {tried}. "
+        f"SimNIBS 'charm' not found. Tried: {tried}. "
         f"SIMNIBS_HOME={SIMNIBS_HOME!r}. "
-        "Ensure SIMNIBS_HOME env var points to your SimNIBS install directory "
-        "and that it is mounted/accessible inside the container."
+        "Ensure SIMNIBS_HOME is set and the installation is accessible."
     )
 
 
@@ -315,7 +340,7 @@ class SimNIBSRunner:
         # Step 1: atlas registration
         session_log(self.session_id, "[SimNIBS] Charm base 1/2: initatlas…")
         self._run_proc(
-            [_find_charm(), SUBJECT, str(t1_nii), "--initatlas"],
+            _charm_cmd() + [SUBJECT, str(t1_nii), "--initatlas"],
             "charm-base",
             base_work,
             deadline,
@@ -450,7 +475,7 @@ class SimNIBSRunner:
 
         # Step 5 — build mesh from our label image
         session_log(self.session_id, "[SimNIBS] charm --mesh…")
-        cmd      = [_find_charm(), SUBJECT, "--mesh"]
+        cmd      = _charm_cmd() + [SUBJECT, "--mesh"]
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
         session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
 

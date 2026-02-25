@@ -79,7 +79,7 @@ class GPUScheduler:
         if job_id:
             log_info(job_id, f"GPU {gpu_id} released")
 
-    def _run_single_model(self, job_id: str, model_name: str, input_path: str):
+    def _run_single_model(self, job_id: str, model_name: str, input_path: str, input_space: str = "native"):
         """
         Run a single model on an available GPU.
         Waits for a GPU, runs inference, releases GPU.
@@ -97,7 +97,7 @@ class GPUScheduler:
         set_job_status(job_id, model_name, "running")
 
         try:
-            runner = ModelRunner(model_name, job_id, gpu_id)
+            runner = ModelRunner(model_name, job_id, gpu_id, input_space=input_space)
             runner.run(Path(input_path))
             set_job_status(job_id, model_name, "complete")
             return (model_name, True, None)
@@ -135,13 +135,16 @@ class GPUScheduler:
         # Each thread will wait for its own GPU
         errors = []
 
+        input_space = payload.get("space", "native")
+
         with ThreadPoolExecutor(max_workers=min(len(steps), self.num_gpus)) as executor:
             futures = {
                 executor.submit(
                     self._run_single_model,
                     job_id,
                     step["model"],
-                    step["input_path"]
+                    step["input_path"],
+                    input_space,
                 ): step["model"]
                 for step in steps
             }
