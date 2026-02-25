@@ -83,6 +83,22 @@ _GETDP_RANGES = [
 ]
 
 
+def _resolve_mcr(base: Path) -> Path:
+    """
+    MATLAB Runtime installers sometimes place libraries under a version
+    subdirectory (e.g. R2025b/v925/runtime/glnxa64/).  If runtime/ doesn't
+    exist directly under *base*, look one level deeper for the first subdir
+    that contains a runtime/ folder.
+    """
+    if (base / "runtime").is_dir():
+        return base
+    if base.is_dir():
+        for sub in sorted(base.iterdir()):
+            if sub.is_dir() and (sub / "runtime").is_dir():
+                return sub
+    return base  # will fail with a clear MCR error from the launcher
+
+
 class ROASTRunner:
     def __init__(self, session_id: str, model_name: str, payload: dict):
         self.session_id = session_id
@@ -167,7 +183,10 @@ class ROASTRunner:
                 f"ROAST launcher not found: {launcher}. "
                 "Ensure roast-11/build/ is deployed on this server."
             )
-        return [str(launcher), str(MATLAB_RUNTIME), str(config_path)]
+
+        mcr = _resolve_mcr(MATLAB_RUNTIME)
+        session_log(self.session_id, f"[ROAST] Using MCR at: {mcr}")
+        return [str(launcher), str(mcr), str(config_path)]
 
     # ------------------------------------------------------------------
     def run(self):
