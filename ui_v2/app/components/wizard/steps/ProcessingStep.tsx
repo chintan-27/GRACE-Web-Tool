@@ -29,12 +29,22 @@ export default function ProcessingStep() {
     <div className="mx-auto max-w-3xl">
       {/* Header */}
       <div className="mb-8 text-center">
+        <div className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
+          {status === "running" && (
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+            </span>
+          )}
+          {status === "complete" && <span className="text-success">✓</span>}
+          // {status === "uploading" ? "uploading" : status === "queued" ? "queued" : status === "running" ? "inference running" : "done"}
+        </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
           {getStatusLabel()}
         </h1>
         {selectedFile && (
-          <p className="mt-2 text-foreground-secondary">
-            Processing: {selectedFile.name}
+          <p className="mt-2 font-mono text-sm text-foreground-secondary">
+            {selectedFile.name}
           </p>
         )}
       </div>
@@ -50,8 +60,8 @@ export default function ProcessingStep() {
 
           {sessionId && (
             <div className="mt-4 text-center">
-              <p className="text-xs text-foreground-muted">Session ID</p>
-              <p className="mt-1 font-mono text-xs text-foreground-secondary">
+              <p className="text-[10px] font-mono font-bold uppercase tracking-widest text-accent">session</p>
+              <p className="mt-1 font-mono text-xs text-foreground-secondary border border-border rounded px-2 py-0.5 inline-block">
                 {sessionId.slice(0, 8)}...
               </p>
             </div>
@@ -60,8 +70,8 @@ export default function ProcessingStep() {
 
         {/* Right: Model Cards */}
         <div className="space-y-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground-muted">
-            Model Progress
+          <h2 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent">
+            // Model Pipeline
           </h2>
 
           <div className="space-y-3">
@@ -84,13 +94,13 @@ export default function ProcessingStep() {
 
       {/* Info Box */}
       <div className="mt-6 rounded-xl border border-border-subtle bg-background-secondary p-4">
-        <h3 className="text-sm font-medium text-foreground">
-          Processing Information
+        <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">
+          // Runtime Info
         </h3>
         <ul className="mt-2 space-y-1 text-sm text-foreground-secondary">
           <li>Models are processed sequentially on available GPUs</li>
-          <li>Progress updates are streamed in real-time</li>
-          <li>You can stay on this page or leave - your session will continue</li>
+          <li>Progress updates are streamed in real-time via SSE</li>
+          <li>You can stay on this page or leave — your session will continue</li>
         </ul>
       </div>
     </div>

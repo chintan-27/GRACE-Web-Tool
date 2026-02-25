@@ -1,5 +1,7 @@
 from pathlib import Path
 import uuid
+import shutil
+import time
 
 from config import SESSION_DIR
 from services.logger import log_info
@@ -28,6 +30,56 @@ def model_output_path(session_id: str, model_name: str) -> Path:
     model_dir = session_path(session_id) / model_name
     model_dir.mkdir(parents=True, exist_ok=True)
     return model_dir / "output.nii.gz"
+
+
+# -----------------------------------------------------------
+# ROAST HELPERS
+# -----------------------------------------------------------
+def roast_working_dir(session_id: str, model_name: str = "") -> Path:
+    if model_name:
+        d = session_path(session_id) / "roast" / model_name
+    else:
+        d = session_path(session_id) / "roast"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def roast_output_path(session_id: str, output_type: str, model_name: str = "") -> Path:
+    filenames = {
+        "voltage": "T1_tDCSLAB_v.nii",
+        "efield":  "T1_tDCSLAB_e.nii",
+        "emag":    "T1_tDCSLAB_emag.nii",
+    }
+    if output_type not in filenames:
+        raise ValueError(f"Unknown ROAST output type: {output_type}")
+    return roast_working_dir(session_id, model_name) / filenames[output_type]
+
+
+# -----------------------------------------------------------
+# SIMNIBS HELPERS
+# -----------------------------------------------------------
+def simnibs_working_dir(session_id: str, model_name: str) -> Path:
+    d = session_path(session_id) / "simnibs" / model_name
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def simnibs_charm_base_dir(session_id: str) -> Path:
+    """
+    Shared charm base directory for a session.
+    Contains T1.nii + m2m_subject/ (atlas registration + ANTs MNI warp).
+    Built once and reused by all models within the same session.
+    """
+    d = session_path(session_id) / "simnibs" / "_charm_base"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def simnibs_output_path(session_id: str, model_name: str, output_type: str) -> Path:
+    """Collected SimNIBS output NIfTIs (emag / voltage), per segmentation model."""
+    if output_type not in ("emag", "voltage"):
+        raise ValueError(f"Unknown SimNIBS output type: {output_type}")
+    return simnibs_working_dir(session_id, model_name) / "outputs" / f"{output_type}.nii.gz"
 
 
 # -----------------------------------------------------------
@@ -72,3 +124,32 @@ def session_log(session_id: str, message: str):
 # -----------------------------------------------------------
 def session_exists(session_id: str) -> bool:
     return session_path(session_id).exists()
+
+
+# -----------------------------------------------------------
+# CLEANUP
+# -----------------------------------------------------------
+def cleanup_old_sessions(max_age_hours: int = 24) -> int:
+    """
+    Delete session directories older than max_age_hours.
+    Returns number of sessions deleted.
+    """
+    cutoff = time.time() - (max_age_hours * 3600)
+    deleted = 0
+
+    sessions_root = Path(SESSION_DIR)
+    if not sessions_root.exists():
+        return 0
+
+    for session_dir in sessions_root.iterdir():
+        if not session_dir.is_dir():
+            continue
+        if session_dir.stat().st_mtime < cutoff:
+            try:
+                shutil.rmtree(session_dir)
+                log_info("SYSTEM", f"Cleaned up old session: {session_dir.name} (>{max_age_days}d old)")
+                deleted += 1
+            except Exception as e:
+                log_info("SYSTEM", f"Failed to delete session {session_dir.name}: {e}")
+
+    return deleted

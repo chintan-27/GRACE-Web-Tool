@@ -2,33 +2,33 @@
 @import "tw-animate-css";
 
 @theme {
-  /* Colors - Dark mode (default) */
-  --color-background: hsl(225 25% 8%);
-  --color-background-secondary: hsl(225 22% 11%);
-  --color-surface: hsl(225 20% 14%);
-  --color-surface-elevated: hsl(225 18% 18%);
-  --color-border: hsl(225 15% 22%);
-  --color-border-subtle: hsl(225 12% 18%);
-  --color-foreground: hsl(210 40% 98%);
-  --color-foreground-secondary: hsl(215 20% 75%);
-  --color-foreground-muted: hsl(215 15% 55%);
+  /* Colors - Dark mode (default) — neutral dark slate */
+  --color-background: hsl(220 15% 9%);
+  --color-background-secondary: hsl(220 13% 12%);
+  --color-surface: hsl(220 12% 15%);
+  --color-surface-elevated: hsl(220 11% 20%);
+  --color-border: hsl(220 10% 25%);
+  --color-border-subtle: hsl(220 9% 20%);
+  --color-foreground: hsl(40 25% 97%);
+  --color-foreground-secondary: hsl(35 12% 72%);
+  --color-foreground-muted: hsl(30 8% 52%);
 
-  /* Accent - Vibrant Blue-Cyan (modern medical) */
-  --color-accent: hsl(200 95% 48%);
-  --color-accent-hover: hsl(200 95% 55%);
-  --color-accent-foreground: hsl(200 100% 98%);
-  --color-accent-muted: hsl(200 50% 25%);
+  /* Accent - Amber / gold */
+  --color-accent: hsl(38 95% 55%);
+  --color-accent-hover: hsl(38 95% 62%);
+  --color-accent-foreground: hsl(30 50% 10%);
+  --color-accent-muted: hsl(38 60% 22%);
 
   /* Status colors */
-  --color-success: hsl(152 69% 45%);
-  --color-success-foreground: hsl(152 69% 98%);
+  --color-success: hsl(152 65% 42%);
+  --color-success-foreground: hsl(152 65% 97%);
   --color-warning: hsl(43 96% 56%);
   --color-warning-foreground: hsl(43 96% 10%);
-  --color-error: hsl(0 84% 60%);
-  --color-error-foreground: hsl(0 84% 95%);
+  --color-error: hsl(0 80% 58%);
+  --color-error-foreground: hsl(0 80% 95%);
 
   /* Ring */
-  --color-ring: hsl(200 95% 48%);
+  --color-ring: hsl(38 95% 55%);
 
   /* Radius */
   --radius-2xl: 1rem;
@@ -39,10 +39,10 @@
   --spacing-22: 5.5rem;
 
   /* Shadows */
-  --shadow-glow: 0 0 20px -5px hsl(200 95% 48% / 0.4);
-  --shadow-glow-lg: 0 0 30px -5px hsl(200 95% 48% / 0.5);
-  --shadow-medical: 0 4px 6px -1px hsl(225 50% 3% / 0.2), 0 2px 4px -2px hsl(225 50% 3% / 0.15);
-  --shadow-medical-lg: 0 10px 15px -3px hsl(225 50% 3% / 0.2), 0 4px 6px -4px hsl(225 50% 3% / 0.15);
+  --shadow-glow: 0 0 20px -5px hsl(38 95% 55% / 0.35);
+  --shadow-glow-lg: 0 0 30px -5px hsl(38 95% 55% / 0.45);
+  --shadow-medical: 0 4px 6px -1px hsl(220 50% 3% / 0.25), 0 2px 4px -2px hsl(220 50% 3% / 0.18);
+  --shadow-medical-lg: 0 10px 15px -3px hsl(220 50% 3% / 0.25), 0 4px 6px -4px hsl(220 50% 3% / 0.18);
 
   /* Animations */
   --animate-fade-in: fadeIn 0.3s ease-out;
@@ -83,28 +83,28 @@
 
 /* Light mode overrides */
 .light {
-  --color-background: hsl(210 33% 98%);
-  --color-background-secondary: hsl(210 30% 96%);
+  --color-background: hsl(40 20% 97%);
+  --color-background-secondary: hsl(38 18% 94%);
   --color-surface: hsl(0 0% 100%);
-  --color-surface-elevated: hsl(210 25% 98%);
-  --color-border: hsl(214 32% 88%);
-  --color-border-subtle: hsl(214 25% 92%);
-  --color-foreground: hsl(225 25% 12%);
-  --color-foreground-secondary: hsl(215 16% 40%);
-  --color-foreground-muted: hsl(215 12% 55%);
+  --color-surface-elevated: hsl(40 15% 98%);
+  --color-border: hsl(35 20% 85%);
+  --color-border-subtle: hsl(35 15% 90%);
+  --color-foreground: hsl(220 20% 12%);
+  --color-foreground-secondary: hsl(220 10% 38%);
+  --color-foreground-muted: hsl(220 8% 54%);
 
-  /* Accent - Vibrant Blue (darker for light mode contrast) */
-  --color-accent: hsl(200 95% 42%);
-  --color-accent-hover: hsl(200 95% 36%);
-  --color-accent-foreground: hsl(200 100% 98%);
-  --color-accent-muted: hsl(200 60% 92%);
+  /* Accent - Amber (darker for light mode contrast) */
+  --color-accent: hsl(33 95% 44%);
+  --color-accent-hover: hsl(33 95% 38%);
+  --color-accent-foreground: hsl(0 0% 100%);
+  --color-accent-muted: hsl(38 80% 90%);
 
   /* Ring */
-  --color-ring: hsl(200 95% 42%);
+  --color-ring: hsl(33 95% 44%);
 
   /* Shadows for light mode */
-  --shadow-medical: 0 4px 6px -1px hsl(225 30% 50% / 0.08), 0 2px 4px -2px hsl(225 30% 50% / 0.06);
-  --shadow-medical-lg: 0 10px 15px -3px hsl(225 30% 50% / 0.1), 0 4px 6px -4px hsl(225 30% 50% / 0.08);
+  --shadow-medical: 0 4px 6px -1px hsl(220 30% 50% / 0.08), 0 2px 4px -2px hsl(220 30% 50% / 0.06);
+  --shadow-medical-lg: 0 10px 15px -3px hsl(220 30% 50% / 0.1), 0 4px 6px -4px hsl(220 30% 50% / 0.08);
 }
 
 html.dark {
@@ -176,8 +176,8 @@ body,
 /* Accent glow effect */
 .accent-glow {
   box-shadow:
-    0 0 0 1px hsl(200 95% 48% / 0.3),
-    0 0 20px -5px hsl(200 95% 48% / 0.4);
+    0 0 0 1px hsl(38 95% 55% / 0.3),
+    0 0 20px -5px hsl(38 95% 55% / 0.4);
 }
 
 /* ============================================

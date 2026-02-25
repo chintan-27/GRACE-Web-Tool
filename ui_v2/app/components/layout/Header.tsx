@@ -60,16 +60,32 @@ export default function Header() {
     <>
       {/* Logo and Title */}
       <div className="flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-hover text-white shadow-md">
-          <Brain className="h-6 w-6" />
+        <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-hover shadow-glow">
+          <Brain className="h-6 w-6 text-accent-foreground" />
+          <span className="absolute -right-1 -top-1 flex h-3 w-3">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent opacity-60" />
+            <span className="relative inline-flex h-3 w-3 rounded-full bg-accent" />
+          </span>
         </div>
-        <div className="flex flex-col">
-          <span className="text-lg font-semibold tracking-tight text-foreground">
-            Whole Head Segmentator
-          </span>
-          <span className="text-xs text-foreground-muted">
-            Advanced MRI Segmentation Suite
-          </span>
+        <div className="flex flex-col gap-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xl font-bold tracking-[0.2em] text-foreground font-mono">
+              CROWN
+            </span>
+            <span className="rounded border border-accent/40 bg-accent-muted px-1.5 py-0.5 text-[9px] font-bold tracking-widest text-accent font-mono">
+              v2
+            </span>
+            <span className="rounded border border-border bg-surface px-1.5 py-0.5 text-[9px] font-semibold tracking-widest text-foreground-muted font-mono">
+              AI
+            </span>
+          </div>
+          <p className="text-[10px] font-mono text-foreground-muted leading-none">
+            <span className="font-bold text-accent">C</span>omprehensive{" "}
+            <span className="font-bold text-accent">R</span>econstruction{" "}
+            <span className="font-bold text-accent">O</span>f{" "}
+            <span className="font-bold text-accent">W</span>hole-head{" "}
+            <span className="font-bold text-accent">N</span>euromodulation
+          </p>
         </div>
       </div>
 

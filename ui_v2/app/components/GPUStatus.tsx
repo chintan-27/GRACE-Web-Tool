@@ -19,9 +19,9 @@ export default function GPUStatus() {
 
   return (
     <div className="rounded-xl border border-border bg-surface p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-foreground-muted mb-3 flex items-center gap-2">
-        <Server className="h-4 w-4" />
-        System Status
+      <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-3 flex items-center gap-2">
+        <Server className="h-3.5 w-3.5" />
+        // System Status
       </h3>
 
       <div className="space-y-3 text-sm">

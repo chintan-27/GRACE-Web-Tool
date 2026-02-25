@@ -40,18 +40,36 @@ class GPUScheduler:
         push_event(job_id, {"event": "queued"})
         log_event(job_id, {"event": "queued"})
 
-    def acquire_gpu(self, job_id: str, model_name: str):
+    def _gpu_free_memory_mib(self, gpu_id: int) -> float:
+        """Return actual free memory (MiB) for a GPU via nvidia-smi."""
+        try:
+            import subprocess
+            result = subprocess.check_output(
+                ["nvidia-smi", f"--id={gpu_id}",
+                 "--query-gpu=memory.free", "--format=csv,noheader,nounits"],
+                timeout=5
+            ).decode().strip()
+            return float(result.split("\n")[0])
+        except Exception:
+            return float("inf")  # can't check → don't block
+
+    def acquire_gpu(self, job_id: str, model_name: str, min_free_mib: float = 4096):
         """
-        Atomically find and lock a free GPU.
+        Atomically find and lock a free GPU that also has enough actual VRAM.
         Returns gpu_id if successful, None if no GPU available.
         """
         with self._gpu_lock:
             for gpu_id in range(self.num_gpus):
                 status = redis_client.hget(GPU_LOCK_KEY, gpu_id)
-                if status == "free":
-                    redis_client.hset(GPU_LOCK_KEY, gpu_id, f"{job_id}:{model_name}")
-                    log_info(job_id, f"GPU {gpu_id} acquired for {model_name}")
-                    return gpu_id
+                if status != "free":
+                    continue
+                free_mib = self._gpu_free_memory_mib(gpu_id)
+                if free_mib < min_free_mib:
+                    log_info(job_id, f"GPU {gpu_id} skipped — only {free_mib:.0f} MiB free")
+                    continue
+                redis_client.hset(GPU_LOCK_KEY, gpu_id, f"{job_id}:{model_name}")
+                log_info(job_id, f"GPU {gpu_id} acquired for {model_name} ({free_mib:.0f} MiB free)")
+                return gpu_id
         return None
 
     def release_gpu(self, gpu_id: int, job_id: str = None):

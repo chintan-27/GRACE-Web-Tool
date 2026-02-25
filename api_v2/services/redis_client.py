@@ -137,6 +137,125 @@ def get_progress(session_id: str, model: str) -> float:
 def push_sse_event(event: dict):
     redis_client.rpush(EVENT_STREAM, json.dumps(event))
 
+# -------------------------------------------------------------
+# ROAST queue
+# -------------------------------------------------------------
+ROAST_JOB_QUEUE = "roast_job_queue"
+ROAST_JOB_DATA_PREFIX = "roast_job_data:"
+ROAST_JOB_STATUS_PREFIX = "roast_job_status:"
+ROAST_PROGRESS_PREFIX = "roast_progress:"
+
+
+def enqueue_roast_job(session_id: str, payload: dict):
+    redis_client.set(ROAST_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.rpush(ROAST_JOB_QUEUE, session_id)
+
+
+def pop_roast_job() -> str | None:
+    return redis_client.lpop(ROAST_JOB_QUEUE)
+
+
+def get_roast_job_data(session_id: str) -> dict | None:
+    raw = redis_client.get(ROAST_JOB_DATA_PREFIX + session_id)
+    return json.loads(raw) if raw else None
+
+
+def set_roast_status(session_id: str, status: str, model_name: str = ""):
+    key = ROAST_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, status)
+
+
+def get_roast_status(session_id: str, model_name: str = "") -> str | None:
+    key = ROAST_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    return redis_client.get(key)
+
+
+def set_roast_progress(session_id: str, progress: float, model_name: str = ""):
+    key = ROAST_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, progress)
+
+
+def get_roast_progress(session_id: str, model_name: str = "") -> float:
+    key = ROAST_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    p = redis_client.get(key)
+    return float(p) if p else 0.0
+
+
+# -------------------------------------------------------------
+# SIMNIBS queue  (mirrors ROAST queue pattern)
+# -------------------------------------------------------------
+SIMNIBS_JOB_QUEUE         = "simnibs_job_queue"
+SIMNIBS_JOB_DATA_PREFIX   = "simnibs_job_data:"
+SIMNIBS_JOB_STATUS_PREFIX = "simnibs_job_status:"
+SIMNIBS_PROGRESS_PREFIX   = "simnibs_progress:"
+
+
+def enqueue_simnibs_job(session_id: str, payload: dict):
+    redis_client.set(SIMNIBS_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.rpush(SIMNIBS_JOB_QUEUE, session_id)
+
+
+def pop_simnibs_job() -> str | None:
+    return redis_client.lpop(SIMNIBS_JOB_QUEUE)
+
+
+def get_simnibs_job_data(session_id: str) -> dict | None:
+    raw = redis_client.get(SIMNIBS_JOB_DATA_PREFIX + session_id)
+    return json.loads(raw) if raw else None
+
+
+def set_simnibs_status(session_id: str, status: str, model_name: str = ""):
+    key = SIMNIBS_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, status)
+
+
+def get_simnibs_status(session_id: str, model_name: str = "") -> str | None:
+    key = SIMNIBS_JOB_STATUS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    return redis_client.get(key)
+
+
+def set_simnibs_progress(session_id: str, progress: float, model_name: str = ""):
+    key = SIMNIBS_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    redis_client.set(key, progress)
+
+
+def get_simnibs_progress(session_id: str, model_name: str = "") -> float:
+    key = SIMNIBS_PROGRESS_PREFIX + (f"{session_id}:{model_name}" if model_name else session_id)
+    p = redis_client.get(key)
+    return float(p) if p else 0.0
+
+
+# -------------------------------------------------------------
+# SimNIBS charm base lock  (one-per-session build coordination)
+# -------------------------------------------------------------
+CHARM_BASE_LOCK_PREFIX  = "simnibs_charm_base_lock:"
+CHARM_BASE_READY_PREFIX = "simnibs_charm_base_ready:"
+
+
+def acquire_charm_base_lock(session_id: str, ttl: int = 7200) -> bool:
+    """
+    Try to acquire the build lock for the session's shared charm base.
+    Returns True if this caller won the lock (should build).
+    Returns False if another worker already holds it (should wait).
+    TTL is a safety expiry so the lock never hangs permanently.
+    """
+    key = CHARM_BASE_LOCK_PREFIX + session_id
+    return bool(redis_client.set(key, "1", nx=True, ex=ttl))
+
+
+def release_charm_base_lock(session_id: str) -> None:
+    redis_client.delete(CHARM_BASE_LOCK_PREFIX + session_id)
+
+
+def set_charm_base_ready(session_id: str) -> None:
+    """Mark the session's charm base as fully built and ready to copy."""
+    redis_client.set(CHARM_BASE_READY_PREFIX + session_id, "1", ex=86400)
+
+
+def is_charm_base_ready(session_id: str) -> bool:
+    return bool(redis_client.exists(CHARM_BASE_READY_PREFIX + session_id))
+
+
 # -------------------------------------------------------
 # CLEANUP
 # -------------------------------------------------------
