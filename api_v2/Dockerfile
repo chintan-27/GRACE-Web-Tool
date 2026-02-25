@@ -29,6 +29,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgl1-mesa-glx \
+    # MATLAB Runtime (MCR) dependencies
+    libnss3 \
+    libnspr4 \
+    libxss1 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.11 as default
