@@ -29,7 +29,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgl1-mesa-glx \
-    # MATLAB Runtime (MCR) dependencies
+    # MATLAB Runtime (MCR) dependencies — full GUI stack for headless CEF plugin
     libnss3 \
     libnspr4 \
     libxss1 \
@@ -37,11 +37,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatk-bridge2.0-0 \
     libcups2 \
     libdrm2 \
+    libgbm1 \
     libxkbcommon0 \
     libxcomposite1 \
     libxdamage1 \
     libxfixes3 \
     libxrandr2 \
+    libxshmfence1 \
+    libasound2 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libpango-1.0-0 \
+    # Virtual framebuffer — lets MCR initialise display plugins headlessly
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Set Python 3.11 as default
