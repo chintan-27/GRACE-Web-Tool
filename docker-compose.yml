@@ -23,26 +23,42 @@ services:
     ports:
       - "8000:8100"
     volumes:
-      # Mount models directory (pre-trained weights) from dev location
-      - /home/chintan/wws_v2/api_v2/models:/app/models:ro
-      # Mount sessions directory for outputs
+      # Pre-trained model weights (read-only)
+      - ${MODELS_HOST_PATH:-/home/chintan/wws_v2/api_v2/models}:/app/models:ro
+      # Session outputs
       - ./api_v2/sessions:/app/sessions
-      # Mount logs directory
+      # Application logs
       - ./api_v2/logs:/app/logs
-      # Mount FreeSurfer license
-      - /home/chintan/licenses/freesurfer.txt:/usr/local/freesurfer/license.txt:ro
-      # Mount ROAST compiled binary
-      - /home/chintan/roast11/build:/home/chintan/roast11/build
+      # FreeSurfer license file
+      - ${FREESURFER_LICENSE_PATH:-/home/chintan/licenses/freesurfer.txt}:/usr/local/freesurfer/license.txt:ro
+      # ROAST-11 compiled binary directory
+      - ${ROAST_HOST_PATH:-/home/chintan/roast11/build}:/opt/roast/build:ro
+      # MATLAB Component Runtime (required by ROAST)
+      - ${MATLAB_RUNTIME_HOST:-/home/chintan/MATLAB/MATLAB_Runtime/R2025b}:/opt/mcr/R2025b:ro
+      # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)
+      - ${SIMNIBS_HOST_PATH:-/home/chintan/SimNIBS-4.5.0}:/opt/simnibs:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      # Redis
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - GPU_COUNT=4
+      # Security
       - JWT_SECRET=${JWT_SECRET:-change_me_in_production}
       - HMAC_SECRET=${HMAC_SECRET:-change_me_hmac_in_production}
-      - ROAST_BUILD_DIR=/home/chintan/roast11/build
-      - MATLAB_RUNTIME=/usr/local/MATLAB/MATLAB_Runtime/R2025b
+      # GPU
+      - GPU_COUNT=${GPU_COUNT:-4}
+      - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-3600}
+      # ROAST / MATLAB
+      - ROAST_BUILD_DIR=/opt/roast/build
+      - MATLAB_RUNTIME=/opt/mcr/R2025b
+      - ROAST_MAX_WORKERS=${ROAST_MAX_WORKERS:-2}
+      - ROAST_TIMEOUT_SECONDS=${ROAST_TIMEOUT_SECONDS:-7200}
+      # SimNIBS
+      - SIMNIBS_HOME=/opt/simnibs
+      - SIMNIBS_N_THREADS=${SIMNIBS_N_THREADS:-8}
+      - SIMNIBS_MAX_WORKERS=${SIMNIBS_MAX_WORKERS:-1}
+      - SIMNIBS_TIMEOUT_SECONDS=${SIMNIBS_TIMEOUT_SECONDS:-10800}
     depends_on:
       redis:
         condition: service_healthy
