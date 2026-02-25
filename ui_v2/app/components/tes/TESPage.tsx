@@ -605,7 +605,9 @@ export default function TESPage() {
                 ))}
               </div>
               <p className="mt-1.5 text-[11px] text-foreground-muted">
-                {quality === "fast" ? "~20–35 min, coarser mesh" : "~40–60 min, full resolution"}
+                {quality === "fast" ? "~10–15 min, coarser mesh" : "~20–30 min, full resolution"}
+                {" · "}
+                <span className="opacity-60">first run may be 3–5 min longer</span>
               </p>
             </div>
           )}
