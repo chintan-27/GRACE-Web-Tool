@@ -56,14 +56,17 @@ async def lifespan(app: FastAPI):
     t3.start()
     print("Session cleanup scheduler started (30-day retention)")
 
-    # Ensure ROAST binaries are executable
+    # Ensure ROAST binaries are executable (best-effort — skipped on read-only mounts)
     import stat
     from config import ROAST_BUILD_DIR
     for binary in ["roast_run", "run_roast_run.sh"]:
         p = ROAST_BUILD_DIR / binary
         if p.exists():
-            p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-            print(f"chmod +x {p}")
+            try:
+                p.chmod(p.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+                print(f"chmod +x {p}")
+            except OSError:
+                print(f"[warn] chmod skipped for {p} (read-only mount — ensure host file is executable)")
 
     yield
 

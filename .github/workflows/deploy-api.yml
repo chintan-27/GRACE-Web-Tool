@@ -39,7 +39,7 @@ jobs:
             echo "[deploy] Rebuilding and restarting containers..."
             cd /home/chintan/GRACE-Web-Tool
             docker compose down || true
-            docker compose build api ui
+            docker compose build api
             docker compose up -d
 
             echo "[deploy] Checking container status..."
