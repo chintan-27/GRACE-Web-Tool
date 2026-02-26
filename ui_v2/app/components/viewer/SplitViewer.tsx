@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Niivue } from "@niivue/niivue";
+import { Niivue, cmapper } from "@niivue/niivue";
 import { AlertTriangle } from "lucide-react";
 import { getResult } from "@/lib/api";
 import ViewerControls, { ColormapId } from "./ViewerControls";
@@ -46,13 +46,10 @@ function buildGraceLUT(showBackground: boolean) {
 // Alpha is forced to 255 for labels 1–11 so no tissue ever renders transparent,
 // regardless of the colormap's original alpha channel.
 function buildSteppedLUT(
-  nv: Niivue,
   cmapId: string,
   showBackground: boolean,
 ): { R: number[]; G: number[]; B: number[]; A: number[]; I: number[] } {
-  // Access NiiVue's internal cmapper to get the fully-interpolated 256-RGBA LUT.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const cmapper = (nv as any).cmapper;
+  // Get the fully-interpolated 256-RGBA LUT from NiiVue's module-level cmapper singleton.
   const lut: Uint8ClampedArray = cmapper.colormap(cmapId, false);
 
   // Sample one RGB color per label at evenly-spaced positions.
@@ -128,7 +125,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     // Build LUT: custom tissue colors for grace_seg_tissues, sampled gradient for all others.
     const lut = cmap === "grace_seg_tissues"
       ? buildGraceLUT(showBg)
-      : buildSteppedLUT(nv, cmap, showBg);
+      : buildSteppedLUT(cmap, showBg);
 
     nv.addColormap(OVERLAY_CMAP_KEY, lut);
     vol.colormap = OVERLAY_CMAP_KEY;
