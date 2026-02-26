@@ -21,15 +21,38 @@ const TISSUE_LABELS = [
 
 const MAX_LABEL = 11;
 
+// Mirror of TISSUE_COLORS in SplitViewer.tsx for the "grace_seg_tissues" case.
+// The viewer registers the LUT under a fixed key rather than "grace_seg_tissues",
+// so we keep these here to render the legend without needing the Niivue instance.
+const GRACE_TISSUE_COLORS: [number, number, number][] = [
+  [  0,   0,   0],  //  0: background
+  [240, 240, 240],  //  1: white matter
+  [120, 100, 100],  //  2: gray matter
+  [100, 180, 230],  //  3: CSF
+  [200, 160,  80],  //  4: compact bone
+  [230, 200, 130],  //  5: spongy bone
+  [250, 170, 100],  //  6: scalp
+  [ 40,  40,  80],  //  7: air cavities
+  [180,  40,  40],  //  8: muscle
+  [255, 230, 100],  //  9: fat
+  [210,  10,  30],  // 10: blood
+  [  0, 200, 180],  // 11: eye
+];
+
 function getLabelColors(colormapName: ColormapId): string[] {
-  // Use the interpolated 256-entry LUT — this matches how Niivue
-  // renders colormaps on volumes (normalizes voxel range to 0-255).
+  // "grace_seg_tissues" uses hand-crafted tissue colors not registered in cmapper.
+  if (colormapName === "grace_seg_tissues") {
+    return TISSUE_LABELS.map(({ id }) => {
+      const [r, g, b] = GRACE_TISSUE_COLORS[id];
+      return `rgb(${r}, ${g}, ${b})`;
+    });
+  }
+
+  // For all other colormaps, sample the interpolated 256-entry LUT at the
+  // same 12 positions the viewer uses — this keeps the legend in sync.
   const lut = cmapper.colormap(colormapName);
-
   return TISSUE_LABELS.map(({ id }) => {
-    // Label 0 is always black (background / transparent in the viewer)
     if (id === 0) return "rgb(0, 0, 0)";
-
     const pos = Math.round((id / MAX_LABEL) * 255) * 4;
     return `rgb(${lut[pos]}, ${lut[pos + 1]}, ${lut[pos + 2]})`;
   });

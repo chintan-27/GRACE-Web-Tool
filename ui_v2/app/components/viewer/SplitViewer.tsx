@@ -8,15 +8,13 @@ import ViewerControls, { ColormapId } from "./ViewerControls";
 import ComparisonSelector from "./ComparisonSelector";
 import SegmentationLegend from "./SegmentationLegend";
 
-// 12-class GRACE/DOMINO tissue colors (labels 0–11).
-// We build a 256-entry stepped LUT and register it via nv.addColormap so the
-// standard NiiVue rendering pipeline uses it. setColormapLabel is NOT used
-// because the named colormap property takes priority in the shader.
-// We also write robust_min/robust_max alongside cal_min/cal_max because
-// updateGLVolume resets cal values from the robust range when called.
-const GRACE_CMAP_KEY = "grace_seg_tissues";
+// Fixed registration key used for every segmentation overlay.
+// The LUT content is rebuilt on each apply; the key is always the same.
+const OVERLAY_CMAP_KEY = "__grace_overlay";
 
-const TISSUE_COLORS = [
+// Hand-crafted RGBA colors for the 12 GRACE/DOMINO tissue labels.
+// Used when colormap === "grace_seg_tissues".
+const TISSUE_COLORS: [number, number, number][] = [
   [  0,   0,   0],  //  0: background
   [240, 240, 240],  //  1: white matter
   [120, 100, 100],  //  2: gray matter
@@ -31,11 +29,45 @@ const TISSUE_COLORS = [
   [  0, 200, 180],  // 11: eye
 ];
 
+// Build a 256-entry stepped LUT from the hard-coded tissue colors.
 function buildGraceLUT(showBackground: boolean) {
   const R: number[] = [], G: number[] = [], B: number[] = [], A: number[] = [];
   for (let i = 0; i < 256; i++) {
     const label = Math.min(11, Math.round((i / 255) * 11));
     const [r, g, b] = TISSUE_COLORS[label];
+    R.push(r); G.push(g); B.push(b);
+    A.push(label === 0 ? (showBackground ? 180 : 0) : 255);
+  }
+  return { R, G, B, A, I: Array.from({ length: 256 }, (_, i) => i) };
+}
+
+// Build a 256-entry stepped LUT by sampling any NiiVue colormap at 12
+// evenly-spaced positions (one per tissue label 0–11).
+// Alpha is forced to 255 for labels 1–11 so no tissue ever renders transparent,
+// regardless of the colormap's original alpha channel.
+function buildSteppedLUT(
+  nv: Niivue,
+  cmapId: string,
+  showBackground: boolean,
+): { R: number[]; G: number[]; B: number[]; A: number[]; I: number[] } {
+  // Access NiiVue's internal cmapper to get the fully-interpolated 256-RGBA LUT.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const cmapper = (nv as any).cmapper;
+  const lut: Uint8ClampedArray = cmapper.colormap(cmapId, false);
+
+  // Sample one RGB color per label at evenly-spaced positions.
+  const labelColors: [number, number, number][] = [];
+  for (let k = 0; k < 12; k++) {
+    const lutIdx = Math.round((k / 11) * 255);
+    const base = lutIdx * 4;
+    labelColors.push([lut[base], lut[base + 1], lut[base + 2]]);
+  }
+
+  // Build the stepped LUT: each LUT position maps to a label, then to that label's color.
+  const R: number[] = [], G: number[] = [], B: number[] = [], A: number[] = [];
+  for (let i = 0; i < 256; i++) {
+    const label = Math.min(11, Math.round((i / 255) * 11));
+    const [r, g, b] = labelColors[label];
     R.push(r); G.push(g); B.push(b);
     A.push(label === 0 ? (showBackground ? 180 : 0) : 255);
   }
@@ -65,7 +97,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [loadingModels, setLoadingModels] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<"2d" | "3d">("2d");
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const [colormap, setColormap] = useState<ColormapId>("freesurfer");
+  const [colormap, setColormap] = useState<ColormapId>("grace_seg_tissues");
   const [error, setError] = useState<string | null>(null);
   const [showBgLeft, setShowBgLeft] = useState(false);
   const [showBgRight, setShowBgRight] = useState(false);
@@ -73,11 +105,16 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
 
-  // Apply colormap to an overlay volume.
-  // For "freesurfer" we register a custom 256-entry stepped LUT via addColormap
-  // so each of the 12 tissue labels gets a distinct opaque color.
-  // We set robust_min/robust_max in addition to cal_min/cal_max because
-  // updateGLVolume resets cal values from robust values when they differ.
+  // Apply a segmentation colormap to the overlay volume (index 1).
+  //
+  // For every colormap we build a 256-entry stepped LUT where each of the 12
+  // tissue labels occupies a band of ~21 entries and alpha is forced to 255
+  // for labels 1–11 (label 0 = background, alpha controlled by showBg).
+  // The LUT is always registered under OVERLAY_CMAP_KEY so the standard
+  // NiiVue rendering pipeline uses it.
+  //
+  // We also pin robust_min/max alongside cal_min/cal_max because
+  // updateGLVolume() resets cal values from robust values when they differ.
   const applySegColormap = useCallback((
     nv: Niivue,
     cmap: ColormapId,
@@ -85,16 +122,18 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     opacity: number,
   ) => {
     if (nv.volumes.length < 2) return;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const vol = nv.volumes[1] as any;
 
-    if (cmap === "freesurfer") {
-      nv.addColormap(GRACE_CMAP_KEY, buildGraceLUT(showBg));
-      vol.colormap = GRACE_CMAP_KEY;
-    } else {
-      vol.colormap = cmap;
-    }
+    // Build LUT: custom tissue colors for grace_seg_tissues, sampled gradient for all others.
+    const lut = cmap === "grace_seg_tissues"
+      ? buildGraceLUT(showBg)
+      : buildSteppedLUT(nv, cmap, showBg);
 
-    // Pin the cal range so all 12 labels map across the full LUT.
+    nv.addColormap(OVERLAY_CMAP_KEY, lut);
+    vol.colormap = OVERLAY_CMAP_KEY;
+
+    // Pin the cal range so all 12 labels span the full LUT.
     // Also set robust_min/max to prevent updateGLVolume from overriding them.
     vol.cal_min = 0;    vol.cal_max = 11;
     vol.robust_min = 0; vol.robust_max = 11;
