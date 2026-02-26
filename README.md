@@ -27,7 +27,7 @@ Six models spanning three architectures and two coordinate spaces:
 
 | Architecture | Native Space | FreeSurfer Space |
 |-------------|-------------|-----------------|
-| **CROWN** | `grace-native` | `grace-fs` |
+| **GRACE** | `grace-native` | `grace-fs` |
 | **DOMINO** | `domino-native` | `domino-fs` |
 | **DOMINO++** | `dominopp-native` | `dominopp-fs` |
 
@@ -41,7 +41,7 @@ After segmentation, run electric field simulations directly in the browser:
 | Solver | Method | Time |
 |--------|--------|------|
 | **ROAST** | FEM via compiled MATLAB runtime | ~10–15 min (fast) / ~20–30 min (standard) |
-| **SimNIBS** | FEM with charm meshing on CROWN segmentation | ~1–3 hrs |
+| **SimNIBS** | FEM with charm meshing on GRACE segmentation | ~1–3 hrs |
 
 Configure electrode montages (position, size, current), select simulation quality, and visualize the resulting electric field alongside the segmentation.
 
