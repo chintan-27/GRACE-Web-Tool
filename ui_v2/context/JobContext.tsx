@@ -12,6 +12,7 @@ import React, {
 import {
   startPrediction,
   connectSSE,
+  cancelJob,
   SSEEvent,
   PredictResponse,
 } from "../lib/api";
@@ -111,6 +112,8 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
   // Ref for recursive SSE subscription
   const subscribeToSSERef = useRef<(session: string, backoffCount: number) => void>(() => {});
+  // Ref to track the active EventSource so we can close it on reset
+  const sseRef = useRef<EventSource | null>(null);
 
   // Derived state
   const isAnyModelSelected = selectedModels.grace || selectedModels.domino || selectedModels.dominopp;
@@ -169,7 +172,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   subscribeToSSERef.current = (session: string, backoffCount: number) => {
     const backoff = Math.min(2000 * (backoffCount + 1), 16000);
 
-    connectSSE(
+    const evtSource = connectSSE(
       session,
       (evt: SSEEvent) => {
         if (evt.type === "error") {
@@ -208,6 +211,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         }, backoff);
       }
     );
+    sseRef.current = evtSource;
   };
 
   const subscribeToSSE = useCallback((session: string, backoffCount: number) => {
@@ -258,6 +262,17 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   // RESET JOB COMPLETELY
   // ------------------------------------------------------------
   const resetJob = useCallback(() => {
+    // Close active SSE connection
+    if (sseRef.current) {
+      sseRef.current.close();
+      sseRef.current = null;
+    }
+
+    // Cancel the backend job (best-effort, fire-and-forget)
+    if (sessionId) {
+      cancelJob(sessionId).catch(() => {});
+    }
+
     // Cleanup blob URL
     if (inputBlobUrl) {
       URL.revokeObjectURL(inputBlobUrl);
@@ -285,7 +300,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
 
     // Reset wizard
     setCurrentStep(1);
-  }, [inputBlobUrl]);
+  }, [sessionId, inputBlobUrl]);
 
   return (
     <JobContext.Provider

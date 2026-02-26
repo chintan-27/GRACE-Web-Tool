@@ -256,6 +256,21 @@ def is_charm_base_ready(session_id: str) -> bool:
     return bool(redis_client.exists(CHARM_BASE_READY_PREFIX + session_id))
 
 
+# -------------------------------------------------------------
+# Session cancellation
+# -------------------------------------------------------------
+CANCEL_PREFIX = "cancel:"
+
+
+def cancel_session(session_id: str) -> None:
+    """Set a cancellation flag for a session. Workers check this and abort."""
+    redis_client.set(CANCEL_PREFIX + session_id, "1", ex=3600)
+
+
+def is_session_cancelled(session_id: str) -> bool:
+    return bool(redis_client.get(CANCEL_PREFIX + session_id))
+
+
 # -------------------------------------------------------
 # CLEANUP
 # -------------------------------------------------------
