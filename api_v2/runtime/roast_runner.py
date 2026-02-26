@@ -14,6 +14,7 @@ from pathlib import Path
 
 import nibabel as nib
 import numpy as np
+from scipy import ndimage as ndi
 
 from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
 from runtime.roast_config import build_roast_config
@@ -141,6 +142,29 @@ class ROASTRunner:
         mask_nii = self.work_dir / "T1_T1orT2_masks.nii"
         img = nib.load(mask_gz)
         data = np.asarray(img.dataobj, dtype=np.uint8)
+
+        # --- Pre-close the skin label (9) at the central sagittal slices ---
+        # fitCap2individual.m has an unbounded while loop that grows a morphological
+        # structuring element (se += 8) until the sagittal cross-section of the scalp
+        # forms a closed ring.  GRACE skin (label 9) is an open arc at the bottom
+        # (open at the neck where the MRI volume is cropped), so imfill('holes') never
+        # fills the interior and the loop needs se ≈ 80-150 to bridge the neck gap.
+        # imclose(256×256, ones(100,100)) in the compiled MCR takes 10-30 min each →
+        # stall timeout fires.  Closing the sagittal slices here reduces the required
+        # se to 8 (one iteration), making the loop take seconds instead.
+        skin = data == 9
+        struct2d = ndi.generate_binary_structure(2, 1)  # 4-connectivity 2D kernel
+        cx = data.shape[0] // 2  # approximate central sagittal index
+        for xi in range(max(0, cx - 25), min(data.shape[0], cx + 25)):
+            if not skin[xi].any():
+                continue
+            skin_closed = ndi.binary_closing(skin[xi], structure=struct2d, iterations=40)
+            # Add only background (air) voxels — never overwrite other tissue labels
+            new_skin = skin_closed & ~skin[xi] & (data[xi] == 0)
+            data[xi, new_skin] = 9
+            skin[xi] |= new_skin
+        session_log(self.session_id, "[ROAST] Skin label pre-closed at central sagittal slices")
+
         nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
         session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 
