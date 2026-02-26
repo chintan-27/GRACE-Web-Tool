@@ -6,11 +6,12 @@ import { useId, useState, useRef, useEffect } from "react";
 
 // Available colormaps for segmentation overlays
 export const COLORMAPS = [
+  { id: "grace_seg_tissues", label: "Tissue Colors", description: "12 GRACE tissue labels (no transparent patches)" },
   { id: "freesurfer", label: "FreeSurfer", description: "Standard neuroimaging labels" },
   { id: "actc", label: "Anatomical", description: "Anatomical color table" },
   { id: "jet", label: "Jet", description: "Blue → cyan → yellow → red" },
   { id: "turbo", label: "Turbo", description: "Improved rainbow, vivid spectrum" },
-  { id: "rainbow", label: "Rainbow", description: "Full spectrum colors" },
+  { id: "hsv", label: "Rainbow", description: "Full spectrum colors" },
   { id: "viridis", label: "Viridis", description: "Perceptually uniform" },
   { id: "plasma", label: "Plasma", description: "Warm purple to yellow" },
   { id: "inferno", label: "Inferno", description: "Dark to bright yellow" },
