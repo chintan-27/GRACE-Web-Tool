@@ -248,7 +248,7 @@ class ROASTRunner:
 
             last_progress = 5
             deadline = time.time() + ROAST_TIMEOUT_SECONDS
-            STALL_TIMEOUT = 300  # kill if ROAST produces no stdout for 5 min
+            STALL_TIMEOUT = 1800  # kill if ROAST produces no stdout for 30 min
 
             while True:
                 ready, _, _ = select.select([proc.stdout], [], [], STALL_TIMEOUT)
