@@ -256,10 +256,16 @@ class ROASTRunner:
                     except Exception:
                         pass
 
-            # Use all available cores for getDP FEM solver
+            # Use all cores visible to this process (respects Docker --cpuset / --cpus limits).
+            # os.cpu_count() returns the physical host count; sched_getaffinity(0) returns
+            # the cores actually allocated to this container.
             import os as _os
+            try:
+                n_threads = len(_os.sched_getaffinity(0))
+            except AttributeError:
+                n_threads = _os.cpu_count() or 4
             omp_env = _os.environ.copy()
-            omp_env["OMP_NUM_THREADS"] = str(_os.cpu_count() or 4)
+            omp_env["OMP_NUM_THREADS"] = str(n_threads)
 
             proc = subprocess.Popen(
                 cmd,
