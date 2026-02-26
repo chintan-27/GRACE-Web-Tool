@@ -335,6 +335,17 @@ export async function getSimNIBSResult(
 }
 
 // ---------------------------------------------------------------------
+// POST /cancel/{session_id}
+// ---------------------------------------------------------------------
+export async function cancelJob(sessionId: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/cancel/${sessionId}`, { method: "POST" });
+  } catch {
+    // best-effort: ignore network errors on cancel
+  }
+}
+
+// ---------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------
 export async function getHealth(): Promise<HealthResponse> {

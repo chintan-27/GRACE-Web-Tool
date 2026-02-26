@@ -86,10 +86,14 @@ class GPUScheduler:
         Returns (model_name, success, error_msg)
         """
         set_job_status(job_id, model_name, "waiting_gpu")
+        push_event(job_id, {"event": "model_waiting", "model": model_name, "progress": 0})
 
         # Wait for a free GPU (with atomic acquisition)
         gpu_id = None
         while gpu_id is None:
+            if redis_client.get(f"cancel:{job_id}"):
+                set_job_status(job_id, model_name, "cancelled")
+                return (model_name, False, "Job cancelled by user")
             gpu_id = self.acquire_gpu(job_id, model_name)
             if gpu_id is None:
                 time.sleep(0.2)

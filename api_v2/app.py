@@ -486,6 +486,17 @@ def get_audit():
 
 
 # ============================================================
+# POST /cancel/{session_id}
+# ============================================================
+@app.post("/cancel/{session_id}")
+async def cancel_job(session_id: str):
+    from services.redis_client import cancel_session
+    cancel_session(session_id)
+    push_event(session_id, {"event": "job_cancelled"})
+    return {"status": "cancellation_requested"}
+
+
+# ============================================================
 # Root endpoint
 # ============================================================
 @app.get("/")

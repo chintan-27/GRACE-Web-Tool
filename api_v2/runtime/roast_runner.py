@@ -6,6 +6,7 @@ parses stdout for step progress, and emits SSE events.
 import gzip
 import json
 import re
+import select
 import shutil
 import subprocess
 import time
@@ -24,7 +25,7 @@ from runtime.session import (
     session_log,
 )
 from runtime.sse import push_event
-from services.redis_client import set_roast_status, set_roast_progress
+from services.redis_client import redis_client, set_roast_status, set_roast_progress
 from services.logger import log_event, log_error
 
 
@@ -247,11 +248,28 @@ class ROASTRunner:
 
             last_progress = 5
             deadline = time.time() + ROAST_TIMEOUT_SECONDS
+            STALL_TIMEOUT = 300  # kill if ROAST produces no stdout for 5 min
 
-            for line in proc.stdout:
+            while True:
+                ready, _, _ = select.select([proc.stdout], [], [], STALL_TIMEOUT)
+                if not ready:
+                    proc.kill()
+                    raise TimeoutError(
+                        f"ROAST stalled: no stdout for {STALL_TIMEOUT // 60} min"
+                    )
+
+                line = proc.stdout.readline()
+                if not line:  # EOF — process finished
+                    break
+
                 line = line.rstrip()
                 if line:
                     session_log(self.session_id, f"[ROAST stdout] {line}")
+
+                # Check cancellation
+                if redis_client.get(f"cancel:{self.session_id}"):
+                    proc.kill()
+                    raise RuntimeError("Job cancelled by user")
 
                 # 1) Match fixed step substrings
                 matched = False

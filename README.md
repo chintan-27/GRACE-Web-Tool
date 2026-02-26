@@ -1,10 +1,10 @@
-# GRACE Web Tool
+# CROWN — MRI Segmentation & TES Simulation Suite
 
-A web-based whole-head MRI segmentation platform powered by deep learning. Upload a NIfTI MRI volume and receive automated tissue segmentation across 12 classes using state-of-the-art neural network architectures.
+A web platform for whole-head MRI segmentation and transcranial electrical stimulation (TES) modeling. Upload a NIfTI MRI volume, run automated tissue segmentation across 12 classes, and optionally simulate tDCS/tACS electric field distributions.
 
-## What It Does
+## Segmentation
 
-GRACE Web Tool segments whole-head MRI scans into 12 tissue classes:
+CROWN segments whole-head MRI scans into 12 tissue classes:
 
 | Label | Tissue |
 |-------|--------|
@@ -21,9 +21,9 @@ GRACE Web Tool segments whole-head MRI scans into 12 tissue classes:
 | 10 | Fat |
 | 11 | Muscle |
 
-## Models
+### Models
 
-Six models are available, spanning three architectures and two coordinate spaces:
+Six models spanning three architectures and two coordinate spaces:
 
 | Architecture | Native Space | FreeSurfer Space |
 |-------------|-------------|-----------------|
@@ -31,29 +31,104 @@ Six models are available, spanning three architectures and two coordinate spaces
 | **DOMINO** | `domino-native` | `domino-fs` |
 | **DOMINO++** | `dominopp-native` | `dominopp-fs` |
 
-- **Native space** outputs match the input MRI's original coordinate system.
-- **FreeSurfer space** outputs are conformed to FreeSurfer's 1mm isotropic 256x256x256 standard space.
+- **Native space** — output matches the input MRI's original coordinate system
+- **FreeSurfer space** — output conformed to 1mm isotropic 256×256×256 standard space
+
+## TES Simulation
+
+After segmentation, run electric field simulations directly in the browser:
+
+| Solver | Method | Time |
+|--------|--------|------|
+| **ROAST** | FEM via compiled MATLAB runtime | ~10–15 min (fast) / ~20–30 min (standard) |
+| **SimNIBS** | FEM with charm meshing on GRACE segmentation | ~1–3 hrs |
+
+Configure electrode montages (position, size, current), select simulation quality, and visualize the resulting electric field alongside the segmentation.
 
 ## Features
 
-- **Upload & Segment** -- Upload a NIfTI (.nii / .nii.gz) MRI volume and select one or more models to run
-- **Interactive Viewer** -- Built-in Niivue-based 3D/2D viewer with side-by-side model comparison
-- **Multiple Colormaps** -- Switch between FreeSurfer, Viridis, Plasma, and other colormaps with a dynamic tissue legend
-- **Real-time Progress** -- Server-Sent Events stream processing status to the browser as inference runs
-- **GPU Scheduling** -- Multi-GPU job queue with Redis-backed scheduling for concurrent users
-- **Result Download** -- Download segmentation outputs as NIfTI files
+- **Upload & Segment** — Upload a NIfTI (.nii / .nii.gz) and select one or more models
+- **Interactive 3D/2D Viewer** — Niivue-based side-by-side comparison with 14 colormap options; all colormaps render all 12 tissue labels without transparency
+- **Per-Panel Controls** — Independent background visibility toggle per viewer panel
+- **Segmentation Legend** — Color-matched tissue legend synced to the active colormap
+- **TES Wizard** — Step-by-step electrode configuration and simulation workflow
+- **Real-time Progress** — Server-Sent Events stream job status to the browser
+- **GPU Scheduling** — Multi-GPU Redis-backed job queue for concurrent users
+- **Result Download** — Download segmentation outputs as NIfTI files
 
 ## Architecture
 
 ```
-ui_v2/          Next.js frontend (Niivue viewer, shadcn/ui, Tailwind CSS)
-api_v2/         FastAPI backend (Redis job queue, GPU scheduler, SSE streaming)
+ui_v2/     Next.js frontend — deployed on Vercel
+api_v2/    FastAPI backend  — deployed via Docker Compose
 ```
 
-### Workflow
+### Backend services (docker-compose.yml)
 
-1. User uploads a NIfTI MRI volume and selects models + coordinate space
-2. Backend creates a session, preprocesses the input (RAS orientation, 1mm resampling), and enqueues a job
+| Service | Description |
+|---------|-------------|
+| `redis` | Job queue and GPU locking |
+| `api` | FastAPI + GPU scheduler + ROAST + SimNIBS |
+
+The frontend is deployed on Vercel and communicates with the backend via `NEXT_PUBLIC_API_URL`.
+
+## Deployment
+
+### Backend
+
+```bash
+# Copy and fill in environment variables
+cp api_v2/.env.example api_v2/.env
+
+# Start Redis + API
+docker compose up -d --build
+```
+
+Required host mounts (set in `.env` or override defaults):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MODELS_HOST_PATH` | `/home/chintan/wws_v2/api_v2/models` | Pre-trained model weights |
+| `FREESURFER_LICENSE_PATH` | `/home/chintan/licenses/freesurfer.txt` | FreeSurfer license |
+| `ROAST_BUILD_DIR` | `/home/chintan/roast11/build` | ROAST-11 compiled binary |
+| `MATLAB_RUNTIME` | `/home/chintan/MATLAB/MATLAB_Runtime/R2025b` | MCR for ROAST |
+| `SIMNIBS_HOME` | `/home/chintan/SimNIBS-4.5` | SimNIBS installation |
+
+### Frontend (local dev)
+
+```bash
+cd ui_v2
+npm install
+npm run dev   # http://localhost:3000
+```
+
+## Environment Variables
+
+**Backend (`api_v2/.env`)**
+
+```
+REDIS_HOST=redis
+REDIS_PORT=6379
+GPU_COUNT=4
+JWT_SECRET=...
+HMAC_SECRET=...
+ROAST_BUILD_DIR=/opt/roast/build
+MATLAB_RUNTIME=/opt/mcr/R2025b
+ROAST_MAX_WORKERS=2
+SIMNIBS_HOME=/opt/simnibs
+SIMNIBS_N_THREADS=8
+```
+
+**Frontend**
+
+```
+NEXT_PUBLIC_API_URL=http://<server>:8000
+```
+
+## Data Flow
+
+1. User uploads a NIfTI file and selects models + coordinate space
+2. Backend preprocesses the input (RAS orientation, 1mm resampling) and enqueues a job
 3. GPU scheduler assigns the job to an available GPU and runs inference
-4. Progress is streamed to the frontend via SSE
-5. Results are visualized in the interactive viewer and available for download
+4. Progress streams to the frontend via SSE
+5. Results load into the interactive viewer; user can optionally launch a TES simulation
