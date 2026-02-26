@@ -114,6 +114,13 @@ class GPUScheduler:
             set_job_status(job_id, model_name, "error")
             return (model_name, False, str(e))
         finally:
+            # Flush PyTorch CUDA cache before marking GPU free so the next
+            # acquire_gpu sees accurate free VRAM from nvidia-smi.
+            try:
+                import torch
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
             self.release_gpu(gpu_id, job_id)
 
     def run_job(self, job_id: str):
