@@ -247,21 +247,37 @@ class ROASTRunner:
 
             session_log(self.session_id, f"[ROAST] Launching: {' '.join(cmd)}")
 
-            # MCR extracts CTF archive binaries without execute bits on Linux.
-            # chmod all .mexa64 and plain binaries in the MCR runtime cache.
-            mcr_cache = Path.home() / ".MathWorks" / "MatlabRuntimeCache"
-            if mcr_cache.exists():
-                for p in mcr_cache.rglob("*"):
-                    if p.is_file() and not p.suffix:  # executables (no extension)
-                        try:
-                            p.chmod(p.stat().st_mode | 0o111)
-                        except Exception:
-                            pass
-                for p in mcr_cache.rglob("*.mexa64"):
-                    try:
-                        p.chmod(p.stat().st_mode | 0o111)
-                    except Exception:
-                        pass
+            # MCR extracts CTF archive binaries lazily (on first use) without
+            # execute bits. A one-shot chmod before launch misses files extracted
+            # mid-run (e.g. cgalmesh at Step 4). Run chmod in a background thread
+            # every 3 s for the duration of the process.
+            # Use $HOME env var — MCR cache lives under the user's home, which
+            # may differ from Path.home() when the container runs as root.
+            import threading as _threading
+            _home = Path(os.environ.get("HOME", str(Path.home())))
+            mcr_cache = _home / ".MathWorks" / "MatlabRuntimeCache"
+
+            def _chmod_mcr(stop_evt: "_threading.Event"):
+                while not stop_evt.is_set():
+                    if mcr_cache.exists():
+                        for _p in mcr_cache.rglob("*.mexa64"):
+                            try:
+                                _p.chmod(_p.stat().st_mode | 0o111)
+                            except OSError:
+                                pass
+                        for _p in mcr_cache.rglob("*"):
+                            if _p.is_file() and not _p.suffix:
+                                try:
+                                    _p.chmod(_p.stat().st_mode | 0o111)
+                                except OSError:
+                                    pass
+                    stop_evt.wait(timeout=3)
+
+            _chmod_stop = _threading.Event()
+            _chmod_thread = _threading.Thread(
+                target=_chmod_mcr, args=(_chmod_stop,), daemon=True
+            )
+            _chmod_thread.start()
 
             # Use all cores visible to this process (respects Docker --cpuset / --cpus limits).
             # os.cpu_count() returns the physical host count; sched_getaffinity(0) returns
@@ -391,6 +407,7 @@ class ROASTRunner:
             except OSError:
                 pass
 
+            _chmod_stop.set()
             proc.wait()
 
             if proc.returncode != 0:
