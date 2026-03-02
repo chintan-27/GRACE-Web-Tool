@@ -49,6 +49,43 @@ export default function GPUStatus() {
           <span className="text-foreground font-medium">{health.queue_length} jobs</span>
         </div>
 
+        {/* CPU */}
+        {health.cpu_count > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-foreground-secondary">
+              <Cpu className="h-4 w-4" />
+              CPU Cores
+            </span>
+            <span className="text-foreground font-medium font-mono">{health.cpu_count}</span>
+          </div>
+        )}
+
+        {/* RAM */}
+        {health.mem_total_mb > 0 && (
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-foreground-secondary">RAM</span>
+              <span className="text-xs text-foreground-muted font-mono">
+                {Math.round((health.mem_total_mb - health.mem_available_mb) / 1024)} /{" "}
+                {Math.round(health.mem_total_mb / 1024)} GB
+              </span>
+            </div>
+            <div className="h-2 bg-border rounded-full overflow-hidden">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-300",
+                  (health.mem_total_mb - health.mem_available_mb) / health.mem_total_mb > 0.85
+                    ? "bg-warning"
+                    : "bg-success"
+                )}
+                style={{
+                  width: `${Math.round(((health.mem_total_mb - health.mem_available_mb) / health.mem_total_mb) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {/* GPUs */}
         {Array.isArray(health.gpu_usage) && health.gpu_usage.length > 0 && (
           <div className="pt-3 border-t border-border">

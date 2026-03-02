@@ -56,6 +56,29 @@ async def lifespan(app: FastAPI):
     t3.start()
     print("Session cleanup scheduler started (30-day retention)")
 
+    # --- Container resource diagnostics ---
+    import os as _os
+    try:
+        n_cpus = len(_os.sched_getaffinity(0))
+    except AttributeError:
+        n_cpus = _os.cpu_count() or "?"
+    print(f"[resources] Container CPUs (sched_getaffinity): {n_cpus}")
+    print(f"[resources] OMP_NUM_THREADS: {_os.environ.get('OMP_NUM_THREADS', 'unset')}")
+    try:
+        with open("/proc/meminfo") as _f:
+            for _line in _f:
+                if _line.startswith(("MemTotal", "MemAvailable")):
+                    print(f"[resources] {_line.rstrip()}")
+    except Exception:
+        pass
+    try:
+        import psutil as _psutil
+        vm = _psutil.virtual_memory()
+        print(f"[resources] RAM total={vm.total//1024//1024}MB available={vm.available//1024//1024}MB")
+    except ImportError:
+        pass
+    # ---
+
     # Ensure ROAST binaries are executable (best-effort — skipped on read-only mounts)
     import stat
     from config import ROAST_BUILD_DIR
@@ -425,6 +448,8 @@ def get_session_logs(session_id: str):
 # ============================================================
 @app.get("/health")
 async def health():
+    import os as _os
+
     gpu_usage = []
     try:
         cmd = [
@@ -451,11 +476,32 @@ async def health():
 
     queue_len = redis_client.llen("job_queue")
 
+    # CPU info (container-visible cores via sched_getaffinity)
+    try:
+        cpu_count = len(_os.sched_getaffinity(0))
+    except AttributeError:
+        cpu_count = _os.cpu_count() or 0
+
+    # RAM info from /proc/meminfo (in MB)
+    mem_total_mb, mem_available_mb = 0, 0
+    try:
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemTotal:"):
+                    mem_total_mb = int(line.split()[1]) // 1024
+                elif line.startswith("MemAvailable:"):
+                    mem_available_mb = int(line.split()[1]) // 1024
+    except Exception:
+        pass
+
     return {
         "redis": redis_ok,
         "gpu_usage": gpu_usage,
         "queue_length": queue_len,
         "gpu_count": GPU_COUNT,
+        "cpu_count": cpu_count,
+        "mem_total_mb": mem_total_mb,
+        "mem_available_mb": mem_available_mb,
     }
 
 

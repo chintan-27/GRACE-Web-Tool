@@ -5,9 +5,11 @@ parses stdout for step progress, and emits SSE events.
 
 import gzip
 import json
+import os
 import re
 import select
 import shutil
+import signal
 import subprocess
 import time
 from pathlib import Path
@@ -44,8 +46,12 @@ STEP_MAP = [
     ("STEP 3",                            "roast_step_electrode",   12),
     ("measuring head size",               "roast_step_el_measure",  14),
     ("wearing the cap",                   "roast_step_el_cap",      16),
-    ("placing electrode F3",              "roast_step_el_f3",       19),
-    ("placing electrode F4",              "roast_step_el_f4",       21),
+    ("computing pad layers",               "roast_step_el_dilation", 17),
+    ("dilating scalp for gel layer",      "roast_step_el_gel_dil",  17),
+    ("gel layer done. dilating for electrode", "roast_step_el_elec_dil", 18),
+    ("pad layers",                        "roast_step_el_dil_done", 18),
+    ("placing electrode",                 "roast_step_el_placing",  19),
+    ("% done",                            "roast_step_el_progress", 21),
     ("final clean-up",                    "roast_step_el_cleanup",  23),
 
     # --- Step 4: Mesh generation (CGAL) ---
@@ -274,31 +280,54 @@ class ROASTRunner:
                 text=True,
                 cwd=str(self.work_dir),
                 env=omp_env,
+                start_new_session=True,  # own process group → killpg kills entire tree
             )
+
+            def _kill_proc():
+                """Kill the entire process group (xvfb-run + run_roast_run.sh + roast_run)."""
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
 
             last_progress = 5
             deadline = time.time() + ROAST_TIMEOUT_SECONDS
-            STALL_TIMEOUT = 1800  # kill if ROAST produces no stdout for 30 min
+            STALL_TIMEOUT = 1800   # declare stall if no stdout for 30 min
+            CANCEL_POLL  = 5       # check cancellation every 5 s during silence
+
+            last_stdout_time = time.time()
 
             while True:
-                ready, _, _ = select.select([proc.stdout], [], [], STALL_TIMEOUT)
+                ready, _, _ = select.select([proc.stdout], [], [], CANCEL_POLL)
                 if not ready:
-                    proc.kill()
-                    raise TimeoutError(
-                        f"ROAST stalled: no stdout for {STALL_TIMEOUT // 60} min"
-                    )
+                    # No stdout in CANCEL_POLL seconds — check cancel before stall
+                    if redis_client.get(f"cancel:{self.session_id}"):
+                        _kill_proc()
+                        raise RuntimeError("Job cancelled by user")
+                    if time.time() - last_stdout_time > STALL_TIMEOUT:
+                        _kill_proc()
+                        raise TimeoutError(
+                            f"ROAST stalled: no stdout for {STALL_TIMEOUT // 60} min"
+                        )
+                    if time.time() > deadline:
+                        _kill_proc()
+                        raise TimeoutError(
+                            f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s"
+                        )
+                    continue
 
                 line = proc.stdout.readline()
                 if not line:  # EOF — process finished
                     break
 
+                last_stdout_time = time.time()
                 line = line.rstrip()
                 if line:
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
-                # Check cancellation
+                # Check cancellation on each line too
                 if redis_client.get(f"cancel:{self.session_id}"):
-                    proc.kill()
+                    _kill_proc()
                     raise RuntimeError("Job cancelled by user")
 
                 # 1) Match fixed step substrings
@@ -324,7 +353,7 @@ class ROASTRunner:
                             break
 
                 if time.time() > deadline:
-                    proc.kill()
+                    _kill_proc()
                     raise TimeoutError(
                         f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s"
                     )
