@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft, Zap, Check, AlertTriangle, Construction,
-  RotateCcw, GitCompare, ChevronDown,
+  RotateCcw, GitCompare, ChevronDown, Cpu, MemoryStick,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -24,6 +24,8 @@ import {
   connectROASTSSE,
   startSimNIBSSimulation,
   connectSimNIBSSSE,
+  getHealth,
+  type HealthResponse,
 } from "@/lib/api";
 
 // ─── Step label maps ──────────────────────────────────────────────────────────
@@ -191,6 +193,15 @@ export default function TESPage() {
 
   // Right-panel view
   const [panelView, setPanelView] = useState<PanelView>({ type: "segmentation" });
+
+  // Resource health
+  const [health, setHealth] = useState<HealthResponse | null>(null);
+  useEffect(() => {
+    const load = async () => setHealth(await getHealth());
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, []);
 
   // ── Queue helpers ─────────────────────────────────────────────────────────
   const setRunState = useCallback((key: string, patch: Partial<RunState>) => {
@@ -644,6 +655,37 @@ export default function TESPage() {
                   />
                 );
               })}
+            </div>
+          )}
+
+          {/* Resource indicator */}
+          {health && (health.cpu_count > 0 || health.mem_total_mb > 0) && (
+            <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-background px-3 py-2">
+              {health.cpu_count > 0 && (
+                <span className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+                  <Cpu className="h-3 w-3" />
+                  {health.cpu_count} CPU
+                </span>
+              )}
+              {health.mem_total_mb > 0 && (
+                <span className="flex items-center gap-1.5 text-[11px] text-foreground-muted">
+                  <MemoryStick className="h-3 w-3" />
+                  {Math.round((health.mem_total_mb - health.mem_available_mb) / 1024)}/
+                  {Math.round(health.mem_total_mb / 1024)} GB RAM
+                </span>
+              )}
+              {health.mem_total_mb > 0 && (
+                <div className="ml-auto h-1.5 w-16 overflow-hidden rounded-full bg-border">
+                  <div
+                    className={cn(
+                      "h-full rounded-full",
+                      (health.mem_total_mb - health.mem_available_mb) / health.mem_total_mb > 0.85
+                        ? "bg-warning" : "bg-success"
+                    )}
+                    style={{ width: `${Math.round(((health.mem_total_mb - health.mem_available_mb) / health.mem_total_mb) * 100)}%` }}
+                  />
+                </div>
+              )}
             </div>
           )}
 

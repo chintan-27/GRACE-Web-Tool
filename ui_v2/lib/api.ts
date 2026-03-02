@@ -29,6 +29,9 @@ export interface HealthResponse {
     | string;
   queue_length: number;
   gpu_count: number;
+  cpu_count: number;
+  mem_total_mb: number;
+  mem_available_mb: number;
 }
 
 export interface SSEEvent {
@@ -359,6 +362,9 @@ export async function getHealth(): Promise<HealthResponse> {
       gpu_usage: [],
       queue_length: -1,
       gpu_count: 0,
+      cpu_count: 0,
+      mem_total_mb: 0,
+      mem_available_mb: 0,
     };
   }
 }
