@@ -6,6 +6,7 @@ parses stdout for step progress, and emits SSE events.
 import gzip
 import json
 import os
+import pty
 import re
 import select
 import shutil
@@ -227,12 +228,6 @@ class ROASTRunner:
         if _shutil.which("xvfb-run"):
             cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1x1x24"] + cmd
 
-        # Force line-buffered stdout so MCR flushes after every \n instead of
-        # accumulating output in an 8KB block buffer (which causes apparent stalls
-        # during pure-MATLAB phases like drawCuboid that make no system calls).
-        if _shutil.which("stdbuf"):
-            cmd = ["stdbuf", "-oL"] + cmd
-
         return cmd
 
     # ------------------------------------------------------------------
@@ -272,22 +267,33 @@ class ROASTRunner:
             # os.cpu_count() returns the physical host count; sched_getaffinity(0) returns
             # the cores actually allocated to this container.
             import os as _os
+            from config import ROAST_MAX_WORKERS as _MAX_W
             try:
-                n_threads = len(_os.sched_getaffinity(0))
+                total_cpus = len(_os.sched_getaffinity(0))
             except AttributeError:
-                n_threads = _os.cpu_count() or 4
+                total_cpus = _os.cpu_count() or 4
+            # Divide CPUs evenly across concurrent ROAST workers so jobs
+            # don't all try to use every core simultaneously.
+            n_threads = max(1, total_cpus // _MAX_W)
             omp_env = _os.environ.copy()
             omp_env["OMP_NUM_THREADS"] = str(n_threads)
 
+            # Use a pseudo-terminal so MCR sees a TTY on stdout and uses
+            # line-buffering instead of 8 KB block-buffering.  stdbuf / PYTHONUNBUFFERED
+            # cannot override MCR's internal C++/Java I/O layer, but isatty() can.
+            master_fd, slave_fd = pty.openpty()
+
             proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                stdin=subprocess.DEVNULL,
                 cwd=str(self.work_dir),
                 env=omp_env,
                 start_new_session=True,  # own process group → killpg kills entire tree
+                close_fds=True,
             )
+            os.close(slave_fd)  # parent keeps only the master end
 
             def _kill_proc():
                 """Kill the entire process group (xvfb-run + run_roast_run.sh + roast_run)."""
@@ -302,11 +308,16 @@ class ROASTRunner:
             CANCEL_POLL  = 5       # check cancellation every 5 s during silence
 
             last_stdout_time = time.time()
+            _buf = b""
 
             while True:
-                ready, _, _ = select.select([proc.stdout], [], [], CANCEL_POLL)
+                try:
+                    ready, _, _ = select.select([master_fd], [], [], CANCEL_POLL)
+                except (ValueError, OSError):
+                    break  # master_fd closed after child exits
+
                 if not ready:
-                    # No stdout in CANCEL_POLL seconds — check cancel before stall
+                    # No stdout in CANCEL_POLL seconds — check cancel / stall
                     if redis_client.get(f"cancel:{self.session_id}"):
                         _kill_proc()
                         raise RuntimeError("Job cancelled by user")
@@ -322,47 +333,63 @@ class ROASTRunner:
                         )
                     continue
 
-                line = proc.stdout.readline()
-                if not line:  # EOF — process finished
+                try:
+                    chunk = os.read(master_fd, 4096)
+                except OSError:
+                    break  # EIO — child process exited, slave side closed
+
+                if not chunk:
                     break
 
                 last_stdout_time = time.time()
-                line = line.rstrip()
-                if line:
+                _buf += chunk
+
+                # Flush complete lines — match progress events inside this loop
+                while b"\n" in _buf:
+                    raw_line, _buf = _buf.split(b"\n", 1)
+                    line = raw_line.decode("utf-8", errors="replace").strip("\r")
+                    if not line:
+                        continue
+
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
-                # Check cancellation on each line too
-                if redis_client.get(f"cancel:{self.session_id}"):
-                    _kill_proc()
-                    raise RuntimeError("Job cancelled by user")
+                    # Check cancellation on each line
+                    if redis_client.get(f"cancel:{self.session_id}"):
+                        _kill_proc()
+                        raise RuntimeError("Job cancelled by user")
 
-                # 1) Match fixed step substrings
-                matched = False
-                for substring, event_name, pct in STEP_MAP:
-                    if substring in line:
-                        if pct > last_progress:
-                            self._emit(event_name, pct)
-                            last_progress = pct
-                        matched = True
-                        break
-
-                # 2) If no fixed match, try getDP percentage patterns (Step 5 only)
-                if not matched:
-                    for pattern, lo, hi, event_name in _GETDP_RANGES:
-                        m = pattern.search(line)
-                        if m:
-                            raw_pct = int(m.group(1))
-                            mapped = lo + int((raw_pct / 100.0) * (hi - lo))
-                            if mapped > last_progress:
-                                self._emit(event_name, mapped)
-                                last_progress = mapped
+                    # 1) Match fixed step substrings
+                    matched = False
+                    for substring, event_name, pct in STEP_MAP:
+                        if substring in line:
+                            if pct > last_progress:
+                                self._emit(event_name, pct)
+                                last_progress = pct
+                            matched = True
                             break
+
+                    # 2) If no fixed match, try getDP percentage patterns (Step 5)
+                    if not matched:
+                        for pattern, lo, hi, event_name in _GETDP_RANGES:
+                            m = pattern.search(line)
+                            if m:
+                                raw_pct = int(m.group(1))
+                                mapped = lo + int((raw_pct / 100.0) * (hi - lo))
+                                if mapped > last_progress:
+                                    self._emit(event_name, mapped)
+                                    last_progress = mapped
+                                break
 
                 if time.time() > deadline:
                     _kill_proc()
                     raise TimeoutError(
                         f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s"
                     )
+
+            try:
+                os.close(master_fd)
+            except OSError:
+                pass
 
             proc.wait()
 
