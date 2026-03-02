@@ -227,6 +227,12 @@ class ROASTRunner:
         if _shutil.which("xvfb-run"):
             cmd = ["xvfb-run", "-a", "--server-args=-screen 0 1x1x24"] + cmd
 
+        # Force line-buffered stdout so MCR flushes after every \n instead of
+        # accumulating output in an 8KB block buffer (which causes apparent stalls
+        # during pure-MATLAB phases like drawCuboid that make no system calls).
+        if _shutil.which("stdbuf"):
+            cmd = ["stdbuf", "-oL"] + cmd
+
         return cmd
 
     # ------------------------------------------------------------------
