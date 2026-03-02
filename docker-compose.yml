@@ -52,7 +52,7 @@ services:
       # ROAST / MATLAB
       - ROAST_BUILD_DIR=/opt/roast/build
       - MATLAB_RUNTIME=/opt/mcr/R2025b
-      - ROAST_MAX_WORKERS=${ROAST_MAX_WORKERS:-2}
+      - ROAST_MAX_WORKERS=${ROAST_MAX_WORKERS:-4}
       - ROAST_TIMEOUT_SECONDS=${ROAST_TIMEOUT_SECONDS:-7200}
       # SimNIBS
       - SIMNIBS_HOME=/opt/simnibs
