@@ -265,7 +265,7 @@ class ROASTRunner:
                                     _p.chmod(_p.stat().st_mode | 0o111)
                                 except OSError:
                                     pass
-                    stop_evt.wait(timeout=3)
+                    stop_evt.wait(timeout=0.5)
 
             _chmod_stop = _threading.Event()
             _chmod_thread = _threading.Thread(
