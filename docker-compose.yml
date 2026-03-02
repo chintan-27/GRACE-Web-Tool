@@ -35,6 +35,11 @@ services:
       - ${ROAST_BUILD_DIR:-/home/chintan/roast11/build}:/opt/roast/build
       # MATLAB Component Runtime (required by ROAST)  (api_v2/.env: MATLAB_RUNTIME)
       - ${MATLAB_RUNTIME:-/home/chintan/MATLAB/MATLAB_Runtime/R2025b}:/opt/mcr/R2025b:ro
+      # MCR cache — persists extracted MEX binaries across container restarts.
+      # Without this, MCR re-extracts cgalmesh.mexa64 fresh every restart (no execute
+      # bit) and executes it before the chmod thread can fix permissions → crash.
+      # Mounting the host cache (warmed by test runs) eliminates the race condition.
+      - ${MCR_CACHE_HOST_PATH:-/home/chintan/.MathWorks}:/root/.MathWorks
       # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)  (api_v2/.env: SIMNIBS_HOME)
       - ${SIMNIBS_HOME:-/home/chintan/SimNIBS-4.5}:/opt/simnibs:ro
     environment:
