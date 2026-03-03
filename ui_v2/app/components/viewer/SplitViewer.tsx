@@ -121,6 +121,11 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
 
+  // Ref to read overlayOpacity in the reload effect without triggering full
+  // reloads on every opacity slider tick.
+  const overlayOpacityRef = useRef(overlayOpacity);
+  useEffect(() => { overlayOpacityRef.current = overlayOpacity; }, [overlayOpacity]);
+
   // Apply a segmentation colormap to the overlay volume (index 1).
   //
   // For every colormap we build a 256-entry stepped LUT where each of the 12
@@ -484,14 +489,46 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   }, [viewMode, initialized]);
 
 
-  // Update colormap, background toggle, or selected label for either panel
+  // Opacity-only fast path — avoids a full GL texture reload on every slider tick.
   useEffect(() => {
     if (!initialized) return;
+    if (leftNvRef.current && leftModel !== null) {
+      leftNvRef.current.setOpacity(1, overlayOpacity);
+      leftNvRef.current.drawScene();
+    }
+    if (rightNvRef.current && rightModel !== null) {
+      rightNvRef.current.setOpacity(1, overlayOpacity);
+      rightNvRef.current.drawScene();
+    }
+  }, [overlayOpacity, initialized, leftModel, rightModel]);
+
+  // Reload effect: colormap / background / selected-label changes.
+  // Niivue caches the GL colormap texture at loadFromArrayBuffer time; to apply
+  // a new LUT (e.g. isolating one tissue class) we must remove and re-add the
+  // overlay from the cached buffer so Niivue re-uploads the GL texture.
+  useEffect(() => {
+    if (!initialized) return;
+
+    const reload = async (nv: Niivue, model: string, showBg: boolean) => {
+      const buffer = loadedResultsRef.current[model];
+      if (!buffer || buffer.byteLength === 0) return;
+      while (nv.volumes.length > 1) nv.removeVolumeByIndex(1);
+      await nv.loadFromArrayBuffer(buffer.slice(0), `${model}.nii.gz`);
+      if (nv.volumes.length > 1) {
+        applySegColormap(nv, colormap, showBg, overlayOpacityRef.current, selectedLabel);
+      }
+    };
+
+    const tasks: Promise<void>[] = [];
     if (leftNvRef.current && leftModel !== null)
-      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity, selectedLabel);
+      tasks.push(reload(leftNvRef.current, leftModel, showBgLeft));
     if (rightNvRef.current && rightModel !== null)
-      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity, selectedLabel);
-  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, selectedLabel, applySegColormap]);
+      tasks.push(reload(rightNvRef.current, rightModel, showBgRight));
+
+    void Promise.all(tasks);
+    // overlayOpacity intentionally read via ref to avoid reloads on slider ticks
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colormap, showBgLeft, showBgRight, selectedLabel, initialized, leftModel, rightModel, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
