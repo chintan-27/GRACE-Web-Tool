@@ -514,9 +514,24 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
     const totalProgress = totalRuns > 0
       ? Math.round(Object.values(runStates).reduce((sum, r) => sum + r.progress, 0) / totalRuns)
       : 0;
+    const anyRunning = Object.values(runStates).some(r => r.status === "running");
 
     return (
       <div className="space-y-4">
+        {/* Refresh warning — shown while any job is running */}
+        {anyRunning && (
+          <div className="flex items-center gap-3 rounded-xl border-2 border-warning bg-warning/10 px-4 py-3">
+            <span className="text-warning text-xl">⚠</span>
+            <div>
+              <p className="font-mono text-xs font-black uppercase tracking-widest text-warning">
+                Do not refresh or close this page
+              </p>
+              <p className="text-[11px] text-warning/80 mt-0.5">
+                Simulation is running in the background — refreshing will lose your progress view.
+              </p>
+            </div>
+          </div>
+        )}
         {/* Overall progress */}
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
