@@ -23,6 +23,7 @@ from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
 from runtime.roast_config import build_roast_config
 from runtime.session import (
     session_input_native,
+    session_input_fs,
     model_output_path,
     roast_working_dir,
     roast_output_path,
@@ -132,12 +133,20 @@ class ROASTRunner:
         """
         session_log(self.session_id, "[ROAST] Preparing working directory")
 
-        # Gunzip T1
-        t1_gz = session_input_native(self.session_id)
+        # Use the T1 that matches the segmentation mask's coordinate space.
+        # FS models produce masks in FreeSurfer conformed space (256³ 1mm isotropic);
+        # native models produce masks in the original scanner space.
+        # Feeding ROAST a T1 in the wrong space causes a silently misaligned mesh.
         t1_nii = self.work_dir / "T1.nii"
-        with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        session_log(self.session_id, f"[ROAST] T1 gunzipped → {t1_nii}")
+        if self.model_name.endswith("-fs"):
+            t1_src = session_input_fs(self.session_id)
+            shutil.copy(str(t1_src), str(t1_nii))
+            session_log(self.session_id, f"[ROAST] T1 copied from FS space → {t1_nii}")
+        else:
+            t1_gz = session_input_native(self.session_id)
+            with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            session_log(self.session_id, f"[ROAST] T1 gunzipped from native space → {t1_nii}")
 
         # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement).
         # Do NOT pass the old header — nibabel would keep the old dtype code
