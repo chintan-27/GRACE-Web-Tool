@@ -121,14 +121,16 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [showBgLeft, setShowBgLeft] = useState(false);
   const [showBgRight, setShowBgRight] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<number | null>(null);
+  const [bgDim, setBgDim] = useState(0.35);
 
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
 
-  // Ref to read overlayOpacity in the reload effect without triggering full
-  // reloads on every opacity slider tick.
+  // Refs to read slider values in effects without triggering heavy re-runs on every tick.
   const overlayOpacityRef = useRef(overlayOpacity);
   useEffect(() => { overlayOpacityRef.current = overlayOpacity; }, [overlayOpacity]);
+  const bgDimRef = useRef(bgDim);
+  useEffect(() => { bgDimRef.current = bgDim; }, [bgDim]);
 
   // Apply a segmentation colormap to the overlay volume (index 1).
   //
@@ -169,7 +171,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     nv.updateGLVolume();
     nv.setOpacity(1, opacity);
     // Dim the base MRI when isolating a single label so the tissue stands out.
-    nv.setOpacity(0, hovered !== null ? 0.35 : 1.0);
+    nv.setOpacity(0, hovered !== null ? bgDimRef.current : 1.0);
     nv.drawScene();
   }, []);
 
@@ -506,6 +508,15 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     }
   }, [overlayOpacity, initialized, leftModel, rightModel]);
 
+  // MRI dim fast path — only active while isolating, no orient re-run needed.
+  useEffect(() => {
+    if (!initialized || selectedLabel === null) return;
+    [leftNvRef, rightNvRef].forEach((ref) => {
+      const nv = ref.current;
+      if (nv) { nv.setOpacity(0, bgDim); nv.drawScene(); }
+    });
+  }, [bgDim, initialized, selectedLabel]);
+
   // Colormap / background / selected-label changes.
   // addColormap() overwrites the LUT in cmapper, and updateGLVolume() (called inside
   // applySegColormap) re-runs refreshColormaps + the orient pass to apply the new LUT.
@@ -603,6 +614,9 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           onOpacityChange={setOverlayOpacity}
           colormap={colormap}
           onColormapChange={setColormap}
+          isIsolating={selectedLabel !== null}
+          bgDim={bgDim}
+          onBgDimChange={setBgDim}
         />
 
         {loadingModelName && (
