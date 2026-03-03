@@ -32,6 +32,9 @@ interface ViewerControlsProps {
   onOpacityChange: (opacity: number) => void;
   colormap: ColormapId;
   onColormapChange: (colormap: ColormapId) => void;
+  isIsolating?: boolean;
+  bgDim?: number;
+  onBgDimChange?: (val: number) => void;
 }
 
 export default function ViewerControls({
@@ -41,8 +44,12 @@ export default function ViewerControls({
   onOpacityChange,
   colormap,
   onColormapChange,
+  isIsolating = false,
+  bgDim = 0.35,
+  onBgDimChange,
 }: ViewerControlsProps) {
   const sliderId = useId();
+  const bgDimId = useId();
   const colormapId = useId();
   const [colormapOpen, setColormapOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -235,6 +242,31 @@ export default function ViewerControls({
           {Math.round(overlayOpacity * 100)}%
         </span>
       </div>
+
+      {/* MRI dim slider — only visible when a label is isolated */}
+      {isIsolating && onBgDimChange && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-foreground-muted" id={`${bgDimId}-label`}>MRI:</span>
+          <input
+            id={bgDimId}
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={bgDim}
+            onChange={(e) => onBgDimChange(parseFloat(e.target.value))}
+            aria-labelledby={`${bgDimId}-label`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(bgDim * 100)}
+            aria-valuetext={`${Math.round(bgDim * 100)} percent`}
+            className="h-2 w-24 cursor-pointer appearance-none rounded-lg bg-border accent-accent focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <span className="w-10 text-right text-xs text-foreground-muted" aria-hidden="true">
+            {Math.round(bgDim * 100)}%
+          </span>
+        </div>
+      )}
     </div>
   );
 }
