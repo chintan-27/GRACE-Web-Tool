@@ -368,7 +368,8 @@ export default function TESPage() {
         init[k] = { status: "pending", progress: 0, step: "Queued" };
       }
     }
-    setRunStates(init);
+    // Merge into existing state so previously completed runs keep their tabs.
+    setRunStates(prev => ({ ...prev, ...init }));
     runQueueRef.current = queue;
     runningRef.current  = false;
     processQueue();
