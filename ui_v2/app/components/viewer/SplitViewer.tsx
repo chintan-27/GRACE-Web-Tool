@@ -41,7 +41,9 @@ function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = nu
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
     } else if (hoveredLabel !== null) {
-      alpha = label === hoveredLabel ? 255 : 25;
+      // Niivue's orient shader binarizes alpha via step(0.00001, a):
+      // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
+      alpha = label === hoveredLabel ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -80,7 +82,9 @@ function buildSteppedLUT(
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
     } else if (hoveredLabel !== null) {
-      alpha = label === hoveredLabel ? 255 : 25;
+      // Niivue's orient shader binarizes alpha via step(0.00001, a):
+      // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
+      alpha = label === hoveredLabel ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -152,12 +156,10 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       ? buildGraceLUT(showBg, hovered)
       : buildSteppedLUT(cmap, showBg, hovered);
 
-    // Encode the selected label in the colormap key so Niivue always sees a new
-    // colormap name and re-uploads the GL texture. Reusing the same key with
-    // updated LUT data is silently ignored because vol.colormap hasn't changed.
-    const cmapKey = hovered !== null ? `${OVERLAY_CMAP_KEY}_l${hovered}` : `${OVERLAY_CMAP_KEY}_all`;
-    nv.addColormap(cmapKey, lut);
-    vol.colormap = cmapKey;
+    // Always use the same key — addColormap overwrites cmapper.cluts[key] in place,
+    // so refreshColormaps() (called inside updateGLVolume) picks up the new LUT.
+    nv.addColormap(OVERLAY_CMAP_KEY, lut);
+    vol.colormap = OVERLAY_CMAP_KEY;
 
     // Pin the cal range so all 12 labels span the full LUT.
     // Also set robust_min/max to prevent updateGLVolume from overriding them.
@@ -502,31 +504,17 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     }
   }, [overlayOpacity, initialized, leftModel, rightModel]);
 
-  // Reload effect: colormap / background / selected-label changes.
-  // Niivue caches the GL colormap texture at loadFromArrayBuffer time; to apply
-  // a new LUT (e.g. isolating one tissue class) we must remove and re-add the
-  // overlay from the cached buffer so Niivue re-uploads the GL texture.
+  // Colormap / background / selected-label changes.
+  // addColormap() overwrites the LUT in cmapper, and updateGLVolume() (called inside
+  // applySegColormap) re-runs refreshColormaps + the orient pass to apply the new LUT.
+  // overlayOpacity is read via ref to avoid triggering this (heavier) effect on slider ticks.
   useEffect(() => {
     if (!initialized) return;
-
-    const reload = async (nv: Niivue, model: string, showBg: boolean) => {
-      const buffer = loadedResultsRef.current[model];
-      if (!buffer || buffer.byteLength === 0) return;
-      while (nv.volumes.length > 1) nv.removeVolumeByIndex(1);
-      await nv.loadFromArrayBuffer(buffer.slice(0), `${model}.nii.gz`);
-      if (nv.volumes.length > 1) {
-        applySegColormap(nv, colormap, showBg, overlayOpacityRef.current, selectedLabel);
-      }
-    };
-
-    const tasks: Promise<void>[] = [];
     if (leftNvRef.current && leftModel !== null)
-      tasks.push(reload(leftNvRef.current, leftModel, showBgLeft));
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacityRef.current, selectedLabel);
     if (rightNvRef.current && rightModel !== null)
-      tasks.push(reload(rightNvRef.current, rightModel, showBgRight));
-
-    void Promise.all(tasks);
-    // overlayOpacity intentionally read via ref to avoid reloads on slider ticks
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacityRef.current, selectedLabel);
+    // overlayOpacity intentionally read via ref — see opacity-only effect below
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [colormap, showBgLeft, showBgRight, selectedLabel, initialized, leftModel, rightModel, applySegColormap]);
 
