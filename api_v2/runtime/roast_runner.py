@@ -220,13 +220,15 @@ class ROASTRunner:
         nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
         session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 
-        # Create a dummy c1T1_T1orT2.nii to bypass ROAST step 1 (SPM segmentation).
-        # ROAST checks for this file's existence to decide whether to run SPM.
-        # We already provide the final mask (step 2 output), so step 1 can be skipped.
+        # Bypass ROAST Step 1 (SPM segmentation) by pre-creating dummy c1 files.
+        # ROAST first reorients T1.nii to RAS space → T1_ras.nii, then checks for
+        # the c1 file AFTER that reorientation. The bypass check therefore looks for
+        # c1T1_ras_T1orT2.nii, not c1T1_T1orT2.nii. We create both to be safe.
         # SPM's batch system (cfg_mlbatch_appcfg_master) cannot run in compiled MATLAB.
-        dummy_c1 = self.work_dir / "c1T1_T1orT2.nii"
-        shutil.copy(t1_nii, dummy_c1)
-        session_log(self.session_id, f"[ROAST] Dummy c1 written → {dummy_c1} (bypasses SPM step 1)")
+        for dummy_name in ("c1T1_T1orT2.nii", "c1T1_ras_T1orT2.nii"):
+            dummy_c1 = self.work_dir / dummy_name
+            shutil.copy(t1_nii, dummy_c1)
+        session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
 
         return str(t1_nii)
 
@@ -411,8 +413,13 @@ class ROASTRunner:
 
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
-                    # Capture MATLAB error lines so we can surface them if ROAST exits non-zero
-                    if "Error using" in line or "was not meshed properly" in line:
+                    # Capture MATLAB error lines so we can surface them if ROAST exits non-zero.
+                    # Map known patterns to friendly messages; fall back to the raw line.
+                    if "cfg_mlbatch_appcfg_master" in line or ("Unrecognized function" in line and "cfg_" in line):
+                        last_roast_error = "SPM segmentation step failed — compiled MATLAB cannot run SPM's batch system. The c1 bypass file may not have been detected."
+                    elif "was not meshed properly" in line:
+                        last_roast_error = f"Electrode meshing failed: {line.strip()} — try switching to Standard quality mesh."
+                    elif "Error using" in line or "Unrecognized function or variable" in line:
                         last_roast_error = line.strip()
 
                     # Check cancellation on each line
@@ -457,7 +464,10 @@ class ROASTRunner:
             proc.wait()
 
             if proc.returncode != 0:
-                msg = last_roast_error or f"ROAST exited with code {proc.returncode}"
+                msg = last_roast_error or (
+                    "ROAST failed unexpectedly — check the session logs for the full MATLAB output. "
+                    f"(exit code {proc.returncode})"
+                )
                 raise RuntimeError(msg)
 
             self.collect_outputs()
