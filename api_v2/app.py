@@ -274,6 +274,11 @@ async def simulate(body: dict = Body(...)):
         "quality": body.get("quality", "standard"),  # "fast" or "standard"
     }
 
+    # Flush stale SSE events from previous runs so the new stream doesn't
+    # immediately close on a leftover roast_complete / roast_error event.
+    from runtime.sse import redis_event_key
+    redis_client.delete(redis_event_key(session_id))
+
     set_roast_status(session_id, "queued", model_name)
     enqueue_roast_job(session_id, payload)
     session_log(session_id, f"ROAST job enqueued for model={model_name}")

@@ -73,10 +73,10 @@ STEP_MAP = [
     ("Computing Jroast",                  "roast_step_post_jroast", 85),
     ("saving the final results",          "roast_step_post_save",   90),
     ("ALL DONE ROAST",                    "roast_step_post_done",   95),
-
-    # --- Complete ---
-    ("ROAST_RUN: COMPLETE",               "roast_complete",        100),
 ]
+# Note: roast_complete (100%) is emitted after collect_outputs() succeeds,
+# not from stdout matching, to avoid a stale event being left in the Redis
+# queue when the SSE stream has already closed on the first emission.
 
 # getDP prints percentage lines like "10%    : Pre-processing" as each phase runs 0→100%.
 # We interpolate each phase's 0-100% into a sub-range of the overall 42-74% Step 5 window.
