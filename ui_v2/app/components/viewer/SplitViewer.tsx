@@ -116,7 +116,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [error, setError] = useState<string | null>(null);
   const [showBgLeft, setShowBgLeft] = useState(false);
   const [showBgRight, setShowBgRight] = useState(false);
-  const [hoveredLabel, setHoveredLabel] = useState<number | null>(null);
+  const [selectedLabel, setSelectedLabel] = useState<number | null>(null);
 
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
@@ -449,7 +449,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for left panel
   const handleLeftModelChange = async (model: string | null) => {
-    setHoveredLabel(null);
+    setSelectedLabel(null);
     const success = await loadOverlayToPanel(leftNvRef.current, model, overlayOpacity, colormap, showBgLeft);
     if (success) {
       setLeftModel(model);
@@ -458,7 +458,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for right panel
   const handleRightModelChange = async (model: string | null) => {
-    setHoveredLabel(null);
+    setSelectedLabel(null);
     const success = await loadOverlayToPanel(rightNvRef.current, model, overlayOpacity, colormap, showBgRight);
     if (success) {
       setRightModel(model);
@@ -480,14 +480,14 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   }, [viewMode, initialized]);
 
 
-  // Update colormap, background toggle, or hovered label for either panel
+  // Update colormap, background toggle, or selected label for either panel
   useEffect(() => {
     if (!initialized) return;
     if (leftNvRef.current && leftModel !== null)
-      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity, hoveredLabel);
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity, selectedLabel);
     if (rightNvRef.current && rightModel !== null)
-      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity, hoveredLabel);
-  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, hoveredLabel, applySegColormap]);
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity, selectedLabel);
+  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, selectedLabel, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
@@ -736,8 +736,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       {/* Segmentation Legend */}
       <SegmentationLegend
         colormap={colormap}
-        hoveredLabel={hoveredLabel}
-        onLabelHover={setHoveredLabel}
+        selectedLabel={selectedLabel}
+        onLabelSelect={(id) => setSelectedLabel(prev => prev === id ? null : id)}
       />
 
       {/* Debug info in development */}
