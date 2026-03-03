@@ -147,8 +147,12 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       ? buildGraceLUT(showBg, hovered)
       : buildSteppedLUT(cmap, showBg, hovered);
 
-    nv.addColormap(OVERLAY_CMAP_KEY, lut);
-    vol.colormap = OVERLAY_CMAP_KEY;
+    // Encode the selected label in the colormap key so Niivue always sees a new
+    // colormap name and re-uploads the GL texture. Reusing the same key with
+    // updated LUT data is silently ignored because vol.colormap hasn't changed.
+    const cmapKey = hovered !== null ? `${OVERLAY_CMAP_KEY}_l${hovered}` : `${OVERLAY_CMAP_KEY}_all`;
+    nv.addColormap(cmapKey, lut);
+    vol.colormap = cmapKey;
 
     // Pin the cal range so all 12 labels span the full LUT.
     // Also set robust_min/max to prevent updateGLVolume from overriding them.
