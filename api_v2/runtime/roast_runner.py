@@ -181,6 +181,33 @@ class ROASTRunner:
             skin[xi] |= new_skin
         session_log(self.session_id, "[ROAST] Skin label pre-closed at central sagittal slices")
 
+        # --- Full 3D scalp closing (all slices, all axes) ---
+        # The sagittal close above only covers cx±25 slices (needed for fitCap2individual).
+        # Frontal/parietal scalp (where F3/F4 electrodes land) may still have holes.
+        # A 3D close with iterations=5 (≈5 voxel radius) bridges those without
+        # overwriting any existing tissue labels (only converts background=0 to skin=9).
+        skin = data == 9
+        struct3d = ndi.generate_binary_structure(3, 1)  # 6-connectivity 3D
+        skin_closed_3d = ndi.binary_closing(skin, structure=struct3d, iterations=5)
+        new_skin_3d = skin_closed_3d & ~skin & (data == 0)
+        data[new_skin_3d] = 9
+        session_log(self.session_id, "[ROAST] Skin label fully closed in 3D")
+
+        # --- Per-tissue binary fill holes (axial slices, labels 1–11) ---
+        # Fills enclosed background voids inside each tissue (WM, GM, bone, etc.)
+        # without touching voxels already claimed by another label.
+        for label in range(1, 12):
+            tissue = data == label
+            if not tissue.any():
+                continue
+            for zi in range(data.shape[2]):
+                if not tissue[:, :, zi].any():
+                    continue
+                filled = ndi.binary_fill_holes(tissue[:, :, zi])
+                new_vox = filled & ~tissue[:, :, zi] & (data[:, :, zi] == 0)
+                data[:, :, zi][new_vox] = label
+        session_log(self.session_id, "[ROAST] Tissue holes filled per axial slice")
+
         nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
         session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 

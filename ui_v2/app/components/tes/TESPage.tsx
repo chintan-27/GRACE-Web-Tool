@@ -204,6 +204,7 @@ export default function TESPage() {
   const [selectedModels, setSelectedModels]     = useState<string[]>([]);
   const [solver, setSolver]                     = useState<Solver>("roast");
   const [quality, setQuality]                   = useState<"fast" | "standard">("fast");
+  const [segSource, setSegSource]               = useState<"nn" | "spm">("nn");
   const [electrodeConfig, setElectrodeConfig]   = useState<ElectrodeConfig>({
     anode: "F3", cathode: "F4", currentMa: 2, electrodeType: "pad",
   });
@@ -286,7 +287,7 @@ export default function TESPage() {
     if (next.solver === "roast") {
       setRunState(key, { status: "running", progress: 2, step: "Starting…" });
       try {
-        await startSimulation(sessionId!, next.model, quality, recipe, electype);
+        await startSimulation(sessionId!, next.model, quality, recipe, electype, segSource);
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message });
         runningRef.current = false;
@@ -350,7 +351,7 @@ export default function TESPage() {
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId, quality, electrodeConfig]);
+  }, [sessionId, quality, electrodeConfig, segSource]);
 
   const startAllRuns = useCallback(() => {
     if (!sessionId || selectedModels.length === 0) return;
@@ -754,6 +755,47 @@ export default function TESPage() {
                 {" · "}
                 <span className="opacity-60">first run may be 3–5 min longer</span>
               </p>
+            </div>
+          )}
+
+          {/* ── Segmentation source (ROAST only) ── */}
+          {(solver === "roast" || solver === "both") && (
+            <div>
+              <SectionLabel>Segmentation Source</SectionLabel>
+              <div className="flex gap-2">
+                {(["nn", "spm"] as const).map(src => (
+                  <button
+                    key={src}
+                    type="button"
+                    onClick={() => setSegSource(src)}
+                    className={cn(
+                      "flex-1 rounded-lg border py-2 text-xs font-medium transition-all focus:outline-none focus:ring-2 focus:ring-ring",
+                      segSource === src
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-border bg-background text-foreground-muted hover:border-accent/30",
+                    )}
+                  >
+                    {src === "nn" ? "Neural Network" : "SPM"}
+                  </button>
+                ))}
+              </div>
+              {segSource === "spm" ? (
+                <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
+                  <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+                  <div className="space-y-0.5">
+                    <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">
+                      Requires Rebuild
+                    </p>
+                    <p className="text-[11px] leading-snug text-foreground-muted">
+                      SPM segmentation requires ROAST to be rebuilt with SPM bundled. Estimated time: 45–90 min per session.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-1.5 text-[11px] text-foreground-muted">
+                  Uses the neural network segmentation from your selected model
+                </p>
+              )}
             </div>
           )}
 

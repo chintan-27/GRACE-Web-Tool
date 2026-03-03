@@ -168,11 +168,13 @@ export async function startSimulation(
   modelName: string,
   quality: "fast" | "standard" = "standard",
   recipe?: (string | number)[],
-  electrode_type?: string[]
+  electrode_type?: string[],
+  segSource?: "nn" | "spm",
 ): Promise<SimulateResponse> {
   const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName, quality };
   if (recipe) body.recipe = recipe;
   if (electrode_type) body.electrode_type = electrode_type;
+  if (segSource) body.seg_source = segSource;
 
   const res = await fetch(`${API_BASE}/simulate`, {
     method: "POST",

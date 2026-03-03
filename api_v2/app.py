@@ -263,6 +263,9 @@ async def simulate(body: dict = Body(...)):
             raise HTTPException(status_code=400, detail=str(e))
 
     # Build job payload
+    seg_source = body.get("seg_source", "nn")
+    session_log(session_id, f"[ROAST] seg_source={seg_source} (SPM bypass not yet implemented — requires ROAST+SPM rebuild)")
+
     payload = {
         "model_name": model_name,
         "recipe": recipe,
@@ -272,6 +275,7 @@ async def simulate(body: dict = Body(...)):
         "mesh_options": body.get("mesh_options"),
         "simulation_tag": body.get("simulation_tag"),
         "quality": body.get("quality", "standard"),  # "fast" or "standard"
+        "seg_source": seg_source,
     }
 
     # Flush stale SSE events from previous runs so the new stream doesn't
