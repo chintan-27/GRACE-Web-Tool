@@ -1,6 +1,8 @@
 """
 Default configuration and validation for ROAST simulations.
 """
+import hashlib
+import json
 
 DEFAULT_RECIPE = ["F3", -2, "F4", 2]
 
@@ -32,6 +34,17 @@ DEFAULT_SIMULATION_TAG = "tDCSLAB"
 # Conductivities: gel (S/m) and electrode (S/m) — applied per electrode
 COND_GEL = 0.3
 COND_ELECTRODE = 5.9e7
+
+
+def _tag_from_config(recipe, electype, elecsize, elecori, meshoptions) -> str:
+    """Generate a stable 8-char hex tag from the simulation config.
+    Different electrode configs get different tags so ROAST files in the
+    same working directory never conflict across re-runs."""
+    key = json.dumps(
+        {"r": recipe, "et": electype, "es": elecsize, "eo": elecori, "mo": meshoptions},
+        sort_keys=True, default=str
+    )
+    return "sim_" + hashlib.md5(key.encode()).hexdigest()[:8]
 
 
 def validate_recipe(recipe: list) -> None:
@@ -79,5 +92,5 @@ def build_roast_config(
         "elecsize": elecsize or DEFAULT_ELECTRODE_SIZE,
         "elecori": elecori or DEFAULT_ELECTRODE_ORI,
         "meshoptions": meshoptions,
-        "simulationtag": simulationtag or DEFAULT_SIMULATION_TAG,
+        "simulationtag": simulationtag or _tag_from_config(recipe, electype, elecsize, elecori, meshoptions),
     }
