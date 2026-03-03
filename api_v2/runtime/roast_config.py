@@ -20,13 +20,16 @@ DEFAULT_MESH_OPTIONS = {
     "maxvol": 10,
 }
 
-# Fast mode: coarser mesh, ~5x fewer elements vs standard, ~3-4x faster, slight accuracy loss
+# Fast mode: coarser mesh, ~3x fewer elements vs standard, ~2-3x faster, slight accuracy loss.
+# maxvol=50 was too coarse: electrodes are 3mm thick, so (50)^(1/3)≈3.7mm per element edge —
+# the mesher couldn't fit even one layer, causing "Electrode not meshed properly" (code 249).
+# maxvol=20 gives ~2.7mm edges, reliably capturing the electrode layer while staying fast.
 FAST_MESH_OPTIONS = {
-    "radbound": 10,
+    "radbound": 7,
     "angbound": 30,
-    "distbound": 0.6,
+    "distbound": 0.5,
     "reratio": 3,
-    "maxvol": 50,
+    "maxvol": 20,
 }
 
 DEFAULT_SIMULATION_TAG = "tDCSLAB"

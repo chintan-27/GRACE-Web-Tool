@@ -23,6 +23,7 @@ from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
 from runtime.roast_config import build_roast_config
 from runtime.session import (
     session_input_native,
+    session_input_fs,
     model_output_path,
     roast_working_dir,
     roast_output_path,
@@ -132,12 +133,20 @@ class ROASTRunner:
         """
         session_log(self.session_id, "[ROAST] Preparing working directory")
 
-        # Gunzip T1
-        t1_gz = session_input_native(self.session_id)
+        # Use the T1 that matches the segmentation mask's coordinate space.
+        # FS models produce masks in FreeSurfer conformed space (256³ 1mm isotropic);
+        # native models produce masks in the original scanner space.
+        # Feeding ROAST a T1 in the wrong space causes a silently misaligned mesh.
         t1_nii = self.work_dir / "T1.nii"
-        with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        session_log(self.session_id, f"[ROAST] T1 gunzipped → {t1_nii}")
+        if self.model_name.endswith("-fs"):
+            t1_src = session_input_fs(self.session_id)
+            shutil.copy(str(t1_src), str(t1_nii))
+            session_log(self.session_id, f"[ROAST] T1 copied from FS space → {t1_nii}")
+        else:
+            t1_gz = session_input_native(self.session_id)
+            with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+            session_log(self.session_id, f"[ROAST] T1 gunzipped from native space → {t1_nii}")
 
         # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement).
         # Do NOT pass the old header — nibabel would keep the old dtype code
@@ -171,6 +180,33 @@ class ROASTRunner:
             data[xi, new_skin] = 9
             skin[xi] |= new_skin
         session_log(self.session_id, "[ROAST] Skin label pre-closed at central sagittal slices")
+
+        # --- Full 3D scalp closing (all slices, all axes) ---
+        # The sagittal close above only covers cx±25 slices (needed for fitCap2individual).
+        # Frontal/parietal scalp (where F3/F4 electrodes land) may still have holes.
+        # A 3D close with iterations=5 (≈5 voxel radius) bridges those without
+        # overwriting any existing tissue labels (only converts background=0 to skin=9).
+        skin = data == 9
+        struct3d = ndi.generate_binary_structure(3, 1)  # 6-connectivity 3D
+        skin_closed_3d = ndi.binary_closing(skin, structure=struct3d, iterations=5)
+        new_skin_3d = skin_closed_3d & ~skin & (data == 0)
+        data[new_skin_3d] = 9
+        session_log(self.session_id, "[ROAST] Skin label fully closed in 3D")
+
+        # --- Per-tissue binary fill holes (axial slices, labels 1–11) ---
+        # Fills enclosed background voids inside each tissue (WM, GM, bone, etc.)
+        # without touching voxels already claimed by another label.
+        for label in range(1, 12):
+            tissue = data == label
+            if not tissue.any():
+                continue
+            for zi in range(data.shape[2]):
+                if not tissue[:, :, zi].any():
+                    continue
+                filled = ndi.binary_fill_holes(tissue[:, :, zi])
+                new_vox = filled & ~tissue[:, :, zi] & (data[:, :, zi] == 0)
+                data[:, :, zi][new_vox] = label
+        session_log(self.session_id, "[ROAST] Tissue holes filled per axial slice")
 
         nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
         session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
@@ -320,6 +356,7 @@ class ROASTRunner:
             CANCEL_POLL  = 5       # check cancellation every 5 s during silence
 
             last_stdout_time = time.time()
+            last_roast_error: str | None = None  # capture last MATLAB error line
             _buf = b""
 
             while True:
@@ -365,6 +402,10 @@ class ROASTRunner:
 
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
+                    # Capture MATLAB error lines so we can surface them if ROAST exits non-zero
+                    if "Error using" in line or "was not meshed properly" in line:
+                        last_roast_error = line.strip()
+
                     # Check cancellation on each line
                     if redis_client.get(f"cancel:{self.session_id}"):
                         _kill_proc()
@@ -407,9 +448,8 @@ class ROASTRunner:
             proc.wait()
 
             if proc.returncode != 0:
-                raise RuntimeError(
-                    f"ROAST exited with code {proc.returncode}"
-                )
+                msg = last_roast_error or f"ROAST exited with code {proc.returncode}"
+                raise RuntimeError(msg)
 
             self.collect_outputs()
 
