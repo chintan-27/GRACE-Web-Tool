@@ -44,11 +44,11 @@ def roast_working_dir(session_id: str, model_name: str = "") -> Path:
     return d
 
 
-def roast_output_path(session_id: str, output_type: str, model_name: str = "") -> Path:
+def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB") -> Path:
     filenames = {
-        "voltage": "T1_tDCSLAB_v.nii",
-        "efield":  "T1_tDCSLAB_e.nii",
-        "emag":    "T1_tDCSLAB_emag.nii",
+        "voltage": f"T1_{simulation_tag}_v.nii",
+        "efield":  f"T1_{simulation_tag}_e.nii",
+        "emag":    f"T1_{simulation_tag}_emag.nii",
     }
     if output_type not in filenames:
         raise ValueError(f"Unknown ROAST output type: {output_type}")

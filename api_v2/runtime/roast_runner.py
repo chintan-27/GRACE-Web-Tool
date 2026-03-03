@@ -198,6 +198,8 @@ class ROASTRunner:
             simulationtag=self.payload.get("simulation_tag"),
             quality=self.payload.get("quality", "standard"),
         )
+        # Remember the tag so collect_outputs() can locate the correct output files.
+        self.sim_tag = cfg["simulationtag"]
         config_path = self.work_dir / "config.json"
         with open(config_path, "w") as f:
             json.dump(cfg, f, indent=2)
@@ -427,7 +429,7 @@ class ROASTRunner:
         expected = ["voltage", "efield", "emag"]
         missing = []
         for output_type in expected:
-            path = roast_output_path(self.session_id, output_type, self.model_name)
+            path = roast_output_path(self.session_id, output_type, self.model_name, self.sim_tag)
             if not path.exists():
                 missing.append(str(path))
 
