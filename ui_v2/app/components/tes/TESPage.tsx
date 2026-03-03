@@ -104,11 +104,20 @@ const SIMNIBS_STEP_LABELS: Record<string, string> = {
 type Solver    = "simnibs" | "roast" | "both";
 type RunStatus = "pending" | "running" | "complete" | "error";
 
+interface RunConfig {
+  anode:         string;
+  cathode:       string;
+  currentMa:     number;
+  electrodeType: string;
+  quality:       "fast" | "standard";
+}
+
 interface RunState {
   status:   RunStatus;
   progress: number;
   step:     string;
   error?:   string;
+  config?:  RunConfig;
 }
 
 type PanelView =
@@ -359,13 +368,21 @@ export default function TESPage() {
       solver === "both" ? ["roast", "simnibs"] :
       solver === "roast" ? ["roast"] : ["simnibs"];
 
+    const configSnapshot: RunConfig = {
+      anode:         electrodeConfig.anode,
+      cathode:       electrodeConfig.cathode,
+      currentMa:     electrodeConfig.currentMa,
+      electrodeType: electrodeConfig.electrodeType,
+      quality,
+    };
+
     const queue: { model: string; solver: "roast" | "simnibs" }[] = [];
     const init: Record<string, RunState> = {};
     for (const m of selectedModels) {
       for (const s of solvers) {
         const k = runKey(m, s);
         queue.push({ model: m, solver: s });
-        init[k] = { status: "pending", progress: 0, step: "Queued" };
+        init[k] = { status: "pending", progress: 0, step: "Queued", config: configSnapshot };
       }
     }
     // Merge into existing state so previously completed runs keep their tabs.
@@ -373,7 +390,7 @@ export default function TESPage() {
     runQueueRef.current = queue;
     runningRef.current  = false;
     processQueue();
-  }, [selectedModels, solver, processQueue, sessionId]);
+  }, [selectedModels, solver, processQueue, sessionId, electrodeConfig, quality]);
 
   // ── Derived ───────────────────────────────────────────────────────────────
   const runEntries = Object.entries(runStates);
@@ -907,6 +924,10 @@ export default function TESPage() {
 
           {Object.entries(completedByModel).flatMap(([model, solvers]) => {
             const tabs = [];
+            const space = getSpaceLabel(model);
+            const roastCfg  = runStates[runKey(model, "roast")]?.config;
+            const simnibsCfg = runStates[runKey(model, "simnibs")]?.config;
+
             if (solvers.includes("roast"))
               tabs.push(
                 <button
@@ -915,8 +936,21 @@ export default function TESPage() {
                   onClick={() => setPanelView({ type: "roast", model })}
                   className={tabCls(isPanelActive({ type: "roast", model }))}
                 >
-                  <Check className="h-3 w-3 text-success" />
-                  {getDisplayName(model)} · ROAST
+                  <Check className="h-3 w-3 text-success shrink-0" />
+                  <span className="font-semibold">{getDisplayName(model)}</span>
+                  {space && (
+                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
+                  )}
+                  <span className="text-foreground-muted">·</span>
+                  <span>ROAST</span>
+                  {roastCfg && (
+                    <span className="font-mono text-[10px] text-foreground-muted">
+                      {roastCfg.anode}→{roastCfg.cathode} {roastCfg.currentMa}mA
+                    </span>
+                  )}
+                  {roastCfg && (
+                    <span className="rounded bg-border/40 px-1 py-0.5 text-[10px] text-foreground-muted">{roastCfg.quality}</span>
+                  )}
                 </button>,
               );
             if (solvers.includes("simnibs"))
@@ -927,8 +961,18 @@ export default function TESPage() {
                   onClick={() => setPanelView({ type: "simnibs", model })}
                   className={tabCls(isPanelActive({ type: "simnibs", model }))}
                 >
-                  <Check className="h-3 w-3 text-success" />
-                  {getDisplayName(model)} · SimNIBS
+                  <Check className="h-3 w-3 text-success shrink-0" />
+                  <span className="font-semibold">{getDisplayName(model)}</span>
+                  {space && (
+                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
+                  )}
+                  <span className="text-foreground-muted">·</span>
+                  <span>SimNIBS</span>
+                  {simnibsCfg && (
+                    <span className="font-mono text-[10px] text-foreground-muted">
+                      {simnibsCfg.anode}→{simnibsCfg.cathode} {simnibsCfg.currentMa}mA
+                    </span>
+                  )}
                 </button>,
               );
             if (solvers.includes("roast") && solvers.includes("simnibs"))
@@ -939,8 +983,13 @@ export default function TESPage() {
                   onClick={() => setPanelView({ type: "comparison", model })}
                   className={tabCls(isPanelActive({ type: "comparison", model }))}
                 >
-                  <GitCompare className="h-3 w-3" />
-                  {getDisplayName(model)} · Compare
+                  <GitCompare className="h-3 w-3 shrink-0" />
+                  <span className="font-semibold">{getDisplayName(model)}</span>
+                  {space && (
+                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
+                  )}
+                  <span className="text-foreground-muted">·</span>
+                  <span>Compare</span>
                 </button>,
               );
             return tabs;
