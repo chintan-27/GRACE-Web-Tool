@@ -320,6 +320,7 @@ class ROASTRunner:
             CANCEL_POLL  = 5       # check cancellation every 5 s during silence
 
             last_stdout_time = time.time()
+            last_roast_error: str | None = None  # capture last MATLAB error line
             _buf = b""
 
             while True:
@@ -365,6 +366,10 @@ class ROASTRunner:
 
                     session_log(self.session_id, f"[ROAST stdout] {line}")
 
+                    # Capture MATLAB error lines so we can surface them if ROAST exits non-zero
+                    if "Error using" in line or "was not meshed properly" in line:
+                        last_roast_error = line.strip()
+
                     # Check cancellation on each line
                     if redis_client.get(f"cancel:{self.session_id}"):
                         _kill_proc()
@@ -407,9 +412,8 @@ class ROASTRunner:
             proc.wait()
 
             if proc.returncode != 0:
-                raise RuntimeError(
-                    f"ROAST exited with code {proc.returncode}"
-                )
+                msg = last_roast_error or f"ROAST exited with code {proc.returncode}"
+                raise RuntimeError(msg)
 
             self.collect_outputs()
 
