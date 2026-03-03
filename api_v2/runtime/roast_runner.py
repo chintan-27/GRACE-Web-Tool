@@ -139,9 +139,18 @@ class ROASTRunner:
         # Feeding ROAST a T1 in the wrong space causes a silently misaligned mesh.
         t1_nii = self.work_dir / "T1.nii"
         if self.model_name.endswith("-fs"):
-            t1_src = session_input_fs(self.session_id)
-            shutil.copy(str(t1_src), str(t1_nii))
-            session_log(self.session_id, f"[ROAST] T1 copied from FS space → {t1_nii}")
+            t1_fs = session_input_fs(self.session_id)
+            if t1_fs.exists():
+                shutil.copy(str(t1_fs), str(t1_nii))
+                session_log(self.session_id, f"[ROAST] T1 copied from FS space → {t1_nii}")
+            else:
+                # Input was uploaded already in FS space (ConvertToFS=False);
+                # mri_convert was skipped so input_fs.nii was never written —
+                # the native path holds the FS-space file directly.
+                t1_gz = session_input_native(self.session_id)
+                with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
+                    shutil.copyfileobj(f_in, f_out)
+                session_log(self.session_id, f"[ROAST] T1 gunzipped from native path (pre-converted FS input) → {t1_nii}")
         else:
             t1_gz = session_input_native(self.session_id)
             with gzip.open(t1_gz, "rb") as f_in, open(t1_nii, "wb") as f_out:
