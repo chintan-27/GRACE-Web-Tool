@@ -168,6 +168,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
     nv.updateGLVolume();
     nv.setOpacity(1, opacity);
+    // Dim the base MRI when isolating a single label so the tissue stands out.
+    nv.setOpacity(0, hovered !== null ? 0.35 : 1.0);
     nv.drawScene();
   }, []);
 
