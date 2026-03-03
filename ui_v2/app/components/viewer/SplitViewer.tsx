@@ -30,13 +30,22 @@ const TISSUE_COLORS: [number, number, number][] = [
 ];
 
 // Build a 256-entry stepped LUT from the hard-coded tissue colors.
-function buildGraceLUT(showBackground: boolean) {
+// When hoveredLabel is set, only that label gets full alpha; others are dimmed to 25.
+function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = null) {
   const R: number[] = [], G: number[] = [], B: number[] = [], A: number[] = [];
   for (let i = 0; i < 256; i++) {
     const label = Math.min(11, Math.round((i / 255) * 11));
     const [r, g, b] = TISSUE_COLORS[label];
     R.push(r); G.push(g); B.push(b);
-    A.push(label === 0 ? (showBackground ? 180 : 0) : 255);
+    let alpha: number;
+    if (label === 0) {
+      alpha = showBackground ? 180 : 0;
+    } else if (hoveredLabel !== null) {
+      alpha = label === hoveredLabel ? 255 : 25;
+    } else {
+      alpha = 255;
+    }
+    A.push(alpha);
   }
   return { R, G, B, A, I: Array.from({ length: 256 }, (_, i) => i) };
 }
@@ -48,6 +57,7 @@ function buildGraceLUT(showBackground: boolean) {
 function buildSteppedLUT(
   cmapId: string,
   showBackground: boolean,
+  hoveredLabel: number | null = null,
 ): { R: number[]; G: number[]; B: number[]; A: number[]; I: number[] } {
   // Get the fully-interpolated 256-RGBA LUT from NiiVue's module-level cmapper singleton.
   const lut: Uint8ClampedArray = cmapper.colormap(cmapId, false);
@@ -66,7 +76,15 @@ function buildSteppedLUT(
     const label = Math.min(11, Math.round((i / 255) * 11));
     const [r, g, b] = labelColors[label];
     R.push(r); G.push(g); B.push(b);
-    A.push(label === 0 ? (showBackground ? 180 : 0) : 255);
+    let alpha: number;
+    if (label === 0) {
+      alpha = showBackground ? 180 : 0;
+    } else if (hoveredLabel !== null) {
+      alpha = label === hoveredLabel ? 255 : 25;
+    } else {
+      alpha = 255;
+    }
+    A.push(alpha);
   }
   return { R, G, B, A, I: Array.from({ length: 256 }, (_, i) => i) };
 }
@@ -98,6 +116,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [error, setError] = useState<string | null>(null);
   const [showBgLeft, setShowBgLeft] = useState(false);
   const [showBgRight, setShowBgRight] = useState(false);
+  const [hoveredLabel, setHoveredLabel] = useState<number | null>(null);
 
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
@@ -117,6 +136,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     cmap: ColormapId,
     showBg: boolean,
     opacity: number,
+    hovered: number | null = null,
   ) => {
     if (nv.volumes.length < 2) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,8 +144,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
     // Build LUT: custom tissue colors for grace_seg_tissues, sampled gradient for all others.
     const lut = cmap === "grace_seg_tissues"
-      ? buildGraceLUT(showBg)
-      : buildSteppedLUT(cmap, showBg);
+      ? buildGraceLUT(showBg, hovered)
+      : buildSteppedLUT(cmap, showBg, hovered);
 
     nv.addColormap(OVERLAY_CMAP_KEY, lut);
     vol.colormap = OVERLAY_CMAP_KEY;
@@ -318,7 +338,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
                 if (nv.volumes.length > 1) {
                   const showBg = panelName === "left" ? showBgLeft : showBgRight;
-                  applySegColormap(nv, colormap, showBg, overlayOpacity);
+                  applySegColormap(nv, colormap, showBg, overlayOpacity, null);
                   console.log(`${model} loaded to ${panelName} panel successfully`);
                   return true;
                 }
@@ -405,7 +425,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           // Check if the volume was actually loaded
           if (nv.volumes.length > 1) {
             console.log(`Volume loaded successfully, total volumes: ${nv.volumes.length}`);
-            applySegColormap(nv, currentColormap, showBg, currentOpacity);
+            applySegColormap(nv, currentColormap, showBg, currentOpacity, null);
             return true;
           } else {
             console.error(`Volume was not added after loadFromArrayBuffer for ${model}`);
@@ -429,6 +449,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for left panel
   const handleLeftModelChange = async (model: string | null) => {
+    setHoveredLabel(null);
     const success = await loadOverlayToPanel(leftNvRef.current, model, overlayOpacity, colormap, showBgLeft);
     if (success) {
       setLeftModel(model);
@@ -437,6 +458,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for right panel
   const handleRightModelChange = async (model: string | null) => {
+    setHoveredLabel(null);
     const success = await loadOverlayToPanel(rightNvRef.current, model, overlayOpacity, colormap, showBgRight);
     if (success) {
       setRightModel(model);
@@ -458,14 +480,14 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   }, [viewMode, initialized]);
 
 
-  // Update colormap or background toggle for either panel
+  // Update colormap, background toggle, or hovered label for either panel
   useEffect(() => {
     if (!initialized) return;
     if (leftNvRef.current && leftModel !== null)
-      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity);
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity, hoveredLabel);
     if (rightNvRef.current && rightModel !== null)
-      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity);
-  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, applySegColormap]);
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity, hoveredLabel);
+  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, hoveredLabel, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
@@ -712,7 +734,11 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       </div>
 
       {/* Segmentation Legend */}
-      <SegmentationLegend colormap={colormap} />
+      <SegmentationLegend
+        colormap={colormap}
+        hoveredLabel={hoveredLabel}
+        onLabelHover={setHoveredLabel}
+      />
 
       {/* Debug info in development */}
       {process.env.NODE_ENV === "development" && (
