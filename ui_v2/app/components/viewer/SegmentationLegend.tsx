@@ -60,10 +60,13 @@ function getLabelColors(colormapName: ColormapId): string[] {
 
 interface SegmentationLegendProps {
   colormap: ColormapId;
+  hoveredLabel?: number | null;
+  onLabelHover?: (labelId: number | null) => void;
 }
 
-export default function SegmentationLegend({ colormap }: SegmentationLegendProps) {
+export default function SegmentationLegend({ colormap, hoveredLabel = null, onLabelHover }: SegmentationLegendProps) {
   const colors = useMemo(() => getLabelColors(colormap), [colormap]);
+  const isFiltering = hoveredLabel !== null;
 
   return (
     <div
@@ -76,18 +79,41 @@ export default function SegmentationLegend({ colormap }: SegmentationLegendProps
           Legend
         </span>
         <div className="h-4 w-px bg-border hidden sm:block" aria-hidden="true" />
-        {TISSUE_LABELS.map((tissue, i) => (
-          <div key={tissue.id} className="flex items-center gap-1.5">
-            <span
-              className="inline-block h-3 w-3 flex-shrink-0 rounded-[3px] ring-1 ring-white/10"
-              style={{ backgroundColor: colors[i] }}
-              aria-hidden="true"
-            />
-            <span className="text-xs text-foreground-secondary whitespace-nowrap">
-              {tissue.label}
-            </span>
-          </div>
-        ))}
+        {TISSUE_LABELS.map((tissue, i) => {
+          const isHovered = hoveredLabel === tissue.id;
+          const isDimmed  = isFiltering && !isHovered;
+          return (
+            <div
+              key={tissue.id}
+              className="flex items-center gap-1.5 cursor-pointer select-none transition-opacity duration-150"
+              style={{ opacity: isDimmed ? 0.2 : 1 }}
+              onMouseEnter={() => onLabelHover?.(tissue.id)}
+              onMouseLeave={() => onLabelHover?.(null)}
+              title={tissue.label}
+            >
+              <span
+                className="inline-block h-3 w-3 flex-shrink-0 rounded-[3px] ring-1 ring-white/10 transition-transform duration-150"
+                style={{
+                  backgroundColor: colors[i],
+                  transform: isHovered ? "scale(1.4)" : "scale(1)",
+                }}
+                aria-hidden="true"
+              />
+              <span className={`text-xs whitespace-nowrap transition-colors duration-150 ${isHovered ? "font-semibold text-foreground" : "text-foreground-secondary"}`}>
+                {tissue.label}
+              </span>
+            </div>
+          );
+        })}
+        {isFiltering && (
+          <button
+            className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2 transition-colors"
+            onMouseEnter={() => onLabelHover?.(null)}
+            onClick={() => onLabelHover?.(null)}
+          >
+            Show all
+          </button>
+        )}
       </div>
     </div>
   );
