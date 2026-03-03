@@ -297,8 +297,20 @@ async def get_simulate_result(session_id: str, model_name: str, output_type: str
     if output_type not in ("voltage", "efield", "emag"):
         raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag")
 
+    # Read simulation tag from the saved config.json so we use the correct filename
+    # regardless of which tag was used (hash-based since v2, "tDCSLAB" in older runs).
+    import json as _json
+    from runtime.session import roast_working_dir as _roast_wd
+    sim_tag = "tDCSLAB"
+    config_path = _roast_wd(session_id, model_name) / "config.json"
+    if config_path.exists():
+        try:
+            sim_tag = _json.loads(config_path.read_text()).get("simulationtag", "tDCSLAB")
+        except Exception:
+            pass
+
     try:
-        out_path = roast_output_path(session_id, output_type, model_name)
+        out_path = roast_output_path(session_id, output_type, model_name, sim_tag)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

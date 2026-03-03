@@ -25,8 +25,30 @@ import {
   startSimNIBSSimulation,
   connectSimNIBSSSE,
   getHealth,
+  getSimulationStatus,
   type HealthResponse,
 } from "@/lib/api";
+
+// ─── localStorage key for job persistence across refreshes ───────────────────
+const ACTIVE_SIM_KEY = "grace_active_sim";
+type SavedSim = { sessionId: string; model: string; solver: "roast" | "simnibs"; startedAt: number };
+
+function saveActiveSim(s: SavedSim) {
+  try { localStorage.setItem(ACTIVE_SIM_KEY, JSON.stringify(s)); } catch {}
+}
+function clearActiveSim() {
+  try { localStorage.removeItem(ACTIVE_SIM_KEY); } catch {}
+}
+function loadActiveSim(): SavedSim | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_SIM_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as SavedSim;
+    // Discard jobs older than 4 hours
+    if (Date.now() - s.startedAt > 4 * 3600 * 1000) { clearActiveSim(); return null; }
+    return s;
+  } catch { return null; }
+}
 
 // ─── Step label maps ──────────────────────────────────────────────────────────
 const ROAST_STEP_LABELS: Record<string, string> = {
@@ -111,7 +133,7 @@ function getSpaceLabel(model: string) {
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <p className="mb-2 font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
-      // {children}
+      {"// "}{children}
     </p>
   );
 }
@@ -194,6 +216,46 @@ export default function TESPage() {
   // Right-panel view
   const [panelView, setPanelView] = useState<PanelView>({ type: "segmentation" });
 
+  // ── Reconnect state (for page-refresh recovery) ───────────────────────────
+  type ReconnectStatus = "checking" | "running" | "complete" | "none";
+  const [reconnect, setReconnect] = useState<{ sim: SavedSim; status: ReconnectStatus; progress: number; step: string } | null>(null);
+
+  useEffect(() => {
+    if (sessionId) return; // already have a session, no need to recover
+    const sim = loadActiveSim();
+    if (!sim) return;
+    setReconnect({ sim, status: "checking", progress: 0, step: "" });
+    getSimulationStatus(sim.sessionId, sim.model)
+      .then(({ status, progress }) => {
+        if (status === "running" || status === "queued") {
+          setReconnect(r => r && ({ ...r, status: "running", progress }));
+          // Reattach SSE to show live progress
+          const connect = sim.solver === "roast" ? connectROASTSSE : connectSimNIBSSSE;
+          connect(sim.sessionId, (evt) => {
+            if (evt.type === "progress") {
+              const labels = sim.solver === "roast" ? ROAST_STEP_LABELS : SIMNIBS_STEP_LABELS;
+              setReconnect(r => r && ({ ...r, progress: evt.progress ?? 0, step: evt.event ? (labels[evt.event] ?? evt.event) : "" }));
+            }
+            if (evt.type === "complete") {
+              clearActiveSim();
+              setReconnect(r => r && ({ ...r, status: "complete", progress: 100, step: "Complete" }));
+            }
+            if (evt.type === "error") {
+              clearActiveSim();
+              setReconnect(null);
+            }
+          });
+        } else if (status === "complete") {
+          clearActiveSim();
+          setReconnect(r => r && ({ ...r, status: "complete", progress: 100, step: "Complete" }));
+        } else {
+          clearActiveSim();
+          setReconnect(null);
+        }
+      })
+      .catch(() => { clearActiveSim(); setReconnect(null); });
+  }, [sessionId]);
+
   // Resource health
   const [health, setHealth] = useState<HealthResponse | null>(null);
   useEffect(() => {
@@ -231,6 +293,7 @@ export default function TESPage() {
         processQueue();
         return;
       }
+      saveActiveSim({ sessionId: sessionId!, model: next.model, solver: "roast", startedAt: Date.now() });
       connectROASTSSE(sessionId!, (evt) => {
         if (evt.type === "progress") {
           setRunState(key, {
@@ -239,12 +302,14 @@ export default function TESPage() {
           });
         }
         if (evt.type === "complete") {
+          clearActiveSim();
           setRunState(key, { status: "complete", progress: 100, step: "Complete" });
           setPanelView({ type: "roast", model: next.model });
           runningRef.current = false;
           processQueue();
         }
         if (evt.type === "error") {
+          clearActiveSim();
           setRunState(key, { status: "error", error: evt.detail || "ROAST error" });
           runningRef.current = false;
           processQueue();
@@ -261,6 +326,7 @@ export default function TESPage() {
         processQueue();
         return;
       }
+      saveActiveSim({ sessionId: sessionId!, model: next.model, solver: "simnibs", startedAt: Date.now() });
       connectSimNIBSSSE(sessionId!, (evt) => {
         if (evt.type === "progress") {
           setRunState(key, {
@@ -269,12 +335,14 @@ export default function TESPage() {
           });
         }
         if (evt.type === "complete") {
+          clearActiveSim();
           setRunState(key, { status: "complete", progress: 100, step: "Complete" });
           setPanelView({ type: "simnibs", model: next.model });
           runningRef.current = false;
           processQueue();
         }
         if (evt.type === "error") {
+          clearActiveSim();
           setRunState(key, { status: "error", error: evt.detail || "SimNIBS error" });
           runningRef.current = false;
           processQueue();
@@ -321,6 +389,72 @@ export default function TESPage() {
 
   // ── No-session guard ──────────────────────────────────────────────────────
   if (!sessionId || !inputBlobUrl) {
+    // If we found a saved job, show reconnect UI instead of error
+    if (reconnect && reconnect.status !== "none") {
+      const { sim, status, progress, step } = reconnect;
+      const modelLabel = sim.model.replace("-native", "").replace("-fs", "").toUpperCase();
+      const solverLabel = sim.solver === "roast" ? "ROAST" : "SimNIBS";
+      const isChecking = status === "checking";
+      const isRunning  = status === "running";
+      const isDone     = status === "complete";
+
+      return (
+        <div className="flex h-[calc(100vh-4rem)] items-center justify-center p-6">
+          <div className="w-full max-w-md space-y-5 rounded-2xl border border-border bg-surface p-6">
+            <div className="space-y-1">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">
+                {isChecking ? "Reconnecting…" : isRunning ? "Simulation in progress" : "Simulation complete"}
+              </p>
+              <p className="text-sm text-foreground-muted">
+                {isDone
+                  ? `Your ${solverLabel} simulation for ${modelLabel} finished while you were away.`
+                  : `Your ${solverLabel} simulation for ${modelLabel} is still running in the background.`}
+              </p>
+            </div>
+
+            {/* Progress bar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs text-foreground-muted">
+                <span>{isChecking ? "Checking status…" : step || (isDone ? "Done" : "Running…")}</span>
+                <span>{progress}%</span>
+              </div>
+              <div className="h-2 w-full rounded-full bg-border overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-500", isDone ? "bg-success" : "bg-accent")}
+                  style={{ width: `${isChecking ? 0 : progress}%` }}
+                />
+              </div>
+            </div>
+
+            {isDone && (
+              <div className="grid grid-cols-3 gap-2">
+                {["voltage", "emag", "efield"].map(t => (
+                  <a
+                    key={t}
+                    href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://10.15.224.253:8100"}/simulate/results/${sim.sessionId}/${sim.model}/${t}`}
+                    download
+                    className="flex flex-col items-center gap-1 rounded-lg border border-border bg-background p-2 text-center text-[10px] font-mono font-bold uppercase tracking-widest text-foreground hover:border-accent hover:text-accent transition-colors"
+                  >
+                    <span className="text-base">⬇</span>
+                    {t}
+                  </a>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" size="sm" className="flex-1 text-xs" onClick={() => { clearActiveSim(); setReconnect(null); }}>
+                Dismiss
+              </Button>
+              <Button variant="accent" size="sm" className="flex-1 text-xs" onClick={() => router.push("/")}>
+                New segmentation
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
         <div className="space-y-4 text-center">
