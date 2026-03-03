@@ -41,7 +41,9 @@ function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = nu
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
     } else if (hoveredLabel !== null) {
-      alpha = label === hoveredLabel ? 255 : 25;
+      // Niivue's orient shader binarizes alpha via step(0.00001, a):
+      // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
+      alpha = label === hoveredLabel ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -80,7 +82,9 @@ function buildSteppedLUT(
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
     } else if (hoveredLabel !== null) {
-      alpha = label === hoveredLabel ? 255 : 25;
+      // Niivue's orient shader binarizes alpha via step(0.00001, a):
+      // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
+      alpha = label === hoveredLabel ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -121,6 +125,11 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
 
+  // Ref to read overlayOpacity in the reload effect without triggering full
+  // reloads on every opacity slider tick.
+  const overlayOpacityRef = useRef(overlayOpacity);
+  useEffect(() => { overlayOpacityRef.current = overlayOpacity; }, [overlayOpacity]);
+
   // Apply a segmentation colormap to the overlay volume (index 1).
   //
   // For every colormap we build a 256-entry stepped LUT where each of the 12
@@ -147,12 +156,10 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       ? buildGraceLUT(showBg, hovered)
       : buildSteppedLUT(cmap, showBg, hovered);
 
-    // Encode the selected label in the colormap key so Niivue always sees a new
-    // colormap name and re-uploads the GL texture. Reusing the same key with
-    // updated LUT data is silently ignored because vol.colormap hasn't changed.
-    const cmapKey = hovered !== null ? `${OVERLAY_CMAP_KEY}_l${hovered}` : `${OVERLAY_CMAP_KEY}_all`;
-    nv.addColormap(cmapKey, lut);
-    vol.colormap = cmapKey;
+    // Always use the same key — addColormap overwrites cmapper.cluts[key] in place,
+    // so refreshColormaps() (called inside updateGLVolume) picks up the new LUT.
+    nv.addColormap(OVERLAY_CMAP_KEY, lut);
+    vol.colormap = OVERLAY_CMAP_KEY;
 
     // Pin the cal range so all 12 labels span the full LUT.
     // Also set robust_min/max to prevent updateGLVolume from overriding them.
@@ -484,14 +491,32 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   }, [viewMode, initialized]);
 
 
-  // Update colormap, background toggle, or selected label for either panel
+  // Opacity-only fast path — avoids a full GL texture reload on every slider tick.
+  useEffect(() => {
+    if (!initialized) return;
+    if (leftNvRef.current && leftModel !== null) {
+      leftNvRef.current.setOpacity(1, overlayOpacity);
+      leftNvRef.current.drawScene();
+    }
+    if (rightNvRef.current && rightModel !== null) {
+      rightNvRef.current.setOpacity(1, overlayOpacity);
+      rightNvRef.current.drawScene();
+    }
+  }, [overlayOpacity, initialized, leftModel, rightModel]);
+
+  // Colormap / background / selected-label changes.
+  // addColormap() overwrites the LUT in cmapper, and updateGLVolume() (called inside
+  // applySegColormap) re-runs refreshColormaps + the orient pass to apply the new LUT.
+  // overlayOpacity is read via ref to avoid triggering this (heavier) effect on slider ticks.
   useEffect(() => {
     if (!initialized) return;
     if (leftNvRef.current && leftModel !== null)
-      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacity, selectedLabel);
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacityRef.current, selectedLabel);
     if (rightNvRef.current && rightModel !== null)
-      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacity, selectedLabel);
-  }, [colormap, showBgLeft, showBgRight, initialized, leftModel, rightModel, overlayOpacity, selectedLabel, applySegColormap]);
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacityRef.current, selectedLabel);
+    // overlayOpacity intentionally read via ref — see opacity-only effect below
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [colormap, showBgLeft, showBgRight, selectedLabel, initialized, leftModel, rightModel, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
