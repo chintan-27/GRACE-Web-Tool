@@ -78,6 +78,7 @@ def build_roast_config(
     meshoptions: dict | None = None,
     simulationtag: str | None = None,
     quality: str = "standard",  # "fast" or "standard"
+    seg_source: str = "nn",     # "nn" or "spm"
 ) -> dict:
     """
     Build the JSON config dict that roast_run.m reads.
@@ -96,4 +97,5 @@ def build_roast_config(
         "elecori": elecori or DEFAULT_ELECTRODE_ORI,
         "meshoptions": meshoptions,
         "simulationtag": simulationtag or _tag_from_config(recipe, electype, elecsize, elecori, meshoptions),
+        "seg_source": seg_source,
     }

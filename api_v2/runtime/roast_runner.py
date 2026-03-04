@@ -37,12 +37,23 @@ from services.logger import log_event, log_error
 # Maps stdout substrings → (sse_event, progress_pct)
 # Order matters: first match wins per line (break after match).
 STEP_MAP = [
-    # --- seg8 generation (gen_seg8 in roast_run.m, pre-ROAST step) ---
-    ("ROAST_RUN: Generating seg8",        "roast_seg8",              5),
-    ("ROAST_RUN: seg8 saved",             "roast_seg8_done",         8),
+    # --- NN mode: seg8 generation only (gen_seg8 in roast_run.m) ---
+    ("ROAST_RUN: Generating seg8",              "roast_seg8",              5),
+    ("ROAST_RUN: seg8 saved",                   "roast_seg8_done",         8),
+
+    # --- SPM mode: full segmentation via spm_preproc_run ---
+    ("ROAST_RUN: SPM segmentation (direct",     "roast_spm_seg_start",     4),
+    ("ROAST_RUN: STEP 1 running spm_preproc",   "roast_spm_seg_run",       5),
+    ("ROAST_RUN: SPM segmentation complete",    "roast_spm_seg_done",      8),
+
+    # --- Step 1 / Step 2 banners (may appear in SPM mode) ---
+    ("STEP 1 (out of 6): SEGMENT",              "roast_step_seg",          5),
+    ("STEP 2 (out of 6): SEGMENTATION TOUCHUP", "roast_step_touchup",      9),
+    ("MRI ALREADY SEGMENTED",                   "roast_step_seg_skip",     5),
+    ("SEGMENTATION TOUCHUP ALREADY DONE",       "roast_step_touchup_skip", 9),
 
     # --- Step 2.5: CSF fix ---
-    ("STEP 2.5",                          "roast_step_csf_fix",     10),
+    ("STEP 2.5",                                "roast_step_csf_fix",     10),
 
     # --- Step 3: Electrode placement ---
     ("STEP 3",                            "roast_step_electrode",   12),
@@ -217,18 +228,27 @@ class ROASTRunner:
                 data[:, :, zi][new_vox] = label
         session_log(self.session_id, "[ROAST] Tissue holes filled per axial slice")
 
-        nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
-        session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
+        seg_source = self.payload.get("seg_source", "nn")
 
-        # Bypass ROAST Step 1 (SPM segmentation) by pre-creating dummy c1 files.
-        # ROAST first reorients T1.nii to RAS space → T1_ras.nii, then checks for
-        # the c1 file AFTER that reorientation. The bypass check therefore looks for
-        # c1T1_ras_T1orT2.nii, not c1T1_T1orT2.nii. We create both to be safe.
-        # SPM's batch system (cfg_mlbatch_appcfg_master) cannot run in compiled MATLAB.
-        for dummy_name in ("c1T1_T1orT2.nii", "c1T1_ras_T1orT2.nii"):
-            dummy_c1 = self.work_dir / dummy_name
-            shutil.copy(t1_nii, dummy_c1)
-        session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
+        if seg_source == "spm":
+            # SPM mode: do NOT pre-write the mask or dummy c1 files.
+            # roast_run.m will call run_spm_seg() to run the full SPM pipeline,
+            # then ROAST's segTouchup (Step 2) will generate the masks file.
+            session_log(self.session_id, "[ROAST] SPM mode: skipping NN mask and c1 bypass — ROAST will run SPM segmentation")
+        else:
+            # NN mode: pre-write the GRACE/DOMINO mask so ROAST skips segTouchup
+            # (Step 2), and write dummy c1 files so ROAST skips SPM (Step 1).
+            nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
+            session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
+
+            # Bypass ROAST Step 1 (SPM segmentation) by pre-creating dummy c1 files.
+            # ROAST first reorients T1.nii to RAS space → T1_ras.nii, then checks for
+            # the c1 file AFTER that reorientation. The bypass check therefore looks for
+            # c1T1_ras_T1orT2.nii, not c1T1_T1orT2.nii. We create both to be safe.
+            for dummy_name in ("c1T1_T1orT2.nii", "c1T1_ras_T1orT2.nii"):
+                dummy_c1 = self.work_dir / dummy_name
+                shutil.copy(t1_nii, dummy_c1)
+            session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
 
         return str(t1_nii)
 
@@ -244,6 +264,7 @@ class ROASTRunner:
             meshoptions=self.payload.get("mesh_options"),
             simulationtag=self.payload.get("simulation_tag"),
             quality=self.payload.get("quality", "standard"),
+            seg_source=self.payload.get("seg_source", "nn"),
         )
         # Remember the tag so collect_outputs() can locate the correct output files.
         self.sim_tag = cfg["simulationtag"]
