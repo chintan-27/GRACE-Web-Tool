@@ -802,10 +802,10 @@ export default function TESPage() {
                   <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                   <div className="space-y-0.5">
                     <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">
-                      Requires Rebuild
+                      Requires Segmentation Rerun 
                     </p>
                     <p className="text-[11px] leading-snug text-foreground-muted">
-                      SPM segmentation requires ROAST to be rebuilt with SPM bundled. Estimated time: 45–90 min per session.
+                      Using SPM segmentation requires longer wait times. Estimated time 25-40 min per session.
                     </p>
                   </div>
                 </div>
