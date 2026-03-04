@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
 import { Niivue, cmapper } from "@niivue/niivue";
-import { AlertTriangle, Eye, Palette } from "lucide-react";
+import { AlertTriangle, Eye, Palette, Info, ZoomIn } from "lucide-react";
 import { getSimulationResult, getSimNIBSResult } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
@@ -10,8 +10,22 @@ import { cn } from "@/lib/utils";
 
 // Two fixed panels — primary ROAST scalar outputs (2D only)
 const PANELS = [
-  { type: "emag",    label: "E-field Magnitude", unit: "V/m", description: "Electric field intensity in tissue" },
-  { type: "voltage", label: "Voltage",           unit: "mV",  description: "Electric potential distribution" },
+  {
+    type: "emag",
+    label: "E-field Magnitude",
+    unit: "V/m",
+    description: "Electric field intensity in tissue",
+    recommended: true,
+    note: null,
+  },
+  {
+    type: "voltage",
+    label: "Voltage",
+    unit: "mV",
+    description: "Electric potential distribution",
+    recommended: false,
+    note: "Voltage appears nearly uniform inside brain tissue — the skull (high resistance) absorbs most of the potential drop. Use E-field Magnitude above to assess stimulation strength in the brain.",
+  },
 ] as const;
 
 type OutputType = typeof PANELS[number]["type"];
@@ -37,6 +51,8 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   const [loading, setLoading]               = useState(false);
   const [loadErrors, setLoadErrors]         = useState<Partial<Record<OutputType, string>>>({});
   const [calRanges, setCalRanges]           = useState<Partial<Record<OutputType, { min: number; max: number }>>>({});
+  // When true, voltage colormap is clipped to the 5–99th percentile to reveal brain-tissue variation
+  const [voltageZoomed, setVoltageZoomed]   = useState(false);
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
   const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
@@ -186,6 +202,41 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     });
   }, [colormap, initialized]);
 
+  // Apply / remove brain-range zoom on the voltage panel (index 1 = voltage)
+  const voltageNv = nvRefs.current[1];
+  useEffect(() => {
+    if (!initialized || !voltageNv || voltageNv.volumes.length < 2) return;
+    const vol = voltageNv.volumes[1];
+    const fullRange = calRanges["voltage"];
+    if (!fullRange) return;
+
+    if (voltageZoomed) {
+      // Compute 5th–99th percentile of non-zero voxels to reveal brain variation
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const img = (vol as any).img as Float32Array | undefined;
+      if (img) {
+        const nonzero = Array.from(img).filter((v: number) => v > 0).sort((a: number, b: number) => a - b);
+        if (nonzero.length > 0) {
+          const p05 = nonzero[Math.floor(nonzero.length * 0.05)];
+          const p99 = nonzero[Math.floor(nonzero.length * 0.99)];
+          vol.cal_min = p05;
+          vol.cal_max = p99;
+          setCalRanges(prev => ({ ...prev, voltage: { min: p05, max: p99 } }));
+        }
+      }
+    } else {
+      // Restore full range
+      vol.cal_min = fullRange.min > 0 ? fullRange.max * 0.01 : fullRange.min;
+      vol.cal_max = fullRange.max;
+      setCalRanges(prev => ({ ...prev, voltage: { min: 0, max: fullRange.max } }));
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (vol as any).colormapType = 1;
+    voltageNv.updateGLVolume();
+    voltageNv.drawScene();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [voltageZoomed, initialized]);
+
   const currentColormap = COLORMAPS.find(c => c.id === colormap) ?? COLORMAPS[0];
 
   // Build a CSS linear-gradient string from a Niivue colormap LUT
@@ -301,13 +352,40 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
         {PANELS.map((panel, i) => (
           <article key={panel.type} className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
             <header className="border-b border-border px-4 py-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-semibold text-foreground">{panel.label}</h3>
-                <p className="text-xs text-foreground-muted mt-0.5">{panel.description}</p>
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-foreground">{panel.label}</h3>
+                    {panel.recommended && (
+                      <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-foreground-muted mt-0.5">{panel.description}</p>
+                </div>
               </div>
-              <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">
-                {panel.unit}
-              </span>
+              <div className="flex items-center gap-2 shrink-0">
+                {panel.type === "voltage" && initialized && !loadErrors[panel.type] && (
+                  <button
+                    type="button"
+                    onClick={() => setVoltageZoomed(v => !v)}
+                    title={voltageZoomed ? "Reset to full range" : "Zoom colormap to brain-tissue range"}
+                    className={cn(
+                      "flex items-center gap-1 rounded-lg border px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                      voltageZoomed
+                        ? "border-accent bg-accent/10 text-accent"
+                        : "border-border bg-background text-foreground-muted hover:border-accent/40 hover:text-foreground",
+                    )}
+                  >
+                    <ZoomIn className="h-3 w-3" aria-hidden="true" />
+                    {voltageZoomed ? "Zoomed" : "Zoom to brain"}
+                  </button>
+                )}
+                <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">
+                  {panel.unit}
+                </span>
+              </div>
             </header>
 
             {initialized && loadErrors[panel.type] ? (
@@ -339,7 +417,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
 
             {/* Scalar colorbar */}
             {initialized && !loadErrors[panel.type] && (
-              <div className="px-4 py-3 border-t border-border bg-surface">
+              <div className="px-4 py-3 border-t border-border bg-surface space-y-2.5">
                 <div className="flex items-center gap-3">
                   <span className="w-10 text-right text-xs font-mono text-foreground-muted tabular-nums">
                     {calRanges[panel.type] ? calRanges[panel.type]!.min.toFixed(2) : "0.00"}
@@ -355,6 +433,12 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
                       : `— ${panel.unit}`}
                   </span>
                 </div>
+                {panel.note && (
+                  <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-background px-3 py-2">
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground-muted" aria-hidden="true" />
+                    <p className="text-[11px] leading-snug text-foreground-muted">{panel.note}</p>
+                  </div>
+                )}
               </div>
             )}
           </article>

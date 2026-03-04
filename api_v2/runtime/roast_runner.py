@@ -20,7 +20,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
-from runtime.roast_config import build_roast_config
+from runtime.roast_config import build_roast_config, DEFAULT_MESH_OPTIONS
 from runtime.session import (
     session_input_native,
     session_input_fs,
@@ -295,9 +295,213 @@ class ROASTRunner:
         return cmd
 
     # ------------------------------------------------------------------
+    def _run_subprocess(self, cmd: list[str], progress_start: int = 5) -> tuple[bool, str | None, int]:
+        """
+        Launch the ROAST binary, stream stdout, and parse progress events.
+
+        Returns (convergence_failed, error_message, last_progress).
+        convergence_failed=True means a retryable mesh/FEM issue was detected.
+        error_message is non-None when the process exited non-zero.
+        """
+        import threading as _threading
+        _home = Path(os.environ.get("HOME", str(Path.home())))
+        mcr_cache = _home / ".MathWorks" / "MatlabRuntimeCache"
+
+        def _chmod_mcr(stop_evt: "_threading.Event"):
+            while not stop_evt.is_set():
+                if mcr_cache.exists():
+                    for _p in mcr_cache.rglob("*.mexa64"):
+                        try:
+                            _p.chmod(_p.stat().st_mode | 0o111)
+                        except OSError:
+                            pass
+                    for _p in mcr_cache.rglob("*"):
+                        if _p.is_file() and not _p.suffix:
+                            try:
+                                _p.chmod(_p.stat().st_mode | 0o111)
+                            except OSError:
+                                pass
+                stop_evt.wait(timeout=0.5)
+
+        _chmod_stop = _threading.Event()
+        _threading.Thread(target=_chmod_mcr, args=(_chmod_stop,), daemon=True).start()
+
+        import os as _os
+        from config import ROAST_MAX_WORKERS as _MAX_W
+        try:
+            total_cpus = len(_os.sched_getaffinity(0))
+        except AttributeError:
+            total_cpus = _os.cpu_count() or 4
+        n_threads = max(1, total_cpus // _MAX_W)
+        omp_env = _os.environ.copy()
+        omp_env["OMP_NUM_THREADS"] = str(n_threads)
+
+        master_fd, slave_fd = pty.openpty()
+        proc = subprocess.Popen(
+            cmd,
+            stdout=slave_fd,
+            stderr=slave_fd,
+            stdin=subprocess.DEVNULL,
+            cwd=str(self.work_dir),
+            env=omp_env,
+            start_new_session=True,
+            close_fds=True,
+        )
+        os.close(slave_fd)
+
+        def _kill_proc():
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+        last_progress = progress_start
+        deadline = time.time() + ROAST_TIMEOUT_SECONDS
+        STALL_TIMEOUT = 1800
+        CANCEL_POLL   = 5
+
+        last_stdout_time = time.time()
+        last_roast_error: str | None = None
+        convergence_failed = False
+        _buf = b""
+
+        while True:
+            try:
+                ready, _, _ = select.select([master_fd], [], [], CANCEL_POLL)
+            except (ValueError, OSError):
+                break
+
+            if not ready:
+                if redis_client.get(f"cancel:{self.session_id}"):
+                    _kill_proc()
+                    raise RuntimeError("Job cancelled by user")
+                if time.time() - last_stdout_time > STALL_TIMEOUT:
+                    _kill_proc()
+                    raise TimeoutError(f"ROAST stalled: no stdout for {STALL_TIMEOUT // 60} min")
+                if time.time() > deadline:
+                    _kill_proc()
+                    raise TimeoutError(f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s")
+                continue
+
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError:
+                break
+
+            if not chunk:
+                break
+
+            last_stdout_time = time.time()
+            _buf += chunk
+
+            while b"\n" in _buf:
+                raw_line, _buf = _buf.split(b"\n", 1)
+                line = raw_line.decode("utf-8", errors="replace").strip("\r")
+                if not line:
+                    continue
+
+                session_log(self.session_id, f"[ROAST stdout] {line}")
+
+                ll = line.lower()
+                if "cfg_mlbatch_appcfg_master" in line or ("Unrecognized function" in line and "cfg_" in line):
+                    last_roast_error = "SPM segmentation step failed — compiled MATLAB cannot run SPM's batch system."
+                elif "was not meshed properly" in line:
+                    last_roast_error = line.strip()
+                    convergence_failed = True
+                elif "convergence not reached" in ll or ("maximum number of iterations" in ll and "reached" in ll):
+                    last_roast_error = "FEM solver failed to converge."
+                    convergence_failed = True
+                elif "matrix is singular" in ll or ("singular" in ll and "working precision" in ll):
+                    last_roast_error = "FEM solver hit a singular matrix."
+                    convergence_failed = True
+                elif "nan" in ll and ("solution" in ll or "residual" in ll or "result" in ll):
+                    last_roast_error = "FEM solution contains NaN — solver diverged."
+                    convergence_failed = True
+                elif "error in roast>runfem" in ll or "getdp returned" in ll:
+                    last_roast_error = f"FEM solver error: {line.strip()}"
+                    convergence_failed = True
+                elif "Error using" in line or "Unrecognized function or variable" in line:
+                    last_roast_error = line.strip()
+
+                if redis_client.get(f"cancel:{self.session_id}"):
+                    _kill_proc()
+                    raise RuntimeError("Job cancelled by user")
+
+                matched = False
+                for substring, event_name, pct in STEP_MAP:
+                    if substring in line:
+                        if pct > last_progress:
+                            self._emit(event_name, pct)
+                            last_progress = pct
+                        matched = True
+                        break
+
+                if not matched:
+                    for pattern, lo, hi, event_name in _GETDP_RANGES:
+                        m = pattern.search(line)
+                        if m:
+                            raw_pct = int(m.group(1))
+                            mapped = lo + int((raw_pct / 100.0) * (hi - lo))
+                            if mapped > last_progress:
+                                self._emit(event_name, mapped)
+                                last_progress = mapped
+                            break
+
+            if time.time() > deadline:
+                _kill_proc()
+                raise TimeoutError(f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s")
+
+        try:
+            os.close(master_fd)
+        except OSError:
+            pass
+
+        _chmod_stop.set()
+        proc.wait()
+
+        if proc.returncode != 0:
+            error = last_roast_error or (
+                f"ROAST exited with code {proc.returncode} — check session logs."
+            )
+            return convergence_failed, error, last_progress
+
+        return False, None, last_progress
+
+    # ------------------------------------------------------------------
+    def _clean_roast_intermediates(self):
+        """Delete ROAST-generated mesh/FEM files so a retry starts fresh."""
+        patterns = ["*.msh", "sim_*", "*.msh.mat"]
+        for pattern in patterns:
+            for p in self.work_dir.glob(pattern):
+                try:
+                    if p.is_dir():
+                        shutil.rmtree(p)
+                    else:
+                        p.unlink()
+                except OSError:
+                    pass
+        session_log(self.session_id, "[ROAST] Cleaned intermediate files for retry")
+
+    # ------------------------------------------------------------------
+    def _escalate_mesh(self):
+        """Switch to standard mesh quality for the retry attempt."""
+        current_quality = self.payload.get("quality", "standard")
+        if current_quality == "fast":
+            # Fast → standard: use the full-resolution default mesh options
+            self.payload = {**self.payload, "quality": "standard", "mesh_options": None}
+            session_log(self.session_id, "[ROAST] Mesh escalated: fast → standard")
+        else:
+            # Already standard — tighten mesh by reducing maxvol
+            current_opts = self.payload.get("mesh_options") or DEFAULT_MESH_OPTIONS.copy()
+            tighter = {**current_opts, "maxvol": max(5, current_opts.get("maxvol", 10) // 2)}
+            self.payload = {**self.payload, "mesh_options": tighter}
+            session_log(self.session_id, f"[ROAST] Mesh escalated: maxvol → {tighter['maxvol']}")
+
+    # ------------------------------------------------------------------
     def run(self):
         """
         Full ROAST pipeline: prepare → write config → launch binary → stream progress.
+        Automatically retries once with a refined mesh on FEM/meshing failures.
         """
         try:
             set_roast_status(self.session_id, "running", self.model_name)
@@ -306,193 +510,28 @@ class ROASTRunner:
             t1_path = self.prepare_working_directory()
             self._emit("roast_prepare", 5)
 
-            config_path = self.write_config(t1_path)
-            cmd = self.build_command(config_path)
+            for attempt in range(2):  # at most one automatic retry
+                config_path = self.write_config(t1_path)
+                cmd = self.build_command(config_path)
+                session_log(self.session_id, f"[ROAST] Launching (attempt {attempt + 1}): {' '.join(cmd)}")
 
-            session_log(self.session_id, f"[ROAST] Launching: {' '.join(cmd)}")
-
-            # MCR extracts CTF archive binaries lazily (on first use) without
-            # execute bits. A one-shot chmod before launch misses files extracted
-            # mid-run (e.g. cgalmesh at Step 4). Run chmod in a background thread
-            # every 3 s for the duration of the process.
-            # Use $HOME env var — MCR cache lives under the user's home, which
-            # may differ from Path.home() when the container runs as root.
-            import threading as _threading
-            _home = Path(os.environ.get("HOME", str(Path.home())))
-            mcr_cache = _home / ".MathWorks" / "MatlabRuntimeCache"
-
-            def _chmod_mcr(stop_evt: "_threading.Event"):
-                while not stop_evt.is_set():
-                    if mcr_cache.exists():
-                        for _p in mcr_cache.rglob("*.mexa64"):
-                            try:
-                                _p.chmod(_p.stat().st_mode | 0o111)
-                            except OSError:
-                                pass
-                        for _p in mcr_cache.rglob("*"):
-                            if _p.is_file() and not _p.suffix:
-                                try:
-                                    _p.chmod(_p.stat().st_mode | 0o111)
-                                except OSError:
-                                    pass
-                    stop_evt.wait(timeout=0.5)
-
-            _chmod_stop = _threading.Event()
-            _chmod_thread = _threading.Thread(
-                target=_chmod_mcr, args=(_chmod_stop,), daemon=True
-            )
-            _chmod_thread.start()
-
-            # Use all cores visible to this process (respects Docker --cpuset / --cpus limits).
-            # os.cpu_count() returns the physical host count; sched_getaffinity(0) returns
-            # the cores actually allocated to this container.
-            import os as _os
-            from config import ROAST_MAX_WORKERS as _MAX_W
-            try:
-                total_cpus = len(_os.sched_getaffinity(0))
-            except AttributeError:
-                total_cpus = _os.cpu_count() or 4
-            # Divide CPUs evenly across concurrent ROAST workers so jobs
-            # don't all try to use every core simultaneously.
-            n_threads = max(1, total_cpus // _MAX_W)
-            omp_env = _os.environ.copy()
-            omp_env["OMP_NUM_THREADS"] = str(n_threads)
-
-            # Use a pseudo-terminal so MCR sees a TTY on stdout and uses
-            # line-buffering instead of 8 KB block-buffering.  stdbuf / PYTHONUNBUFFERED
-            # cannot override MCR's internal C++/Java I/O layer, but isatty() can.
-            master_fd, slave_fd = pty.openpty()
-
-            proc = subprocess.Popen(
-                cmd,
-                stdout=slave_fd,
-                stderr=slave_fd,
-                stdin=subprocess.DEVNULL,
-                cwd=str(self.work_dir),
-                env=omp_env,
-                start_new_session=True,  # own process group → killpg kills entire tree
-                close_fds=True,
-            )
-            os.close(slave_fd)  # parent keeps only the master end
-
-            def _kill_proc():
-                """Kill the entire process group (xvfb-run + run_roast_run.sh + roast_run)."""
-                try:
-                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-
-            last_progress = 5
-            deadline = time.time() + ROAST_TIMEOUT_SECONDS
-            STALL_TIMEOUT = 1800   # declare stall if no stdout for 30 min
-            CANCEL_POLL  = 5       # check cancellation every 5 s during silence
-
-            last_stdout_time = time.time()
-            last_roast_error: str | None = None  # capture last MATLAB error line
-            _buf = b""
-
-            while True:
-                try:
-                    ready, _, _ = select.select([master_fd], [], [], CANCEL_POLL)
-                except (ValueError, OSError):
-                    break  # master_fd closed after child exits
-
-                if not ready:
-                    # No stdout in CANCEL_POLL seconds — check cancel / stall
-                    if redis_client.get(f"cancel:{self.session_id}"):
-                        _kill_proc()
-                        raise RuntimeError("Job cancelled by user")
-                    if time.time() - last_stdout_time > STALL_TIMEOUT:
-                        _kill_proc()
-                        raise TimeoutError(
-                            f"ROAST stalled: no stdout for {STALL_TIMEOUT // 60} min"
-                        )
-                    if time.time() > deadline:
-                        _kill_proc()
-                        raise TimeoutError(
-                            f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s"
-                        )
-                    continue
-
-                try:
-                    chunk = os.read(master_fd, 4096)
-                except OSError:
-                    break  # EIO — child process exited, slave side closed
-
-                if not chunk:
-                    break
-
-                last_stdout_time = time.time()
-                _buf += chunk
-
-                # Flush complete lines — match progress events inside this loop
-                while b"\n" in _buf:
-                    raw_line, _buf = _buf.split(b"\n", 1)
-                    line = raw_line.decode("utf-8", errors="replace").strip("\r")
-                    if not line:
-                        continue
-
-                    session_log(self.session_id, f"[ROAST stdout] {line}")
-
-                    # Capture MATLAB error lines so we can surface them if ROAST exits non-zero.
-                    # Map known patterns to friendly messages; fall back to the raw line.
-                    if "cfg_mlbatch_appcfg_master" in line or ("Unrecognized function" in line and "cfg_" in line):
-                        last_roast_error = "SPM segmentation step failed — compiled MATLAB cannot run SPM's batch system. The c1 bypass file may not have been detected."
-                    elif "was not meshed properly" in line:
-                        last_roast_error = f"Electrode meshing failed: {line.strip()} — try switching to Standard quality mesh."
-                    elif "Error using" in line or "Unrecognized function or variable" in line:
-                        last_roast_error = line.strip()
-
-                    # Check cancellation on each line
-                    if redis_client.get(f"cancel:{self.session_id}"):
-                        _kill_proc()
-                        raise RuntimeError("Job cancelled by user")
-
-                    # 1) Match fixed step substrings
-                    matched = False
-                    for substring, event_name, pct in STEP_MAP:
-                        if substring in line:
-                            if pct > last_progress:
-                                self._emit(event_name, pct)
-                                last_progress = pct
-                            matched = True
-                            break
-
-                    # 2) If no fixed match, try getDP percentage patterns (Step 5)
-                    if not matched:
-                        for pattern, lo, hi, event_name in _GETDP_RANGES:
-                            m = pattern.search(line)
-                            if m:
-                                raw_pct = int(m.group(1))
-                                mapped = lo + int((raw_pct / 100.0) * (hi - lo))
-                                if mapped > last_progress:
-                                    self._emit(event_name, mapped)
-                                    last_progress = mapped
-                                break
-
-                if time.time() > deadline:
-                    _kill_proc()
-                    raise TimeoutError(
-                        f"ROAST timed out after {ROAST_TIMEOUT_SECONDS}s"
-                    )
-
-            try:
-                os.close(master_fd)
-            except OSError:
-                pass
-
-            _chmod_stop.set()
-            proc.wait()
-
-            if proc.returncode != 0:
-                msg = last_roast_error or (
-                    "ROAST failed unexpectedly — check the session logs for the full MATLAB output. "
-                    f"(exit code {proc.returncode})"
+                convergence_failed, error, last_progress = self._run_subprocess(
+                    cmd, progress_start=5 if attempt == 0 else 10
                 )
-                raise RuntimeError(msg)
+
+                if error and convergence_failed and attempt == 0:
+                    session_log(self.session_id, f"[ROAST] Retryable failure: {error}. Escalating mesh.")
+                    self._emit("roast_retry", last_progress,
+                               detail=f"{error} — retrying with refined mesh…")
+                    self._clean_roast_intermediates()
+                    self._escalate_mesh()
+                    continue  # retry
+
+                if error:
+                    raise RuntimeError(error)
+                break  # success
 
             self.collect_outputs()
-
             set_roast_status(self.session_id, "complete", self.model_name)
             self._emit("roast_complete", 100)
             session_log(self.session_id, "[ROAST] Completed successfully")
