@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Niivue, cmapper } from "@niivue/niivue";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Maximize2, Minimize2 } from "lucide-react";
 import { getResult } from "@/lib/api";
 import ViewerControls, { ColormapId } from "./ViewerControls";
 import ComparisonSelector from "./ComparisonSelector";
@@ -122,6 +122,12 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [showBgRight, setShowBgRight] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState<number | null>(null);
   const [bgDim, setBgDim] = useState(0.35);
+  const [fullscreenEl, setFullscreenEl] = useState<"section" | "left" | "right" | null>(null);
+
+  // Container refs for fullscreen API
+  const sectionRef = useRef<HTMLElement>(null);
+  const leftPanelRef = useRef<HTMLElement>(null);
+  const rightPanelRef = useRef<HTMLElement>(null);
 
   // Ref to track loaded results without stale closure issues
   const loadedResultsRef = useRef<Record<string, ArrayBuffer>>({});
@@ -131,6 +137,40 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   useEffect(() => { overlayOpacityRef.current = overlayOpacity; }, [overlayOpacity]);
   const bgDimRef = useRef(bgDim);
   useEffect(() => { bgDimRef.current = bgDim; }, [bgDim]);
+
+  // Track fullscreen state via browser events
+  useEffect(() => {
+    const handler = () => {
+      const el = document.fullscreenElement;
+      if (!el) {
+        setFullscreenEl(null);
+      } else if (el === sectionRef.current) {
+        setFullscreenEl("section");
+      } else if (el === leftPanelRef.current) {
+        setFullscreenEl("left");
+      } else if (el === rightPanelRef.current) {
+        setFullscreenEl("right");
+      }
+      // Nudge Niivue to redraw at the new size
+      setTimeout(() => {
+        leftNvRef.current?.drawScene();
+        rightNvRef.current?.drawScene();
+      }, 100);
+    };
+    document.addEventListener("fullscreenchange", handler);
+    return () => document.removeEventListener("fullscreenchange", handler);
+  }, []);
+
+  const toggleFullscreen = useCallback((
+    target: "section" | "left" | "right",
+    ref: React.RefObject<HTMLElement | null>,
+  ) => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      ref.current?.requestFullscreen();
+    }
+  }, []);
 
   // Apply a segmentation colormap to the overlay volume (index 1).
   //
@@ -571,8 +611,9 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   return (
     <section
+      ref={sectionRef}
       aria-label="MRI Viewer Comparison"
-      className="space-y-4"
+      className={fullscreenEl === "section" ? "space-y-4 bg-background p-4 overflow-auto h-screen" : "space-y-4"}
       onKeyDown={handleKeyDown}
     >
       {/* Error message */}
@@ -619,6 +660,20 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           onBgDimChange={setBgDim}
         />
 
+        <button
+          type="button"
+          onClick={() => toggleFullscreen("section", sectionRef)}
+          title={fullscreenEl === "section" ? "Exit fullscreen" : "Fullscreen both panels"}
+          className="ml-auto rounded-lg border border-border bg-surface p-2 text-foreground-muted transition-colors hover:border-accent/40 hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+          aria-label={fullscreenEl === "section" ? "Exit fullscreen" : "Fullscreen both panels"}
+        >
+          {fullscreenEl === "section" ? (
+            <Minimize2 className="h-4 w-4" aria-hidden="true" />
+          ) : (
+            <Maximize2 className="h-4 w-4" aria-hidden="true" />
+          )}
+        </button>
+
         {loadingModelName && (
           <div
             role="status"
@@ -643,7 +698,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       <div className="grid gap-4 md:grid-cols-2" role="group" aria-label="Side by side MRI comparison">
         {/* Left Panel */}
         <article
-          className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden"
+          ref={leftPanelRef}
+          className={`flex flex-col rounded-xl border border-border bg-surface overflow-hidden${fullscreenEl === "left" ? " bg-black" : ""}`}
           aria-label={leftModel ? `Left panel: ${getDisplayName(leftModel)} segmentation` : "Left panel: Input MRI only"}
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -670,19 +726,34 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
                 </label>
               )}
             </div>
-            <ComparisonSelector
-              models={models}
-              selectedModel={leftModel}
-              onModelSelect={handleLeftModelChange}
-              loadedModels={loadedModelsStatus}
-              loadingModels={loadingModels}
-              panelId="left"
-            />
+            <div className="flex items-center gap-2">
+              <ComparisonSelector
+                models={models}
+                selectedModel={leftModel}
+                onModelSelect={handleLeftModelChange}
+                loadedModels={loadedModelsStatus}
+                loadingModels={loadingModels}
+                panelId="left"
+              />
+              <button
+                type="button"
+                onClick={() => toggleFullscreen("left", leftPanelRef)}
+                title={fullscreenEl === "left" ? "Exit fullscreen" : "Fullscreen this panel"}
+                className="rounded-md p-1 text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label={fullscreenEl === "left" ? "Exit fullscreen" : "Fullscreen left panel"}
+              >
+                {fullscreenEl === "left" ? (
+                  <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </header>
 
           <div
             className="relative bg-black"
-            style={{ height: "500px" }}
+            style={fullscreenEl === "left" ? { flex: 1 } : { height: "500px" }}
             role="img"
             aria-labelledby="left-panel-title"
             tabIndex={0}
@@ -711,7 +782,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
         {/* Right Panel */}
         <article
-          className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden"
+          ref={rightPanelRef}
+          className={`flex flex-col rounded-xl border border-border bg-surface overflow-hidden${fullscreenEl === "right" ? " bg-black" : ""}`}
           aria-label={rightModel ? `Right panel: ${getDisplayName(rightModel)} segmentation` : "Right panel: Input MRI only"}
         >
           <header className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -738,19 +810,34 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
                 </label>
               )}
             </div>
-            <ComparisonSelector
-              models={models}
-              selectedModel={rightModel}
-              onModelSelect={handleRightModelChange}
-              loadedModels={loadedModelsStatus}
-              loadingModels={loadingModels}
-              panelId="right"
-            />
+            <div className="flex items-center gap-2">
+              <ComparisonSelector
+                models={models}
+                selectedModel={rightModel}
+                onModelSelect={handleRightModelChange}
+                loadedModels={loadedModelsStatus}
+                loadingModels={loadingModels}
+                panelId="right"
+              />
+              <button
+                type="button"
+                onClick={() => toggleFullscreen("right", rightPanelRef)}
+                title={fullscreenEl === "right" ? "Exit fullscreen" : "Fullscreen this panel"}
+                className="rounded-md p-1 text-foreground-muted transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+                aria-label={fullscreenEl === "right" ? "Exit fullscreen" : "Fullscreen right panel"}
+              >
+                {fullscreenEl === "right" ? (
+                  <Minimize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                ) : (
+                  <Maximize2 className="h-3.5 w-3.5" aria-hidden="true" />
+                )}
+              </button>
+            </div>
           </header>
 
           <div
             className="relative bg-black"
-            style={{ height: "500px" }}
+            style={fullscreenEl === "right" ? { flex: 1 } : { height: "500px" }}
             role="img"
             aria-labelledby="right-panel-title"
             tabIndex={0}
