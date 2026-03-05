@@ -329,10 +329,12 @@ export function connectSimNIBSSSE(
 // ---------------------------------------------------------------------
 // GET /simulate/simnibs/results/{session}/{output_type}
 // ---------------------------------------------------------------------
+export type SimNIBSOutputType = "magnJ" | "wm_magnJ" | "gm_magnJ" | "wm_gm_magnJ";
+
 export async function getSimNIBSResult(
   sessionId: string,
   modelName: string,
-  outputType: "emag" | "voltage"
+  outputType: SimNIBSOutputType
 ): Promise<Blob> {
   const res = await fetch(`${API_BASE}/simulate/simnibs/results/${sessionId}/${modelName}/${outputType}`);
   if (!res.ok) throw new Error(`SimNIBS result not found: ${outputType}`);
