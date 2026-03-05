@@ -390,8 +390,8 @@ async def simulate_simnibs(body: dict = Body(...)):
 # ============================================================
 @app.get("/simulate/simnibs/results/{session_id}/{model_name}/{output_type}")
 async def get_simnibs_result(session_id: str, model_name: str, output_type: str):
-    if output_type not in ("emag", "voltage"):
-        raise HTTPException(status_code=400, detail="output_type must be: emag or voltage")
+    if output_type not in ("magnJ", "wm_magnJ", "gm_magnJ", "wm_gm_magnJ"):
+        raise HTTPException(status_code=400, detail="output_type must be: magnJ, wm_magnJ, gm_magnJ, or wm_gm_magnJ")
 
     try:
         out_path = simnibs_output_path(session_id, model_name, output_type)

@@ -3,17 +3,17 @@
 import { useEffect, useRef, useState, useCallback, useId } from "react";
 import { Niivue } from "@niivue/niivue";
 import { AlertTriangle, Eye, Palette } from "lucide-react";
-import { getSimulationResult, getSimNIBSResult } from "@/lib/api";
+import { getSimulationResult, getSimNIBSResult, type SimNIBSOutputType } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 import { cn } from "@/lib/utils";
 
-// Four panels: ROAST emag | SimNIBS emag | ROAST voltage | SimNIBS voltage
+// Four panels: ROAST emag | SimNIBS magnJ | ROAST voltage | SimNIBS WM+GM magnJ
 const PANELS = [
-  { solver: "roast",   type: "emag",    label: "ROAST — E-field Magnitude",   unit: "V/m",  col: 0 },
-  { solver: "simnibs", type: "emag",    label: "SimNIBS — E-field Magnitude", unit: "V/m",  col: 1 },
-  { solver: "roast",   type: "voltage", label: "ROAST — Voltage",              unit: "mV",   col: 0 },
-  { solver: "simnibs", type: "voltage", label: "SimNIBS — Voltage",            unit: "mV",   col: 1 },
+  { solver: "roast",   type: "emag",       label: "ROAST — E-field Magnitude",     unit: "V/m",  col: 0 },
+  { solver: "simnibs", type: "magnJ",      label: "SimNIBS — Current Density |J|", unit: "A/m²", col: 1 },
+  { solver: "roast",   type: "voltage",    label: "ROAST — Voltage",               unit: "mV",   col: 0 },
+  { solver: "simnibs", type: "wm_gm_magnJ", label: "SimNIBS — WM+GM |J|",          unit: "A/m²", col: 1 },
 ] as const;
 
 type PanelIdx = 0 | 1 | 2 | 3;
@@ -57,13 +57,16 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: 
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const fetchOutput = useCallback(async (solver: "roast" | "simnibs", type: "emag" | "voltage"): Promise<ArrayBuffer | null> => {
+  type RoastOutputType = "emag" | "voltage";
+  type AnyOutputType = RoastOutputType | SimNIBSOutputType;
+
+  const fetchOutput = useCallback(async (solver: "roast" | "simnibs", type: AnyOutputType): Promise<ArrayBuffer | null> => {
     const key = `${solver}:${type}`;
     if (bufferCache.current[key]) return bufferCache.current[key];
     try {
       const blob = solver === "roast"
-        ? await getSimulationResult(sessionId, modelName, type)
-        : await getSimNIBSResult(sessionId, modelName, type);
+        ? await getSimulationResult(sessionId, modelName, type as RoastOutputType)
+        : await getSimNIBSResult(sessionId, modelName, type as SimNIBSOutputType);
       const buf = await blob.arrayBuffer();
       bufferCache.current[key] = buf;
       return buf;
@@ -75,7 +78,7 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: 
   const loadOverlay = useCallback(async (
     nv: Niivue,
     solver: "roast" | "simnibs",
-    type: "emag" | "voltage",
+    type: AnyOutputType,
     opacity: number,
     cmap: ColormapId,
   ): Promise<boolean> => {
@@ -337,7 +340,8 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: 
       ))}
 
       <p className="text-xs text-foreground-muted">
-        All panels are scroll-synchronized. Both solvers use the {modelName} segmentation — differences reflect meshing and FEM solver variations.
+        All panels are scroll-synchronized. Both solvers use the {modelName} segmentation.
+        ROAST outputs E-field (V/m) and voltage; SimNIBS outputs current density |J| (A/m²) with WM+GM masked view.
       </p>
     </section>
   );

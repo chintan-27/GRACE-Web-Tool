@@ -1,28 +1,36 @@
 """
 SimNIBSRunner — runs SimNIBS tDCS FEM simulation using an existing
-GRACE/DOMINO/DOMINO++ segmentation mask (bypasses charm's own segmentation).
+GRACE/DOMINO/DOMINO++ segmentation mask.
 
 Pipeline
 --------
 1. Gunzip T1 into working directory
-2. Load GRACE segmentation → remap 11-tissue labels to SimNIBS 5-tissue format
-3. Run `charm <subject> <t1> --precomputed_seg <remapped_seg>` (skips segmentation step)
-4. Configure a SimNIBS TDCSLIST session (Python API) and call run_simnibs()
-5. Collect emag + voltage NIfTIs into session/simnibs/<model_name>/outputs/
+2. Load GRACE segmentation → remap 11-tissue labels to SimNIBS/CHARM labels
+3. Run `charm --forceqform <subject> <t1>` once per session (shared base):
+   creates m2m_subject/ with EEG positions, T1fs_conform, atlas registration
+4. Copy charm base into model working directory; inject remapped labels as
+   custom_tissues.nii.gz
+5. Run `meshmesh <labels.nii.gz> <subject_custom_mesh.msh> --voxsize_meshing 0.5`
+   to build the FEM mesh from the custom labels
+6. Configure a SimNIBS TDCSLIST session (j-field) and call run_simnibs()
+7. Post-process: create WM/GM-masked magnJ NIfTIs
+8. Collect magnJ + masked volumes into session/simnibs/<model_name>/outputs/
 
-Label mapping (GRACE 11-tissue → SimNIBS 5-tissue)
-----------------------------------------------------
- 1 WM            → 1 WM
- 2 GM            → 2 GM
- 3 CSF           → 3 CSF
- 4 compact bone  → 4 skull
- 5 cancel. bone  → 4 skull
- 6 scalp         → 5 scalp
- 7 air           → 0 background
- 8 muscle        → 5 scalp (soft tissue)
- 9 fat           → 5 scalp (soft tissue)
-10 blood         → 0 background
-11 eye           → 6 eyes (SimNIBS optional label)
+Label mapping (GRACE 11-tissue → SimNIBS/CHARM)
+------------------------------------------------
+GRACE                    CHARM label
+ 0  Background      →  0  Air/background
+ 1  White-Matter    →  1  White-Matter
+ 2  Grey-Matter     →  2  Gray-Matter
+ 3  Eyes            →  6  Eye_balls
+ 4  CSF             →  3  CSF
+ 5  Air (internal)  → 12  air (custom)
+ 6  Blood           →  9  Blood
+ 7  Spongy Bone     →  8  Spongy_bone
+ 8  Compact Bone    →  7  Compact_bone
+ 9  Skin            →  5  Scalp
+10  Fat             → 11  fat (custom)
+11  Muscle          → 10  Muscle
 """
 
 import gzip
@@ -36,7 +44,7 @@ from pathlib import Path
 import nibabel as nib
 import numpy as np
 
-from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME, MNI_TEMPLATE
+from config import SIMNIBS_TIMEOUT_SECONDS, SIMNIBS_HOME
 from runtime.session import (
     session_input_native,
     model_output_path,
@@ -62,32 +70,31 @@ SUBJECT = "subject"
 # Seconds to sleep between polls when waiting for another model to build the charm base
 CHARM_BASE_POLL_INTERVAL = 10
 
-# GRACE 11-tissue → SimNIBS tissue labels
-# SimNIBS: 0=bg, 1=WM, 2=GM, 3=CSF, 4=skull, 5=scalp, 6=eyes
+# GRACE 11-tissue → SimNIBS/CHARM tissue labels
 LABEL_MAP = {
-    0:  0,   # background
+    0:  0,   # background → air/background
     1:  1,   # white matter
     2:  2,   # gray matter
-    3:  3,   # CSF
-    4:  4,   # compact bone → skull
-    5:  4,   # cancellous bone → skull
-    6:  5,   # scalp
-    7:  0,   # air → background
-    8:  5,   # muscle → scalp/soft tissue
-    9:  5,   # fat → scalp/soft tissue
-    10: 0,   # blood → background
-    11: 6,   # eye
+    3:  6,   # eyes → eye_balls
+    4:  3,   # CSF
+    5:  12,  # air (internal) → air custom label
+    6:  9,   # blood
+    7:  8,   # spongy bone
+    8:  7,   # compact bone
+    9:  5,   # skin → scalp
+    10: 11,  # fat (custom label)
+    11: 10,  # muscle
 }
 
 # charm stdout substrings → (sse_event, overall_progress)
 CHARM_MAP = [
-    ("registering",          "simnibs_charm_register",  10),
-    ("segmenting",           "simnibs_charm_segment",   20),
-    ("classif",              "simnibs_charm_tissue",    30),
-    ("surface",              "simnibs_charm_surface",   40),
-    ("meshing",              "simnibs_charm_mesh",      50),
-    ("finaliz",              "simnibs_charm_finalize",  57),
-    ("saving",               "simnibs_charm_saving",    59),
+    ("registering",   "simnibs_charm_register",  15),
+    ("segmenting",    "simnibs_charm_segment",    25),
+    ("classif",       "simnibs_charm_tissue",     35),
+    ("surface",       "simnibs_charm_surface",    42),
+    ("meshing",       "simnibs_charm_mesh",       50),
+    ("finaliz",       "simnibs_charm_finalize",   55),
+    ("saving",        "simnibs_charm_saving",     58),
 ]
 
 
@@ -100,7 +107,6 @@ def _find_simnibs_home() -> str:
         return SIMNIBS_HOME
     charm_path = shutil.which("charm")
     if charm_path:
-        # charm lives at $SIMNIBS_HOME/bin/charm → go up two levels
         candidate = Path(charm_path).resolve().parent.parent
         if (candidate / "simnibs_env").exists():
             return str(candidate)
@@ -110,11 +116,6 @@ def _find_simnibs_home() -> str:
 def _find_simnibs_python() -> str:
     """
     Find the Python interpreter bundled with SimNIBS.
-
-    Tries two candidate roots in order:
-      1. Parent of the resolved charm binary (most reliable — charm actually ran)
-      2. SIMNIBS_HOME / SIM_NIBS env var
-    Searches for python3 and python inside <root>/simnibs_env/bin/.
     """
     homes_to_try: list[str] = []
     charm_path = shutil.which("charm")
@@ -140,42 +141,29 @@ def _find_simnibs_python() -> str:
 def _charm_cmd() -> list[str]:
     """
     Return the command list prefix for running charm.
-
-    The shell wrapper at SIMNIBS_HOME/bin/charm contains a hardcoded absolute
-    Python path written at install time (e.g. /home/chintan/SimNIBS-4.5/...).
-    When SimNIBS is bind-mounted at a different path inside the container
-    (e.g. /opt/simnibs), that hardcoded path no longer exists and the wrapper
-    fails with "No such file or directory".
-
-    This function detects that case and bypasses the broken wrapper by calling
-    the SimNIBS Python interpreter directly:
-        [simnibs_env/bin/python3, -m, simnibs.cli.charm]
+    Detects broken wrapper paths (host-installed, container-mounted) and
+    falls back to calling simnibs_env Python directly.
     """
     home = _find_simnibs_home()
     if home:
         wrapper = Path(home) / "bin" / "charm"
         if wrapper.exists():
-            # Check whether the Python path hardcoded in the wrapper is usable.
-            # If not (e.g. installed on host, mounted at a different container path),
-            # fall through to the direct Python invocation below.
             try:
                 first_lines = wrapper.read_text(errors="ignore")[:512]
                 import re as _re
                 m = _re.search(r'(/\S+/simnibs_env/bin/python\S*)', first_lines)
                 if m and Path(m.group(1)).exists():
-                    return [str(wrapper)]   # wrapper's Python path is reachable
+                    return [str(wrapper)]
                 elif not m:
-                    return [str(wrapper)]   # no hardcoded path → assume it works
+                    return [str(wrapper)]
             except Exception:
                 return [str(wrapper)]
 
-        # Wrapper has a broken hardcoded Python path → call simnibs_env Python directly
         for pyname in ("python3", "python"):
             py = Path(home) / "simnibs_env" / "bin" / pyname
             if py.exists():
                 return [str(py), "-m", "simnibs.cli.charm"]
 
-    # Try system PATH as last resort
     augmented_path = _simnibs_env().get("PATH")
     found = shutil.which("charm", path=augmented_path)
     if found:
@@ -184,50 +172,29 @@ def _charm_cmd() -> list[str]:
     tried = str(Path(home) / "bin" / "charm") if home else "(SIMNIBS_HOME not set)"
     raise FileNotFoundError(
         f"SimNIBS 'charm' not found. Tried: {tried}. "
-        f"SIMNIBS_HOME={SIMNIBS_HOME!r}. "
-        "Ensure SIMNIBS_HOME is set and the installation is accessible."
+        f"SIMNIBS_HOME={SIMNIBS_HOME!r}."
     )
 
 
-def _find_mni_template() -> str | None:
-    """
-    Find the MNI152 T1 template used for ANTs registration.
-    Priority: MNI_TEMPLATE env var → SIMNIBS_HOME glob → simnibs import fallback.
-    """
-    if MNI_TEMPLATE and Path(MNI_TEMPLATE).exists():
-        return MNI_TEMPLATE
+def _meshmesh_cmd() -> list[str]:
+    """Return the command list prefix for running meshmesh."""
+    home = _find_simnibs_home()
+    if home:
+        wrapper = Path(home) / "bin" / "meshmesh"
+        if wrapper.exists():
+            return [str(wrapper)]
+        for pyname in ("python3", "python"):
+            py = Path(home) / "simnibs_env" / "bin" / pyname
+            if py.exists():
+                return [str(py), "-m", "simnibs.cli.meshmesh"]
 
-    # Search directly inside SimNIBS installation (works even if simnibs is not
-    # importable in the current venv, e.g. when the API runs in a separate virtualenv).
-    # Scan simnibs_env/lib/python3.x/ directories rather than using rglob,
-    # which can fail with PermissionError on some subdirectories.
-    simnibs_home = _find_simnibs_home()
-    if simnibs_home:
-        lib_dir = Path(simnibs_home) / "simnibs_env" / "lib"
-        if lib_dir.exists():
-            for py_dir in lib_dir.iterdir():
-                if not py_dir.name.startswith("python"):
-                    continue
-                for name in ("MNI152_T1_1mm.nii.gz", "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz"):
-                    tmpl = py_dir / "site-packages" / "simnibs" / "resources" / "templates" / name
-                    if tmpl.exists():
-                        return str(tmpl)
+    found = shutil.which("meshmesh")
+    if found:
+        return [found]
 
-    # Fallback: try importing simnibs from the current Python environment
-    try:
-        import simnibs
-        pkg = Path(simnibs.__file__).parent
-        for rel in (
-            "resources/templates/MNI152_T1_1mm.nii.gz",
-            "resources/templates/mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
-        ):
-            tmpl = pkg / rel
-            if tmpl.exists():
-                return str(tmpl)
-    except ImportError:
-        pass
-
-    return None
+    raise FileNotFoundError(
+        "SimNIBS 'meshmesh' not found. Check SIMNIBS_HOME."
+    )
 
 
 def _simnibs_env() -> dict:
@@ -256,42 +223,6 @@ class SimNIBSRunner:
         set_simnibs_progress(self.session_id, progress, self.model_name)
 
     # ------------------------------------------------------------------
-    def prepare_t1(self) -> Path:
-        """Gunzip input T1 into the SimNIBS working directory."""
-        t1_gz  = session_input_native(self.session_id)
-        t1_nii = self.work_dir / "T1.nii"
-        with gzip.open(t1_gz, "rb") as fi, open(t1_nii, "wb") as fo:
-            shutil.copyfileobj(fi, fo)
-        session_log(self.session_id, f"[SimNIBS] T1 gunzipped → {t1_nii}")
-        return t1_nii
-
-    # ------------------------------------------------------------------
-    def prepare_segmentation(self) -> Path:
-        """
-        Load the GRACE/DOMINO/DOMINO++ segmentation, remap to SimNIBS labels,
-        and save to the working directory.
-        """
-        seg_gz = model_output_path(self.session_id, self.model_name)
-        if not seg_gz.exists():
-            raise FileNotFoundError(
-                f"Segmentation not found for model '{self.model_name}'. "
-                "Run segmentation first."
-            )
-
-        session_log(self.session_id, f"[SimNIBS] Loading segmentation: {seg_gz}")
-        img  = nib.load(str(seg_gz))
-        data = np.asarray(img.dataobj, dtype=np.int16)
-
-        remapped = np.zeros_like(data, dtype=np.uint8)
-        for src, dst in LABEL_MAP.items():
-            remapped[data == src] = dst
-
-        out_path = self.work_dir / "seg_remapped.nii.gz"
-        nib.save(nib.Nifti1Image(remapped, img.affine), str(out_path))
-        session_log(self.session_id, f"[SimNIBS] Remapped segmentation → {out_path}")
-        return out_path
-
-    # ------------------------------------------------------------------
     def _run_proc(self, cmd: list, tag: str, cwd: Path, deadline: float) -> None:
         """Run a subprocess, streaming stdout to the session log. Raises on failure."""
         session_log(self.session_id, f"[SimNIBS] cmd: {' '.join(cmd)}")
@@ -315,21 +246,44 @@ class SimNIBSRunner:
             raise RuntimeError(f"{tag} exited with code {proc.returncode}")
 
     # ------------------------------------------------------------------
+    def prepare_segmentation(self) -> Path:
+        """
+        Load the GRACE/DOMINO/DOMINO++ segmentation, remap to SimNIBS/CHARM
+        labels, and save to the working directory.
+        """
+        seg_gz = model_output_path(self.session_id, self.model_name)
+        if not seg_gz.exists():
+            raise FileNotFoundError(
+                f"Segmentation not found for model '{self.model_name}'. "
+                "Run segmentation first."
+            )
+
+        session_log(self.session_id, f"[SimNIBS] Loading segmentation: {seg_gz}")
+        img  = nib.load(str(seg_gz))
+        data = np.asarray(img.dataobj, dtype=np.int16)
+
+        remapped = np.zeros_like(data, dtype=np.int32)
+        for src, dst in LABEL_MAP.items():
+            remapped[data == src] = dst
+
+        out_path = self.work_dir / "seg_remapped.nii.gz"
+        nib.save(nib.Nifti1Image(remapped, img.affine), str(out_path))
+        session_log(self.session_id, f"[SimNIBS] Remapped segmentation → {out_path}")
+        return out_path
+
+    # ------------------------------------------------------------------
     def _build_charm_base(self) -> None:
         """
-        Build the session-level shared charm base (Option A+B):
-          1. Gunzip T1 → _charm_base/T1.nii
-          2. charm --initatlas   (atlas registration, creates m2m_subject/)
-          3. antsRegistrationSyNQuick.sh  (nonlinear MNI warp, ~5–10 min)
-             Replaces the slow charm --segment step (~20–40 min).
+        Build the session-level shared charm base:
+          charm --forceqform <subject> <T1.nii>
 
-        The resulting m2m_subject/ (with toMNI/ warp) is then copied by each
-        model that needs it, so this work is paid only once per session.
+        Creates m2m_subject/ with EEG cap positions, T1fs_conform, atlas
+        registration, and all files needed by the FEM solver.
+        This is paid once per session; all models reuse the result.
         """
         base_work = simnibs_charm_base_dir(self.session_id)
         deadline  = time.time() + SIMNIBS_TIMEOUT_SECONDS
 
-        # Gunzip the session T1 into the shared base directory
         t1_gz  = session_input_native(self.session_id)
         t1_nii = base_work / "T1.nii"
         if not t1_nii.exists():
@@ -337,54 +291,32 @@ class SimNIBSRunner:
                 shutil.copyfileobj(fi, fo)
         session_log(self.session_id, f"[SimNIBS] Base T1 → {t1_nii}")
 
-        # Step 1: atlas registration
-        session_log(self.session_id, "[SimNIBS] Charm base 1/2: initatlas…")
-        self._run_proc(
-            _charm_cmd() + [SUBJECT, str(t1_nii), "--initatlas"],
-            "charm-base",
-            base_work,
-            deadline,
+        session_log(self.session_id, "[SimNIBS] charm --forceqform: atlas + EEG positions…")
+        proc = subprocess.Popen(
+            _charm_cmd() + ["--forceqform", SUBJECT, str(t1_nii)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=str(base_work),
+            env=_simnibs_env(),
         )
-
-        # Step 2: Create affine MNI warp from the coregistrationMatrices.mat
-        # produced by --initatlas.  Split into two sub-steps because scipy is
-        # only available in the SimNIBS Python env, while nibabel is only in
-        # the API Python env.
-        mni_template = _find_mni_template()
-        if not mni_template:
-            raise RuntimeError(
-                "MNI template not found in SimNIBS installation. "
-                "Set MNI_TEMPLATE env var to the path of your MNI152 T1 NIfTI."
-            )
-        m2m_dir  = base_work / f"m2m_{SUBJECT}"
-        mat_file = m2m_dir / "segmentation" / "coregistrationMatrices.mat"
-        w2w_npy  = m2m_dir / "W2W.npy"
-
-        # Step 2a: use SimNIBS Python (has scipy) to extract W2W matrix → W2W.npy
-        simnibs_python = _find_simnibs_python()
-        extract_oneliner = (
-            "import scipy.io, numpy as np, sys; "
-            "m = scipy.io.loadmat(sys.argv[1]); "
-            "np.save(sys.argv[2], m['worldToWorldTransformMatrix'].astype('float64'))"
-        )
-        session_log(self.session_id, "[SimNIBS] Charm base 2/3: extracting MNI→T1 matrix…")
-        self._run_proc(
-            [simnibs_python, "-c", extract_oneliner, str(mat_file), str(w2w_npy)],
-            "mni-matrix",
-            base_work,
-            deadline,
-        )
-
-        # Step 2b: use API Python (has nibabel) to create the warp NIfTIs
-        import sys as _sys
-        warp_script = Path(__file__).parent / "create_mni_warp.py"
-        session_log(self.session_id, "[SimNIBS] Charm base 3/3: creating affine MNI warp…")
-        self._run_proc(
-            [_sys.executable, str(warp_script), str(m2m_dir), mni_template],
-            "mni-warp",
-            base_work,
-            deadline,
-        )
+        last_pct = 5
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                session_log(self.session_id, f"[charm-base] {line}")
+            line_l = line.lower()
+            for substr, evt, pct in CHARM_MAP:
+                if substr in line_l and pct > last_pct:
+                    self._emit(evt, pct)
+                    last_pct = pct
+                    break
+            if time.time() > deadline:
+                proc.kill()
+                raise TimeoutError("charm --forceqform timed out")
+        proc.wait()
+        if proc.returncode != 0:
+            raise RuntimeError(f"charm --forceqform exited with code {proc.returncode}")
 
         session_log(self.session_id, f"[SimNIBS] Charm base ready → {base_work / f'm2m_{SUBJECT}'}")
 
@@ -397,13 +329,11 @@ class SimNIBSRunner:
         """
         base_m2m = simnibs_charm_base_dir(self.session_id) / f"m2m_{SUBJECT}"
 
-        # Fast path: another model already finished building
         if is_charm_base_ready(self.session_id) and base_m2m.exists():
             session_log(self.session_id, "[SimNIBS] Reusing existing charm base.")
             return base_m2m
 
         if acquire_charm_base_lock(self.session_id):
-            # This model won the lock — it is responsible for building
             session_log(self.session_id, "[SimNIBS] Building charm base (first model in session)…")
             try:
                 self._build_charm_base()
@@ -412,7 +342,6 @@ class SimNIBSRunner:
                 release_charm_base_lock(self.session_id)
                 raise
         else:
-            # Another model is building — wait for it to finish
             session_log(self.session_id, "[SimNIBS] Waiting for charm base (built by another model)…")
             deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
             while not is_charm_base_ready(self.session_id):
@@ -424,110 +353,76 @@ class SimNIBSRunner:
         return base_m2m
 
     # ------------------------------------------------------------------
-    def run_charm(self, t1_path: Path, seg_path: Path) -> Path:
+    def build_mesh(self, seg_path: Path) -> Path:
         """
-        Build a head mesh from our precomputed segmentation.
+        Build a FEM mesh from the remapped segmentation labels.
 
-        Option A — cross-model caching:
-          The charm base (initatlas + ANTs MNI warp) is built once per session
-          and shared across all models.  Each model only pays for --mesh.
-
-        Option B — ANTs MNI registration:
-          antsRegistrationSyNQuick.sh (~5–10 min) replaces charm's --segment
-          (SAMSEG, ~20–40 min) for creating the MNI warp.
-
-        Per-model workflow:
-          1. Ensure shared charm base exists (build or wait).
-          2. Copy base m2m_subject/ into this model's working directory.
-          3. Update settings.ini to reflect the new path.
-          4. Replace tissue_labeling_upsampled.nii.gz with our segmentation.
-          5. Run charm --mesh to build the FEM mesh (~5–10 min).
+        Steps:
+          1. Ensure shared charm base (builds or waits per Redis lock).
+          2. Copy charm base m2m_subject/ into model working directory.
+          3. Rewrite settings.ini paths to the model directory.
+          4. Save remapped labels as m2m_subject/custom_tissues.nii.gz
+             (used in post-processing for WM/GM masked outputs).
+          5. Run meshmesh to build the FEM mesh from custom labels.
         """
         self._emit("simnibs_charm", 8)
 
-        # Step 1 — get (or wait for) the shared charm base
+        # Step 1 — shared charm base
         base_m2m = self._ensure_charm_base()
-        self._emit("simnibs_charm_register", 20)
+        self._emit("simnibs_charm_register", 60)
 
-        # Step 2 — copy base into this model's working directory
+        # Step 2 — copy base m2m into model working directory
         model_m2m = self.work_dir / f"m2m_{SUBJECT}"
         if model_m2m.exists():
             shutil.rmtree(str(model_m2m))
         shutil.copytree(str(base_m2m), str(model_m2m))
         session_log(self.session_id, f"[SimNIBS] Copied charm base → {model_m2m}")
 
-        # Step 3 — rewrite absolute paths in settings.ini to the model dir
+        # Step 3 — rewrite absolute paths in settings.ini to model dir
         settings_file = model_m2m / "settings.ini"
         if settings_file.exists():
-            base_work_str = str(simnibs_charm_base_dir(self.session_id))
+            base_work_str  = str(simnibs_charm_base_dir(self.session_id))
             model_work_str = str(self.work_dir)
             content = settings_file.read_text()
             content = content.replace(base_work_str, model_work_str)
             settings_file.write_text(content)
 
-        # Step 4 — inject our precomputed segmentation
-        label_prep = model_m2m / "label_prep"
-        label_prep.mkdir(parents=True, exist_ok=True)
-        seg_dest = label_prep / "tissue_labeling_upsampled.nii.gz"
-        shutil.copy2(str(seg_path), str(seg_dest))
-        session_log(self.session_id, f"[SimNIBS] Injected segmentation → {seg_dest}")
-        self._emit("simnibs_charm_segment", 30)
+        # Step 4 — save custom labels into m2m for post-processing
+        custom_tissues = model_m2m / "custom_tissues.nii.gz"
+        shutil.copy2(str(seg_path), str(custom_tissues))
+        session_log(self.session_id, f"[SimNIBS] Custom labels → {custom_tissues}")
 
-        # Step 5 — build mesh from our label image
-        session_log(self.session_id, "[SimNIBS] charm --mesh…")
-        cmd      = _charm_cmd() + [SUBJECT, "--mesh"]
+        # Step 5 — meshmesh
+        custom_mesh = self.work_dir / f"{SUBJECT}_custom_mesh.msh"
+        self._emit("simnibs_charm_mesh", 65)
+        session_log(self.session_id, "[SimNIBS] meshmesh: building FEM mesh from custom labels…")
+        cmd      = _meshmesh_cmd() + [str(seg_path), str(custom_mesh), "--voxsize_meshing", "0.5"]
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
-        session_log(self.session_id, f"[SimNIBS] charm cmd: {' '.join(cmd)}")
+        self._run_proc(cmd, "meshmesh", self.work_dir, deadline)
 
-        proc = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(self.work_dir),
-            env=_simnibs_env(),
-        )
-        last_pct = 30
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                session_log(self.session_id, f"[charm-mesh] {line}")
-            line_l = line.lower()
-            for substr, evt, pct in CHARM_MAP:
-                if substr in line_l and pct > last_pct:
-                    self._emit(evt, pct)
-                    last_pct = pct
-                    break
-            if time.time() > deadline:
-                proc.kill()
-                raise TimeoutError("charm --mesh timed out")
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"charm exited with code {proc.returncode}")
+        if not custom_mesh.exists():
+            raise FileNotFoundError(f"meshmesh did not produce expected mesh: {custom_mesh}")
 
-        mesh_path = self.work_dir / f"m2m_{SUBJECT}" / f"{SUBJECT}.msh"
-        if not mesh_path.exists():
-            raise FileNotFoundError(f"charm did not produce expected mesh: {mesh_path}")
-
-        self._emit("simnibs_charm_done", 62)
-        session_log(self.session_id, f"[SimNIBS] charm complete → {mesh_path}")
-        return mesh_path
+        self._emit("simnibs_charm_done", 70)
+        session_log(self.session_id, f"[SimNIBS] Mesh ready → {custom_mesh}")
+        return custom_mesh
 
     # ------------------------------------------------------------------
     def run_fem(self, mesh_path: Path) -> None:
         """
-        Configure and run a SimNIBS tDCS FEM simulation.
-        Delegates to run_fem.py via the SimNIBS Python interpreter (which has simnibs).
+        Configure and run a SimNIBS tDCS j-field FEM simulation.
+        Delegates to run_fem.py via the SimNIBS Python interpreter.
         Progress is approximated via heartbeat ticks during the blocking solve.
         """
         import json
 
-        self._emit("simnibs_fem_setup", 65)
-        session_log(self.session_id, "[SimNIBS] Configuring tDCS session…")
+        self._emit("simnibs_fem_setup", 73)
+        session_log(self.session_id, "[SimNIBS] Configuring tDCS j-field session…")
 
-        fem_dir = self.work_dir / "fem"
+        fem_dir  = self.work_dir / "fem"
         fem_dir.mkdir(exist_ok=True)
 
+        m2m_dir  = self.work_dir / f"m2m_{SUBJECT}"
         recipe   = self.payload.get("recipe") or ["F3", 2, "F4", -2]
         electype = self.payload.get("electrode_type") or []
 
@@ -537,14 +432,14 @@ class SimNIBSRunner:
             simnibs_python,
             str(fem_script),
             str(mesh_path),
+            str(m2m_dir),
             str(fem_dir),
             json.dumps(recipe),
             json.dumps(electype),
         ]
         session_log(self.session_id, f"[SimNIBS] cmd: {' '.join(cmd)}")
 
-        # Run FEM subprocess in a background thread so we can emit heartbeats
-        self._emit("simnibs_fem_solve", 68)
+        self._emit("simnibs_fem_solve", 76)
         session_log(self.session_id, "[SimNIBS] FEM solve running…")
 
         solve_done  = threading.Event()
@@ -576,45 +471,48 @@ class SimNIBSRunner:
 
         threading.Thread(target=_solve, daemon=True).start()
 
-        # Heartbeat: increment 68 → 88 % while waiting (every 10 s)
-        progress = 68
+        # Heartbeat: 76 → 92 % while waiting (every 10 s)
+        progress = 76
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
         while not solve_done.wait(timeout=10):
             if time.time() > deadline:
                 raise TimeoutError("SimNIBS FEM solve timed out")
-            progress = min(88, progress + 2)
+            progress = min(92, progress + 2)
             self._emit("simnibs_fem_solve", progress)
 
         if solve_error:
             raise solve_error[0]
 
-        self._emit("simnibs_post", 90)
+        self._emit("simnibs_post", 94)
         session_log(self.session_id, "[SimNIBS] FEM solve complete, collecting outputs…")
 
     # ------------------------------------------------------------------
     def collect_outputs(self) -> None:
         """
-        Find SimNIBS output NIfTIs and copy them to a canonical location.
+        Find SimNIBS output NIfTIs produced by run_fem.py and copy them to
+        the canonical outputs/ directory.
 
-        SimNIBS 4.x names volume outputs as:
-          {subject}_TDCS_1_magnE.nii.gz  → emag  (magnitude of E-field)
-          {subject}_TDCS_1_v.nii.gz      → voltage
-        Older or ROAST-style names (normE, E) are kept as fallbacks.
+        Expected files (in fem/ or fem/subject_volumes/):
+          subject_TDCS_1_magnJ.nii.gz  — total current density magnitude
+          wm_magnJ.nii.gz              — WM-masked magnJ
+          gm_magnJ.nii.gz              — GM-masked magnJ
+          wm_gm_magnJ.nii.gz           — WM+GM-masked magnJ
         """
         fem_dir = self.work_dir / "fem"
         out_dir = self.work_dir / "outputs"
         out_dir.mkdir(exist_ok=True)
 
-        # Log all NIfTI files found for diagnostics
         all_niftis = list(fem_dir.rglob("*.nii.gz"))
-        session_log(self.session_id,
-                    f"[SimNIBS] NIfTI files in fem/: {[str(f.relative_to(fem_dir)) for f in all_niftis]}")
+        session_log(
+            self.session_id,
+            f"[SimNIBS] NIfTIs in fem/: {[str(f.relative_to(fem_dir)) for f in all_niftis]}"
+        )
 
         candidates: dict[str, list[str]] = {
-            "emag":    [f"{SUBJECT}_TDCS_1_magnE.nii.gz",
-                        f"{SUBJECT}_TDCS_1_normE.nii.gz",
-                        f"{SUBJECT}_TDCS_1_E.nii.gz"],
-            "voltage": [f"{SUBJECT}_TDCS_1_v.nii.gz"],
+            "magnJ":       [f"{SUBJECT}_TDCS_1_magnJ.nii.gz"],
+            "wm_magnJ":    ["wm_magnJ.nii.gz"],
+            "gm_magnJ":    ["gm_magnJ.nii.gz"],
+            "wm_gm_magnJ": ["wm_gm_magnJ.nii.gz"],
         }
 
         found: dict[str, Path] = {}
@@ -625,34 +523,29 @@ class SimNIBSRunner:
                     dest = out_dir / f"{output_type}.nii.gz"
                     shutil.copy2(matches[0], dest)
                     found[output_type] = dest
-                    session_log(self.session_id,
-                                f"[SimNIBS] Collected {output_type} → {dest}")
+                    session_log(self.session_id, f"[SimNIBS] Collected {output_type} → {dest}")
                     break
 
-        # emag is required; voltage is optional (SimNIBS map_to_vol often skips it)
-        if "emag" not in found:
+        if "magnJ" not in found:
             raise FileNotFoundError(
-                f"SimNIBS finished but required output 'emag' is missing. "
-                f"Found NIfTIs: {[str(f.name) for f in all_niftis]}"
+                f"SimNIBS finished but required output 'magnJ' is missing. "
+                f"Found NIfTIs: {[f.name for f in all_niftis]}"
             )
-        if "voltage" not in found:
-            session_log(self.session_id,
-                        "[SimNIBS] Voltage NIfTI not produced — continuing with emag only")
+        for optional in ("wm_magnJ", "gm_magnJ", "wm_gm_magnJ"):
+            if optional not in found:
+                session_log(self.session_id, f"[SimNIBS] {optional} not found — continuing")
 
     # ------------------------------------------------------------------
     def run(self):
-        """Full pipeline: prepare T1 → remap seg → charm → FEM → collect."""
+        """Full pipeline: remap seg → charm base → mesh → FEM → collect."""
         try:
             set_simnibs_status(self.session_id, "running", self.model_name)
             self._emit("simnibs_start", 2)
 
-            t1_path  = self.prepare_t1()
-            self._emit("simnibs_prepare", 4)
-
             seg_path = self.prepare_segmentation()
-            self._emit("simnibs_seg_ready", 6)
+            self._emit("simnibs_seg_ready", 5)
 
-            mesh_path = self.run_charm(t1_path, seg_path)
+            mesh_path = self.build_mesh(seg_path)
             self.run_fem(mesh_path)
             self.collect_outputs()
 

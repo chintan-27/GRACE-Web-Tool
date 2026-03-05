@@ -67,18 +67,24 @@ def simnibs_working_dir(session_id: str, model_name: str) -> Path:
 def simnibs_charm_base_dir(session_id: str) -> Path:
     """
     Shared charm base directory for a session.
-    Contains T1.nii + m2m_subject/ (atlas registration + ANTs MNI warp).
-    Built once and reused by all models within the same session.
+    Contains T1.nii + m2m_subject/ (atlas registration, EEG positions).
+    Built once via charm --forceqform and reused by all models within the session.
     """
     d = session_path(session_id) / "simnibs" / "_charm_base"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
+SIMNIBS_OUTPUT_TYPES = ("magnJ", "wm_magnJ", "gm_magnJ", "wm_gm_magnJ")
+
+
 def simnibs_output_path(session_id: str, model_name: str, output_type: str) -> Path:
-    """Collected SimNIBS output NIfTIs (emag / voltage), per segmentation model."""
-    if output_type not in ("emag", "voltage"):
-        raise ValueError(f"Unknown SimNIBS output type: {output_type}")
+    """Collected SimNIBS output NIfTIs per segmentation model."""
+    if output_type not in SIMNIBS_OUTPUT_TYPES:
+        raise ValueError(
+            f"Unknown SimNIBS output type: {output_type!r}. "
+            f"Valid: {SIMNIBS_OUTPUT_TYPES}"
+        )
     return simnibs_working_dir(session_id, model_name) / "outputs" / f"{output_type}.nii.gz"
 
 
