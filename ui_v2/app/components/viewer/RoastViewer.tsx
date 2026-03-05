@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
 import { Niivue, cmapper } from "@niivue/niivue";
 import { AlertTriangle, Eye, Palette, Info, ZoomIn } from "lucide-react";
-import { getSimulationResult, getSimNIBSResult } from "@/lib/api";
+import { getSimulationResult, getSimNIBSResult, type SimNIBSOutputType } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 import { cn } from "@/lib/utils";
@@ -68,11 +68,17 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Map ROAST panel types to equivalent SimNIBS output types
+  const SIMNIBS_TYPE_MAP: Record<OutputType, SimNIBSOutputType> = {
+    emag:    "magnJ",
+    voltage: "wm_gm_magnJ",
+  };
+
   const fetchOutput = useCallback(async (type: OutputType): Promise<ArrayBuffer | null> => {
     if (bufferCache.current[type]) return bufferCache.current[type]!;
     try {
       const blob = solver === "simnibs"
-        ? await getSimNIBSResult(sessionId, modelName, type)
+        ? await getSimNIBSResult(sessionId, modelName, SIMNIBS_TYPE_MAP[type])
         : await getSimulationResult(sessionId, modelName, type);
       const buf  = await blob.arrayBuffer();
       bufferCache.current[type] = buf;
