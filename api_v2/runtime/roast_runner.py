@@ -20,7 +20,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from config import ROAST_BUILD_DIR, MATLAB_RUNTIME, ROAST_TIMEOUT_SECONDS
-from runtime.roast_config import build_roast_config, DEFAULT_MESH_OPTIONS
+from runtime.roast_config import build_roast_config, DEFAULT_MESH_OPTIONS, FINE_MESH_OPTIONS
 from runtime.session import (
     session_input_native,
     session_input_fs,
@@ -295,12 +295,12 @@ class ROASTRunner:
         return cmd
 
     # ------------------------------------------------------------------
-    def _run_subprocess(self, cmd: list[str], progress_start: int = 5) -> tuple[bool, str | None, int]:
+    def _run_subprocess(self, cmd: list[str], progress_start: int = 5) -> tuple[str | None, str | None, int]:
         """
         Launch the ROAST binary, stream stdout, and parse progress events.
 
-        Returns (convergence_failed, error_message, last_progress).
-        convergence_failed=True means a retryable mesh/FEM issue was detected.
+        Returns (failure_type, error_message, last_progress).
+        failure_type is "electrode_mesh", "fem_convergence", or None (success).
         error_message is non-None when the process exited non-zero.
         """
         import threading as _threading
@@ -362,7 +362,7 @@ class ROASTRunner:
 
         last_stdout_time = time.time()
         last_roast_error: str | None = None
-        convergence_failed = False
+        failure_type: str | None = None   # "electrode_mesh" | "fem_convergence" | None
         _buf = b""
 
         while True:
@@ -407,19 +407,19 @@ class ROASTRunner:
                     last_roast_error = "SPM segmentation step failed — compiled MATLAB cannot run SPM's batch system."
                 elif "was not meshed properly" in line:
                     last_roast_error = line.strip()
-                    convergence_failed = True
+                    failure_type = "electrode_mesh"
                 elif "convergence not reached" in ll or ("maximum number of iterations" in ll and "reached" in ll):
                     last_roast_error = "FEM solver failed to converge."
-                    convergence_failed = True
+                    failure_type = "fem_convergence"
                 elif "matrix is singular" in ll or ("singular" in ll and "working precision" in ll):
                     last_roast_error = "FEM solver hit a singular matrix."
-                    convergence_failed = True
+                    failure_type = "fem_convergence"
                 elif "nan" in ll and ("solution" in ll or "residual" in ll or "result" in ll):
                     last_roast_error = "FEM solution contains NaN — solver diverged."
-                    convergence_failed = True
+                    failure_type = "fem_convergence"
                 elif "error in roast>runfem" in ll or "getdp returned" in ll:
                     last_roast_error = f"FEM solver error: {line.strip()}"
-                    convergence_failed = True
+                    failure_type = "fem_convergence"
                 elif "Error using" in line or "Unrecognized function or variable" in line:
                     last_roast_error = line.strip()
 
@@ -463,9 +463,9 @@ class ROASTRunner:
             error = last_roast_error or (
                 f"ROAST exited with code {proc.returncode} — check session logs."
             )
-            return convergence_failed, error, last_progress
+            return failure_type, error, last_progress
 
-        return False, None, last_progress
+        return None, None, last_progress
 
     # ------------------------------------------------------------------
     def _clean_roast_intermediates(self):
@@ -483,19 +483,31 @@ class ROASTRunner:
         session_log(self.session_id, "[ROAST] Cleaned intermediate files for retry")
 
     # ------------------------------------------------------------------
-    def _escalate_mesh(self):
-        """Switch to standard mesh quality for the retry attempt."""
-        current_quality = self.payload.get("quality", "standard")
-        if current_quality == "fast":
-            # Fast → standard: use the full-resolution default mesh options
-            self.payload = {**self.payload, "quality": "standard", "mesh_options": None}
-            session_log(self.session_id, "[ROAST] Mesh escalated: fast → standard")
+    def _escalate_mesh(self, failure_type: str | None = None):
+        """
+        Tighten the mesh for the retry attempt.
+
+        Electrode mesh failures require a significantly finer mesh (maxvol=5) to capture
+        the 3mm electrode layer — standard mesh (maxvol=10) is often still not enough.
+        FEM convergence failures are usually fixed by going fast→standard.
+        """
+        if failure_type == "electrode_mesh":
+            # Electrode not meshed properly: go straight to fine mesh regardless of
+            # current quality.  maxvol=5 gives ~1.7mm edges (vs 3mm electrode thickness)
+            # which reliably puts 1–2 element layers through the electrode.
+            self.payload = {**self.payload, "quality": "standard", "mesh_options": FINE_MESH_OPTIONS.copy()}
+            session_log(self.session_id, f"[ROAST] Mesh escalated (electrode failure): maxvol → {FINE_MESH_OPTIONS['maxvol']}")
         else:
-            # Already standard — tighten mesh by reducing maxvol
-            current_opts = self.payload.get("mesh_options") or DEFAULT_MESH_OPTIONS.copy()
-            tighter = {**current_opts, "maxvol": max(5, current_opts.get("maxvol", 10) // 2)}
-            self.payload = {**self.payload, "mesh_options": tighter}
-            session_log(self.session_id, f"[ROAST] Mesh escalated: maxvol → {tighter['maxvol']}")
+            # FEM convergence / other: standard escalation
+            current_quality = self.payload.get("quality", "standard")
+            if current_quality == "fast":
+                self.payload = {**self.payload, "quality": "standard", "mesh_options": None}
+                session_log(self.session_id, "[ROAST] Mesh escalated: fast → standard")
+            else:
+                current_opts = self.payload.get("mesh_options") or DEFAULT_MESH_OPTIONS.copy()
+                tighter = {**current_opts, "maxvol": max(5, current_opts.get("maxvol", 10) // 2)}
+                self.payload = {**self.payload, "mesh_options": tighter}
+                session_log(self.session_id, f"[ROAST] Mesh escalated: maxvol → {tighter['maxvol']}")
 
     # ------------------------------------------------------------------
     def run(self):
@@ -515,16 +527,16 @@ class ROASTRunner:
                 cmd = self.build_command(config_path)
                 session_log(self.session_id, f"[ROAST] Launching (attempt {attempt + 1}): {' '.join(cmd)}")
 
-                convergence_failed, error, last_progress = self._run_subprocess(
+                failure_type, error, last_progress = self._run_subprocess(
                     cmd, progress_start=5 if attempt == 0 else 10
                 )
 
-                if error and convergence_failed and attempt == 0:
-                    session_log(self.session_id, f"[ROAST] Retryable failure: {error}. Escalating mesh.")
+                if error and failure_type and attempt == 0:
+                    session_log(self.session_id, f"[ROAST] Retryable failure ({failure_type}): {error}. Escalating mesh.")
                     self._emit("roast_retry", last_progress,
                                detail=f"{error} — retrying with refined mesh…")
                     self._clean_roast_intermediates()
-                    self._escalate_mesh()
+                    self._escalate_mesh(failure_type)
                     continue  # retry
 
                 if error:

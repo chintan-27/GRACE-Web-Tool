@@ -32,6 +32,17 @@ FAST_MESH_OPTIONS = {
     "maxvol": 20,
 }
 
+# Fine mesh: maxvol=5 gives ~1.7mm element edges, reliably capturing the 3mm electrode
+# layer when coarser meshes fail with "Electrode not meshed properly" (code 249).
+# Produces ~2x more elements than standard; use only as a retry escalation target.
+FINE_MESH_OPTIONS = {
+    "radbound": 5,
+    "angbound": 30,
+    "distbound": 0.3,
+    "reratio": 3,
+    "maxvol": 5,
+}
+
 DEFAULT_SIMULATION_TAG = "tDCSLAB"
 
 # Conductivities: gel (S/m) and electrode (S/m) — applied per electrode
