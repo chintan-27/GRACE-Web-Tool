@@ -492,11 +492,9 @@ class ROASTRunner:
         FEM convergence failures are usually fixed by going fast→standard.
         """
         if failure_type == "electrode_mesh":
-            # Electrode not meshed properly: go straight to fine mesh regardless of
-            # current quality.  maxvol=5 gives ~1.7mm edges (vs 3mm electrode thickness)
-            # which reliably puts 1–2 element layers through the electrode.
-            self.payload = {**self.payload, "quality": "standard", "mesh_options": FINE_MESH_OPTIONS.copy()}
-            session_log(self.session_id, f"[ROAST] Mesh escalated (electrode failure): maxvol → {FINE_MESH_OPTIONS['maxvol']}")
+            # Electrode not meshed properly: escalate to standard mesh (maxvol=10).
+            self.payload = {**self.payload, "quality": "standard", "mesh_options": None}
+            session_log(self.session_id, "[ROAST] Mesh escalated (electrode failure): fast → standard")
         else:
             # FEM convergence / other: standard escalation
             current_quality = self.payload.get("quality", "standard")
