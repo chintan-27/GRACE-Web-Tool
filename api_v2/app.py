@@ -287,7 +287,8 @@ async def simulate(body: dict = Body(...)):
 
     set_roast_status(session_id, "queued", model_name)
     enqueue_roast_job(session_id, payload)
-    session_log(session_id, f"ROAST job enqueued for model={model_name}")
+    recipe_log = " ".join(str(x) for x in (recipe or []))
+    session_log(session_id, f"ROAST job enqueued for model={model_name} recipe=[{recipe_log}] quality={payload['quality']}")
 
     from runtime.sse import push_event
     push_event(session_id, {"event": "roast_queued", "progress": 0, "model": model_name})
