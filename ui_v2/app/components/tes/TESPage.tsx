@@ -419,9 +419,10 @@ export default function TESPage() {
   const isRunning  = runEntries.some(([, r]) => r.status === "running");
   const allDone    = hasRuns && runEntries.every(([, r]) => r.status === "complete" || r.status === "error");
 
+  // Tabs visible for completed runs AND in-progress re-runs (so old results stay accessible)
   const completedByModel: Record<string, ("roast" | "simnibs")[]> = {};
   for (const [key, state] of runEntries) {
-    if (state.status !== "complete") continue;
+    if (state.status !== "complete" && state.status !== "running") continue;
     const [m, s] = key.split(":") as [string, "roast" | "simnibs"];
     (completedByModel[m] ??= []).push(s);
   }
@@ -946,8 +947,12 @@ export default function TESPage() {
           {Object.entries(completedByModel).flatMap(([model, solvers]) => {
             const tabs = [];
             const space = getSpaceLabel(model);
-            const roastCfg  = runStates[runKey(model, "roast")]?.config;
-            const simnibsCfg = runStates[runKey(model, "simnibs")]?.config;
+            const roastState  = runStates[runKey(model, "roast")];
+            const simnibsState = runStates[runKey(model, "simnibs")];
+            const roastCfg  = roastState?.config;
+            const simnibsCfg = simnibsState?.config;
+            const roastRunning  = roastState?.status === "running";
+            const simnibsRunning = simnibsState?.status === "running";
 
             if (solvers.includes("roast"))
               tabs.push(
@@ -957,7 +962,10 @@ export default function TESPage() {
                   onClick={() => setPanelView({ type: "roast", model })}
                   className={tabCls(isPanelActive({ type: "roast", model }))}
                 >
-                  <Check className="h-3 w-3 text-success shrink-0" />
+                  {roastRunning
+                    ? <div className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                    : <Check className="h-3 w-3 text-success shrink-0" />
+                  }
                   <span className="font-semibold">{getDisplayName(model)}</span>
                   {space && (
                     <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
@@ -969,7 +977,7 @@ export default function TESPage() {
                       {roastCfg.anode}→{roastCfg.cathode} {roastCfg.currentMa}mA
                     </span>
                   )}
-                  {roastCfg && (
+                  {roastCfg && !roastRunning && (
                     <span className="rounded bg-border/40 px-1 py-0.5 text-[10px] text-foreground-muted">{roastCfg.quality}</span>
                   )}
                 </button>,
@@ -982,7 +990,10 @@ export default function TESPage() {
                   onClick={() => setPanelView({ type: "simnibs", model })}
                   className={tabCls(isPanelActive({ type: "simnibs", model }))}
                 >
-                  <Check className="h-3 w-3 text-success shrink-0" />
+                  {simnibsRunning
+                    ? <div className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                    : <Check className="h-3 w-3 text-success shrink-0" />
+                  }
                   <span className="font-semibold">{getDisplayName(model)}</span>
                   {space && (
                     <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
