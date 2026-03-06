@@ -54,11 +54,16 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   // When true, voltage colormap is clipped to the 5–99th percentile to reveal brain-tissue variation
   const [voltageZoomed, setVoltageZoomed]   = useState(false);
 
-  // Electrode placement panel (ROAST only)
+  // Electrode placement panels (ROAST only) — two separate viewers
   const canvasElecRef   = useRef<HTMLCanvasElement>(null);
+  const canvasGelRef    = useRef<HTMLCanvasElement>(null);
   const nvElecRef       = useRef<Niivue | null>(null);
+  const nvGelRef        = useRef<Niivue | null>(null);
   const [elecReady, setElecReady]           = useState(false);
+  const [elecHasElec, setElecHasElec]       = useState(false);
+  const [elecHasGel, setElecHasGel]         = useState(false);
   const [elecError, setElecError]           = useState(false);
+  const [elecOpacity, setElecOpacity]       = useState(0.85);
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
   const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
@@ -192,35 +197,42 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputUrl, initialized]);
 
-  // Electrode placement viewer (ROAST only) — runs once after main viewers init
+  // Electrode placement viewers (ROAST only) — two panels, run once after main viewers init
   useEffect(() => {
-    if (!initialized || solver === "simnibs" || nvElecRef.current || !canvasElecRef.current) return;
+    if (!initialized || solver === "simnibs") return;
+    if (nvElecRef.current || nvGelRef.current) return;
+    if (!canvasElecRef.current || !canvasGelRef.current) return;
     let mounted = true;
 
-    const initElec = async () => {
-      const nv = new Niivue({
-        show3Dcrosshair: true,
-        isRadiologicalConvention: true,
-        backColor:      [0, 0, 0, 1] as [number, number, number, number],
-        crosshairColor: [1, 0, 0, 1] as [number, number, number, number],
-      });
-      nv.attachToCanvas(canvasElecRef.current!);
-      nvElecRef.current = nv;
+    const nvOpts = {
+      show3Dcrosshair: true,
+      isRadiologicalConvention: true,
+      backColor:      [0, 0, 0, 1] as [number, number, number, number],
+      crosshairColor: [1, 0, 0, 1] as [number, number, number, number],
+    };
 
-      // Load T1 base
+    const initElec = async () => {
+      const nvE = new Niivue(nvOpts);
+      const nvG = new Niivue(nvOpts);
+      nvE.attachToCanvas(canvasElecRef.current!);
+      nvG.attachToCanvas(canvasGelRef.current!);
+      nvElecRef.current = nvE;
+      nvGelRef.current  = nvG;
+
+      // Load T1 into both
       const resp = await fetch(inputUrl);
       if (!resp.ok || !mounted) return;
       const inputBuf = await resp.arrayBuffer();
-      await nv.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
-      nv.setOpacity(0, 1.0);
-      nv.setSliceType(nv.sliceTypeMultiplanar);
+      await nvE.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+      await nvG.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+      nvE.setOpacity(0, 1.0); nvE.setSliceType(nvE.sliceTypeMultiplanar);
+      nvG.setOpacity(0, 1.0); nvG.setSliceType(nvG.sliceTypeMultiplanar);
 
-      // Sync crosshair / scroll with the main panels
-      const mainNvs = nvRefs.current.filter(Boolean) as Niivue[];
-      mainNvs.forEach(m => m.broadcastTo([...mainNvs.filter(x => x !== m), nv], { "2d": true, "3d": false }));
-      nv.broadcastTo(mainNvs, { "2d": true, "3d": false });
+      // Sync all four viewers together
+      const all = [...nvRefs.current.filter(Boolean) as Niivue[], nvE, nvG];
+      all.forEach(a => a.broadcastTo(all.filter(b => b !== a), { "2d": true, "3d": false }));
 
-      // Fetch both mask buffers
+      // Fetch masks
       const fetchMask = async (type: "mask_elec" | "mask_gel"): Promise<ArrayBuffer | null> => {
         try {
           const blob = await getSimulationResult(sessionId, modelName, type);
@@ -235,33 +247,32 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
       if (!elecBuf && !gelBuf) { setElecError(true); return; }
 
       if (elecBuf) {
-        await nv.loadFromArrayBuffer(elecBuf.slice(0), "mask_elec.nii");
-        if (nv.volumes.length >= 2) {
-          const vol = nv.volumes[1];
+        await nvE.loadFromArrayBuffer(elecBuf.slice(0), "mask_elec.nii");
+        if (nvE.volumes.length >= 2) {
+          const vol = nvE.volumes[1];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (vol as any).colormapType = 1;
-          vol.cal_min = 0.5;
-          vol.cal_max = 1.0;
-          nv.setColormap(vol.id, "hot");
-          nv.setOpacity(1, 0.85);
+          vol.cal_min = 0.5; vol.cal_max = 1.0;
+          nvE.setColormap(vol.id, "hot");
+          nvE.setOpacity(1, elecOpacity);
         }
+        setElecHasElec(true);
       }
 
       if (gelBuf) {
-        await nv.loadFromArrayBuffer(gelBuf.slice(0), "mask_gel.nii");
-        const gelIdx = nv.volumes.length - 1;
-        if (gelIdx >= 2) {
-          const vol = nv.volumes[gelIdx];
+        await nvG.loadFromArrayBuffer(gelBuf.slice(0), "mask_gel.nii");
+        if (nvG.volumes.length >= 2) {
+          const vol = nvG.volumes[1];
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           (vol as any).colormapType = 1;
-          vol.cal_min = 0.5;
-          vol.cal_max = 1.0;
-          nv.setColormap(vol.id, "winter");
-          nv.setOpacity(gelIdx, 0.65);
+          vol.cal_min = 0.5; vol.cal_max = 1.0;
+          nvG.setColormap(vol.id, "winter");
+          nvG.setOpacity(1, elecOpacity);
         }
+        setElecHasGel(true);
       }
 
-      nv.drawScene();
+      nvE.drawScene(); nvG.drawScene();
       if (mounted) setElecReady(true);
     };
 
@@ -269,6 +280,17 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized, inputUrl, sessionId, modelName, solver]);
+
+  // Sync electrode mask opacity
+  useEffect(() => {
+    if (!elecReady) return;
+    [nvElecRef, nvGelRef].forEach(ref => {
+      if (ref.current && ref.current.volumes.length > 1) {
+        ref.current.setOpacity(1, elecOpacity);
+        ref.current.drawScene();
+      }
+    });
+  }, [elecOpacity, elecReady]);
 
   // Sync opacity
   useEffect(() => {
@@ -534,62 +556,121 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
           </article>
         ))}
 
-        {/* Electrode placement panel — ROAST only */}
+        {/* Electrode placement — ROAST only, two side-by-side panels matching SplitViewer style */}
         {solver !== "simnibs" && (
-        <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
-          <header className="border-b border-border px-4 py-3 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <MapPin className="h-4 w-4 text-accent" aria-hidden="true" />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-foreground">Electrode Placement</h3>
-                </div>
-                <p className="text-xs text-foreground-muted mt-0.5">
-                  <span className="inline-flex items-center gap-1">
-                    <span className="inline-block h-2 w-2 rounded-sm bg-[#ff6000]" />
-                    Electrode rubber
-                  </span>
-                  <span className="mx-2">·</span>
-                  <span className="inline-flex items-center gap-1">
-                    <span className="inline-block h-2 w-2 rounded-sm bg-[#0080ff]" />
-                    Gel layer
-                  </span>
-                </p>
+        <>
+          {/* Controls bar */}
+          <div className="flex flex-wrap items-center gap-4 rounded-xl border border-border bg-surface px-4 py-3">
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-foreground-muted" aria-hidden="true" />
+              <span className="text-sm font-semibold text-foreground">Electrode Placement</span>
+            </div>
+            <div className="flex items-center gap-2 ml-4">
+              <Eye className="h-4 w-4 text-foreground-muted" />
+              <span className="text-sm text-foreground-muted">Overlay:</span>
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+                {OPACITY_PRESETS.map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setElecOpacity(v)}
+                    aria-pressed={Math.abs(elecOpacity - v) < 0.01}
+                    className={cn(
+                      "rounded-md px-2 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                      Math.abs(elecOpacity - v) < 0.01
+                        ? "bg-accent text-accent-foreground"
+                        : "text-foreground-secondary hover:text-foreground"
+                    )}
+                  >
+                    {Math.round(v * 100)}%
+                  </button>
+                ))}
               </div>
             </div>
             {!elecReady && !elecError && (
-              <div className="flex items-center gap-2 text-xs text-foreground-muted">
-                <div className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                Loading…
+              <div className="ml-auto flex items-center gap-2 text-sm text-foreground-muted">
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                Loading masks…
               </div>
             )}
-          </header>
+          </div>
 
           {elecError ? (
-            <div className="flex items-center gap-3 px-4 py-5 text-foreground-muted">
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-5 text-foreground-muted">
               <AlertTriangle className="h-4 w-4 shrink-0 text-foreground-muted/60" />
               <p className="text-sm">Electrode mask files not found — run the simulation to generate placement data.</p>
             </div>
           ) : (
-            <div className="relative bg-black" style={{ height: "500px" }}>
-              <canvas
-                ref={canvasElecRef}
-                width={512}
-                height={512}
-                style={{ width: "100%", height: "100%" }}
-                aria-label="Electrode placement viewer"
-              />
-              {!elecReady && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="flex flex-col items-center gap-2">
-                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    <span className="text-sm text-foreground-muted">Loading electrode masks…</span>
+            <div className="grid gap-4 md:grid-cols-2">
+              {/* Electrode rubber panel */}
+              <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+                <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#ff6000]" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-foreground">Electrode Pad</h3>
+                    <p className="text-xs text-foreground-muted">Rubber contact mask</p>
                   </div>
+                  <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_elec</span>
+                </header>
+                <div className="relative bg-black" style={{ height: "500px" }}>
+                  <canvas
+                    ref={canvasElecRef}
+                    width={512}
+                    height={512}
+                    style={{ width: "100%", height: "100%" }}
+                    aria-label="Electrode rubber placement viewer"
+                  />
+                  {!elecReady && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                        <span className="text-sm text-foreground-muted">Initializing viewer…</span>
+                      </div>
+                    </div>
+                  )}
+                  {elecReady && !elecHasElec && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <p className="text-sm text-foreground-muted">No electrode mask available</p>
+                    </div>
+                  )}
                 </div>
-              )}
+              </article>
+
+              {/* Gel layer panel */}
+              <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+                <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#0080ff]" aria-hidden="true" />
+                    <h3 className="text-sm font-semibold text-foreground">Gel Layer</h3>
+                    <p className="text-xs text-foreground-muted">Conductive gel mask</p>
+                  </div>
+                  <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_gel</span>
+                </header>
+                <div className="relative bg-black" style={{ height: "500px" }}>
+                  <canvas
+                    ref={canvasGelRef}
+                    width={512}
+                    height={512}
+                    style={{ width: "100%", height: "100%" }}
+                    aria-label="Gel layer placement viewer"
+                  />
+                  {!elecReady && (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-2">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                        <span className="text-sm text-foreground-muted">Initializing viewer…</span>
+                      </div>
+                    </div>
+                  )}
+                  {elecReady && !elecHasGel && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <p className="text-sm text-foreground-muted">No gel mask available</p>
+                    </div>
+                  )}
+                </div>
+              </article>
             </div>
           )}
-        </article>
+        </>
         )}
       </div>
 
