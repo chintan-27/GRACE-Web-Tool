@@ -5,8 +5,8 @@ import { ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // -------------------------------------------------------------------
-// Electrode positions grouped by brain region (10-10 system + neck)
-// Only positions relevant to tDCS are included.
+// Electrode positions grouped by brain region (10-10 system, whole-head MRI coverage only).
+// Neck positions (Nk1–Nk4) are excluded — standard whole-head MRI does not cover the neck.
 // -------------------------------------------------------------------
 export const ELECTRODE_GROUPS: { label: string; positions: string[] }[] = [
   {
@@ -40,12 +40,6 @@ export const ELECTRODE_GROUPS: { label: string; positions: string[] }[] = [
   {
     label: "Occipital & Temporal",
     positions: ["O1", "O2", "Oz", "T7", "T8", "Iz"],
-  },
-  {
-    // Neck electrodes — for cerebellar/spinal cord protocols.
-    // Nk1=left-posterior, Nk2=right-posterior, Nk3=left-anterior, Nk4=right-anterior
-    label: "Neck (Nk1–Nk4)",
-    positions: ["Nk1", "Nk2", "Nk3", "Nk4"],
   },
 ];
 
@@ -137,13 +131,6 @@ export const MONTAGE_PRESETS: {
     anode: "T7",
     cathode: "TP8",
     currentMa: 1,
-  },
-  {
-    label: "Cerebellar → Vertex (Nk1 → Cz)",
-    description: "Cerebellar stimulation, balance, ataxia",
-    anode: "Nk1",
-    cathode: "Cz",
-    currentMa: 2,
   },
   {
     label: "Occipital → Vertex (Oz → Cz)",
