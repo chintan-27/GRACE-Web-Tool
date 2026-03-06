@@ -8,9 +8,19 @@ DEFAULT_RECIPE = ["F3", -2, "F4", 2]
 
 DEFAULT_ELECTRODE_TYPE = ["pad", "pad"]
 
-DEFAULT_ELECTRODE_SIZE = [[70, 50, 3], [70, 50, 3]]
+DEFAULT_ELECTRODE_SIZE = [[70, 50, 3], [70, 50, 3]]   # pad: [length, width, height] mm
+RING_ELECTRODE_SIZE    = [8, 40, 2]                    # ring: [innerRadius, outerRadius, height] mm
+DISC_ELECTRODE_SIZE    = [6, 2]                        # disc: [radius, height] mm
 
 DEFAULT_ELECTRODE_ORI = ["lr", "lr"]
+
+
+def _default_elecsize_for_type(electype: list | None) -> list:
+    """Return per-electrode default sizes matched to each electrode type."""
+    if not electype:
+        return DEFAULT_ELECTRODE_SIZE
+    size_map = {"pad": [70, 50, 3], "ring": [8, 40, 2], "disc": [6, 2]}
+    return [size_map.get(str(t).lower(), [70, 50, 3]) for t in electype]
 
 DEFAULT_MESH_OPTIONS = {
     "radbound": 5,
@@ -104,7 +114,7 @@ def build_roast_config(
         "t1_path": t1_path,
         "recipe": recipe,
         "electype": electype or DEFAULT_ELECTRODE_TYPE,
-        "elecsize": elecsize or DEFAULT_ELECTRODE_SIZE,
+        "elecsize": elecsize or _default_elecsize_for_type(electype),
         "elecori": elecori or DEFAULT_ELECTRODE_ORI,
         "meshoptions": meshoptions,
         "simulationtag": simulationtag or _tag_from_config(recipe, electype, elecsize, elecori, meshoptions),
