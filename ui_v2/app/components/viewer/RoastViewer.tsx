@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
 import { Niivue, cmapper } from "@niivue/niivue";
-import { AlertTriangle, Eye, Palette, Info, ZoomIn } from "lucide-react";
+import { AlertTriangle, Eye, Palette, Info, ZoomIn, MapPin } from "lucide-react";
 import { getSimulationResult, getSimNIBSResult, type SimNIBSOutputType } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
@@ -53,6 +53,12 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   const [calRanges, setCalRanges]           = useState<Partial<Record<OutputType, { min: number; max: number }>>>({});
   // When true, voltage colormap is clipped to the 5–99th percentile to reveal brain-tissue variation
   const [voltageZoomed, setVoltageZoomed]   = useState(false);
+
+  // Electrode placement panel (ROAST only)
+  const canvasElecRef   = useRef<HTMLCanvasElement>(null);
+  const nvElecRef       = useRef<Niivue | null>(null);
+  const [elecReady, setElecReady]           = useState(false);
+  const [elecError, setElecError]           = useState(false);
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
   const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
@@ -185,6 +191,84 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inputUrl, initialized]);
+
+  // Electrode placement viewer (ROAST only) — runs once after main viewers init
+  useEffect(() => {
+    if (!initialized || solver === "simnibs" || nvElecRef.current || !canvasElecRef.current) return;
+    let mounted = true;
+
+    const initElec = async () => {
+      const nv = new Niivue({
+        show3Dcrosshair: true,
+        isRadiologicalConvention: true,
+        backColor:      [0, 0, 0, 1] as [number, number, number, number],
+        crosshairColor: [1, 0, 0, 1] as [number, number, number, number],
+      });
+      nv.attachToCanvas(canvasElecRef.current!);
+      nvElecRef.current = nv;
+
+      // Load T1 base
+      const resp = await fetch(inputUrl);
+      if (!resp.ok || !mounted) return;
+      const inputBuf = await resp.arrayBuffer();
+      await nv.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+      nv.setOpacity(0, 1.0);
+      nv.setSliceType(nv.sliceTypeMultiplanar);
+
+      // Sync crosshair / scroll with the main panels
+      const mainNvs = nvRefs.current.filter(Boolean) as Niivue[];
+      mainNvs.forEach(m => m.broadcastTo([...mainNvs.filter(x => x !== m), nv], { "2d": true, "3d": false }));
+      nv.broadcastTo(mainNvs, { "2d": true, "3d": false });
+
+      // Fetch both mask buffers
+      const fetchMask = async (type: "mask_elec" | "mask_gel"): Promise<ArrayBuffer | null> => {
+        try {
+          const blob = await getSimulationResult(sessionId, modelName, type);
+          const buf = await blob.arrayBuffer();
+          return buf.byteLength > 0 ? buf : null;
+        } catch { return null; }
+      };
+
+      const [elecBuf, gelBuf] = await Promise.all([fetchMask("mask_elec"), fetchMask("mask_gel")]);
+      if (!mounted) return;
+
+      if (!elecBuf && !gelBuf) { setElecError(true); return; }
+
+      if (elecBuf) {
+        await nv.loadFromArrayBuffer(elecBuf.slice(0), "mask_elec.nii");
+        if (nv.volumes.length >= 2) {
+          const vol = nv.volumes[1];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (vol as any).colormapType = 1;
+          vol.cal_min = 0.5;
+          vol.cal_max = 1.0;
+          nv.setColormap(vol.id, "hot");
+          nv.setOpacity(1, 0.85);
+        }
+      }
+
+      if (gelBuf) {
+        await nv.loadFromArrayBuffer(gelBuf.slice(0), "mask_gel.nii");
+        const gelIdx = nv.volumes.length - 1;
+        if (gelIdx >= 2) {
+          const vol = nv.volumes[gelIdx];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (vol as any).colormapType = 1;
+          vol.cal_min = 0.5;
+          vol.cal_max = 1.0;
+          nv.setColormap(vol.id, "winter");
+          nv.setOpacity(gelIdx, 0.65);
+        }
+      }
+
+      nv.drawScene();
+      if (mounted) setElecReady(true);
+    };
+
+    initElec().catch(() => { if (mounted) setElecError(true); });
+    return () => { mounted = false; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialized, inputUrl, sessionId, modelName, solver]);
 
   // Sync opacity
   useEffect(() => {
@@ -449,6 +533,64 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
             )}
           </article>
         ))}
+
+        {/* Electrode placement panel — ROAST only */}
+        {solver !== "simnibs" && (
+        <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+          <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-2.5">
+              <MapPin className="h-4 w-4 text-accent" aria-hidden="true" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-foreground">Electrode Placement</h3>
+                </div>
+                <p className="text-xs text-foreground-muted mt-0.5">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-sm bg-[#ff6000]" />
+                    Electrode rubber
+                  </span>
+                  <span className="mx-2">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-2 w-2 rounded-sm bg-[#0080ff]" />
+                    Gel layer
+                  </span>
+                </p>
+              </div>
+            </div>
+            {!elecReady && !elecError && (
+              <div className="flex items-center gap-2 text-xs text-foreground-muted">
+                <div className="h-3 w-3 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                Loading…
+              </div>
+            )}
+          </header>
+
+          {elecError ? (
+            <div className="flex items-center gap-3 px-4 py-5 text-foreground-muted">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-foreground-muted/60" />
+              <p className="text-sm">Electrode mask files not found — run the simulation to generate placement data.</p>
+            </div>
+          ) : (
+            <div className="relative bg-black" style={{ height: "500px" }}>
+              <canvas
+                ref={canvasElecRef}
+                width={512}
+                height={512}
+                style={{ width: "100%", height: "100%" }}
+                aria-label="Electrode placement viewer"
+              />
+              {!elecReady && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                    <span className="text-sm text-foreground-muted">Loading electrode masks…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </article>
+        )}
       </div>
 
       <p className="text-xs text-foreground-muted">

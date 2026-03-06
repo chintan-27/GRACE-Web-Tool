@@ -300,8 +300,8 @@ async def simulate(body: dict = Body(...)):
 # ============================================================
 @app.get("/simulate/results/{session_id}/{model_name}/{output_type}")
 async def get_simulate_result(session_id: str, model_name: str, output_type: str):
-    if output_type not in ("voltage", "efield", "emag"):
-        raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag")
+    if output_type not in ("voltage", "efield", "emag", "mask_elec", "mask_gel"):
+        raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag, mask_elec, mask_gel")
 
     # Read simulation tag from the saved config.json so we use the correct filename
     # regardless of which tag was used (hash-based since v2, "tDCSLAB" in older runs).

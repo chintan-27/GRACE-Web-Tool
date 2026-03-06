@@ -45,6 +45,13 @@ def roast_working_dir(session_id: str, model_name: str = "") -> Path:
 
 
 def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB") -> Path:
+    work_dir = roast_working_dir(session_id, model_name)
+    if output_type == "mask_elec":
+        matches = list(work_dir.glob("T1_sim_*_mask_elec.nii"))
+        return matches[0] if matches else work_dir / "_missing_mask_elec.nii"
+    if output_type == "mask_gel":
+        matches = list(work_dir.glob("T1_sim_*_mask_gel.nii"))
+        return matches[0] if matches else work_dir / "_missing_mask_gel.nii"
     filenames = {
         "voltage": f"T1_{simulation_tag}_v.nii",
         "efield":  f"T1_{simulation_tag}_e.nii",
@@ -52,7 +59,7 @@ def roast_output_path(session_id: str, output_type: str, model_name: str = "", s
     }
     if output_type not in filenames:
         raise ValueError(f"Unknown ROAST output type: {output_type}")
-    return roast_working_dir(session_id, model_name) / filenames[output_type]
+    return work_dir / filenames[output_type]
 
 
 # -----------------------------------------------------------
