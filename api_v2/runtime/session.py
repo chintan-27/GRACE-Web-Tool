@@ -47,10 +47,10 @@ def roast_working_dir(session_id: str, model_name: str = "") -> Path:
 def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB") -> Path:
     work_dir = roast_working_dir(session_id, model_name)
     if output_type == "mask_elec":
-        matches = list(work_dir.glob("T1_sim_*_mask_elec.nii"))
+        matches = sorted(work_dir.glob("T1_sim_*_mask_elec.nii"), key=lambda p: p.stat().st_mtime, reverse=True)
         return matches[0] if matches else work_dir / "_missing_mask_elec.nii"
     if output_type == "mask_gel":
-        matches = list(work_dir.glob("T1_sim_*_mask_gel.nii"))
+        matches = sorted(work_dir.glob("T1_sim_*_mask_gel.nii"), key=lambda p: p.stat().st_mtime, reverse=True)
         return matches[0] if matches else work_dir / "_missing_mask_gel.nii"
     filenames = {
         "voltage": f"T1_{simulation_tag}_v.nii",
