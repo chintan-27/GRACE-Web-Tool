@@ -271,7 +271,8 @@ class ROASTRunner:
         config_path = self.work_dir / "config.json"
         with open(config_path, "w") as f:
             json.dump(cfg, f, indent=2)
-        session_log(self.session_id, f"[ROAST] Config written → {config_path}")
+        recipe_str = " ".join(str(x) for x in cfg.get("recipe", []))
+        session_log(self.session_id, f"[ROAST] Config written → {config_path} | recipe={recipe_str} | tag={self.sim_tag}")
         return config_path
 
     # ------------------------------------------------------------------
