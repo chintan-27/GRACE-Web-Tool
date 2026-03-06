@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Download, RefreshCw, Check, AlertTriangle, Zap, ArrowRight, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useJob } from "@/context/JobContext";
@@ -8,10 +8,23 @@ import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
 import { API_BASE, deleteSession } from "@/lib/api";
 
+const ACTIVE_SIM_KEY = "grace_active_sim";
+type SavedSim = { sessionId: string; model: string; solver: "roast" | "simnibs"; startedAt: number };
+
 export default function ResultsStep() {
   const { sessionId, models, inputBlobUrl, resetJob, selectedFile, error } = useJob();
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [activeSim, setActiveSim] = useState<SavedSim | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ACTIVE_SIM_KEY);
+      if (!raw) return;
+      const s = JSON.parse(raw) as SavedSim;
+      if (Date.now() - s.startedAt < 4 * 3600 * 1000) setActiveSim(s);
+    } catch {}
+  }, []);
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
@@ -120,6 +133,27 @@ export default function ResultsStep() {
           </Button>
         </div>
       </div>
+
+      {/* Running tDCS simulation banner */}
+      {activeSim && (
+        <div className="flex items-center gap-4 rounded-xl border border-accent/40 bg-accent/5 px-4 py-3">
+          <div className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-foreground">
+              tDCS simulation running in background
+            </p>
+            <p className="text-xs text-foreground-muted truncate">
+              {activeSim.model.replace("-native", "").replace("-fs", "").toUpperCase()} · {activeSim.solver.toUpperCase()}
+            </p>
+          </div>
+          <Link
+            href="/tes"
+            className="shrink-0 rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground transition-colors hover:bg-accent/90"
+          >
+            View progress →
+          </Link>
+        </div>
+      )}
 
       {/* tDCS Simulation CTA */}
       <Link href="/tes" className="block group">

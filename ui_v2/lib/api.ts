@@ -243,7 +243,7 @@ export function connectROASTSSE(
 export async function getSimulationResult(
   sessionId: string,
   modelName: string,
-  outputType: "voltage" | "efield" | "emag"
+  outputType: "voltage" | "efield" | "emag" | "mask_elec" | "mask_gel"
 ): Promise<Blob> {
   const res = await fetch(`${API_BASE}/simulate/results/${sessionId}/${modelName}/${outputType}`);
   if (!res.ok) throw new Error(`Simulation result not found: ${outputType}`);

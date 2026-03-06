@@ -128,6 +128,17 @@ export default function LeaveGuardModal({
                 </button>
 
                 <button
+                  onClick={onLeave}
+                  className="flex w-full items-center gap-3 rounded-xl border border-border px-4 py-3 text-left transition-all hover:bg-surface-elevated focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <ArrowLeft className="h-4 w-4 text-foreground-muted shrink-0" />
+                  <div>
+                    <div className="text-sm font-medium text-foreground">Go back, keep simulation running</div>
+                    <div className="text-xs text-foreground-muted">Your results stay on the server for 24 hours</div>
+                  </div>
+                </button>
+
+                <button
                   onClick={() => setStep("delete_confirm")}
                   className="flex w-full items-center gap-3 rounded-xl border border-border px-4 py-3 text-left transition-all hover:bg-surface-elevated focus:outline-none focus:ring-2 focus:ring-ring"
                 >
