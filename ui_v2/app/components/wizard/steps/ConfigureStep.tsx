@@ -20,14 +20,14 @@ interface ModelOption {
 
 const spaceOptions: SpaceOption[] = [
   {
-    id: "native",
-    name: "Native Space",
-    description: "Segment in the subject's original MRI coordinate space. Best for single-subject structural analysis or tDCS simulation.",
-  },
-  {
     id: "freesurfer",
     name: "FreeSurfer Space",
-    description: "Segment in FreeSurfer's standard conformed space (1mm isotropic, 256³). Required for group-level comparisons or FreeSurfer-based pipelines.",
+    description: "The space our models are trained on — produces the most accurate segmentations. Your MRI is conformed to 1mm isotropic resolution before processing.",
+  },
+  {
+    id: "native",
+    name: "Native Space",
+    description: "Segment directly in your MRI's original coordinate space, skipping the FreeSurfer conformation step. Faster, but may reduce accuracy.",
   },
 ];
 
@@ -124,7 +124,14 @@ export default function ConfigureStep() {
                 )}
 
                 <div className="pr-8">
-                  <h3 className="font-mono font-semibold tracking-wide text-foreground">{option.name}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-mono font-semibold tracking-wide text-foreground">{option.name}</h3>
+                    {option.id === "freesurfer" && (
+                      <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-accent font-mono">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 text-sm text-foreground-secondary">
                     {option.description}
                   </p>
