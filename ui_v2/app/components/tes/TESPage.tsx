@@ -19,6 +19,7 @@ import {
 import SplitViewer from "@/app/components/viewer/SplitViewer";
 import RoastViewer from "@/app/components/viewer/RoastViewer";
 import TESComparisonViewer from "@/app/components/viewer/TESComparisonViewer";
+import LeaveGuardModal from "@/app/components/LeaveGuardModal";
 import {
   startSimulation,
   connectROASTSSE,
@@ -225,6 +226,26 @@ export default function TESPage() {
 
   // Right-panel view
   const [panelView, setPanelView] = useState<PanelView>({ type: "segmentation" });
+
+  // Leave guard
+  const [leaveGuardOpen, setLeaveGuardOpen] = useState(false);
+  const pendingLeaveRef = useRef<(() => void) | null>(null);
+
+  // Show leave guard before running away from the page
+  const guardedBack = useCallback(() => {
+    setLeaveGuardOpen(true);
+    pendingLeaveRef.current = () => router.back();
+  }, [router]);
+
+  // Attach beforeunload for tab/window close
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, []);
 
   // ── Reconnect state (for page-refresh recovery) ───────────────────────────
   type ReconnectStatus = "checking" | "running" | "complete" | "none";
@@ -509,7 +530,7 @@ export default function TESPage() {
         {/* Header */}
         <div className="flex items-center gap-3 border-b border-border px-4 py-3">
           <button
-            onClick={() => router.back()}
+            onClick={guardedBack}
             className="flex items-center gap-1.5 text-sm text-foreground-muted transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -519,7 +540,7 @@ export default function TESPage() {
             <div className="rounded-md bg-accent/15 p-1">
               <Zap className="h-3.5 w-3.5 text-accent" />
             </div>
-            <span className="font-mono text-xs font-bold uppercase tracking-widest text-foreground">TES Simulation</span>
+            <span className="font-mono text-xs font-bold uppercase tracking-widest text-foreground">tDCS Simulation</span>
           </div>
         </div>
 
@@ -591,8 +612,8 @@ export default function TESPage() {
               ))}
             </div>
             <p className="mt-1.5 text-[11px] leading-snug text-foreground-muted">
-              {solver === "simnibs" && "FEM with charm meshing on CROWN segmentation"}
-              {solver === "roast"   && "MATLAB MCR pipeline, 11-tissue conductivities"}
+              {solver === "simnibs" && "SimNIBS FEM with custom mesh — j-field (current density) output"}
+              {solver === "roast"   && "ROAST-11 MATLAB pipeline — E-field and voltage output"}
               {solver === "both"    && "Both solvers run sequentially — enables side-by-side comparison"}
             </p>
 
@@ -1031,6 +1052,18 @@ export default function TESPage() {
         </div>
 
       </div>
+
+      {/* Leave guard modal */}
+      <LeaveGuardModal
+        open={leaveGuardOpen}
+        sessionId={sessionId ?? ""}
+        filename={undefined}
+        onStay={() => setLeaveGuardOpen(false)}
+        onLeave={() => {
+          setLeaveGuardOpen(false);
+          pendingLeaveRef.current?.();
+        }}
+      />
     </div>
   );
 }

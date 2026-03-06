@@ -21,13 +21,13 @@ interface ModelOption {
 const spaceOptions: SpaceOption[] = [
   {
     id: "native",
-    name: "Native Space",
-    description: "Segment directly in each subject's native anatomical space. Best for structural analysis.",
+    name: "My MRI's Original Space",
+    description: "Process the scan as-is, in the coordinate space it was acquired. Recommended for most users.",
   },
   {
     id: "freesurfer",
-    name: "FreeSurfer Space",
-    description: "Use volumes aligned to FreeSurfer-derived space. Best for group comparisons.",
+    name: "Standard Brain Space",
+    description: "Align to a common brain template before segmenting — useful when comparing results across multiple subjects.",
   },
 ];
 
@@ -144,11 +144,11 @@ export default function ConfigureStep() {
               />
               <div>
                 <div className="text-sm font-medium text-foreground">
-                  Convert input to FreeSurfer space
+                  Reformat my MRI to Standard Brain Space
                 </div>
                 <div className="mt-0.5 text-xs text-foreground-muted">
-                  Enable if your input is in native space and needs to be converted.
-                  Leave unchecked if already in FreeSurfer space.
+                  Check this if your file is a regular MRI scan. Uncheck only if it has already been aligned to a standard template.
+                  Not sure? Leave it checked.
                 </div>
               </div>
             </label>
