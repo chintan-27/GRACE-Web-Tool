@@ -21,13 +21,13 @@ interface ModelOption {
 const spaceOptions: SpaceOption[] = [
   {
     id: "native",
-    name: "My MRI's Original Space",
-    description: "Process the scan as-is, in the coordinate space it was acquired. Recommended for most users.",
+    name: "Native Space",
+    description: "Segment in the subject's original MRI coordinate space. Best for single-subject structural analysis or tDCS simulation.",
   },
   {
     id: "freesurfer",
-    name: "Standard Brain Space",
-    description: "Align to a common brain template before segmenting — useful when comparing results across multiple subjects.",
+    name: "FreeSurfer Space",
+    description: "Segment in FreeSurfer's standard conformed space (1mm isotropic, 256³). Required for group-level comparisons or FreeSurfer-based pipelines.",
   },
 ];
 
@@ -135,7 +135,7 @@ export default function ConfigureStep() {
 
           {/* FreeSurfer conversion option */}
           {selectedSpace === "freesurfer" && (
-            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background-secondary p-4 transition-colors hover:bg-surface-elevated">
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border-2 border-accent/40 bg-accent/5 p-4 transition-colors hover:bg-accent/10">
               <input
                 type="checkbox"
                 checked={convertToFs}
@@ -143,12 +143,14 @@ export default function ConfigureStep() {
                 className="mt-0.5 h-4 w-4 rounded border-border text-accent focus:ring-accent focus:ring-offset-background"
               />
               <div>
-                <div className="text-sm font-medium text-foreground">
-                  Reformat my MRI to Standard Brain Space
+                <div className="text-sm font-semibold text-foreground">
+                  Convert input to FreeSurfer space
+                </div>
+                <div className="mt-1 text-xs font-semibold text-accent">
+                  If you have not run FreeSurfer on this MRI, keep this checked.
                 </div>
                 <div className="mt-0.5 text-xs text-foreground-muted">
-                  Check this if your file is a regular MRI scan. Uncheck only if it has already been aligned to a standard template.
-                  Not sure? Leave it checked.
+                  Uncheck only if your MRI has already been conformed to FreeSurfer space (e.g. output of <code className="font-mono">mri_convert --conform</code>).
                 </div>
               </div>
             </label>
