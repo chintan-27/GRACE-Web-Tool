@@ -102,7 +102,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   // Form state
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedSpace, setSelectedSpace] = useState<Space>("freesurfer");
-  const [convertToFs, setConvertToFs] = useState(false);
+  const [convertToFs, setConvertToFs] = useState(true);
   const [selectedModels, setSelectedModels] = useState<ModelSelection>({
     grace: false,
     domino: false,

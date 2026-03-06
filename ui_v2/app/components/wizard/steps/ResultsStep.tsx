@@ -1,14 +1,28 @@
 "use client";
 
-import { Download, RefreshCw, Check, AlertTriangle, Zap } from "lucide-react";
+import { useState } from "react";
+import { Download, RefreshCw, Check, AlertTriangle, Zap, ArrowRight, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
-import { API_BASE } from "@/lib/api";
+import { API_BASE, deleteSession } from "@/lib/api";
 
 export default function ResultsStep() {
   const { sessionId, models, inputBlobUrl, resetJob, selectedFile, error } = useJob();
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDeleteSession = async () => {
+    if (!sessionId) return;
+    setDeleting(true);
+    try {
+      await deleteSession(sessionId);
+    } catch { /* best-effort */ }
+    setDeleting(false);
+    setDeleteConfirm(false);
+    resetJob();
+  };
 
   const handleDownload = (model: string) => {
     if (!sessionId) return;
@@ -100,19 +114,72 @@ export default function ResultsStep() {
             <Download className="h-4 w-4" />
             Download All
           </Button>
-          <Link href="/tes">
-            <Button variant="accent" className="gap-2">
-              <Zap className="h-4 w-4" />
-              TES Simulation
-            </Button>
-          </Link>
+          <Button variant="outline" onClick={() => setDeleteConfirm(true)} className="gap-2 text-error border-error/40 hover:bg-error/5">
+            <Trash2 className="h-4 w-4" />
+            Delete My Data
+          </Button>
         </div>
       </div>
+
+      {/* tDCS Simulation CTA */}
+      <Link href="/tes" className="block group">
+        <div className="rounded-2xl border-2 border-accent/40 bg-gradient-to-r from-accent/5 to-accent/10 p-5 shadow-medical transition-all hover:border-accent hover:from-accent/10 hover:to-accent/15 hover:shadow-glow">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-accent/20 text-accent">
+                <Zap className="h-6 w-6" />
+              </div>
+              <div>
+                <h2 className="font-mono text-sm font-bold uppercase tracking-widest text-accent mb-0.5">
+                  Run tDCS Simulation
+                </h2>
+                <p className="text-sm text-foreground-secondary">
+                  Use your segmentation to simulate transcranial Direct Current Stimulation — place electrodes, pick a montage, and compute E-field and current density maps.
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-5 w-5 shrink-0 text-accent opacity-60 transition-transform group-hover:translate-x-1 group-hover:opacity-100" />
+          </div>
+        </div>
+      </Link>
 
       {/* Segmentation Viewer — always visible */}
       <div className="rounded-2xl border border-border bg-surface p-4 shadow-medical">
         <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
       </div>
+
+      {/* Delete confirm modal */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="relative w-full max-w-sm rounded-2xl border border-border bg-surface p-6 shadow-2xl">
+            <button onClick={() => setDeleteConfirm(false)} className="absolute right-3 top-3 rounded-lg p-1.5 text-foreground-muted hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-error/15">
+                <Trash2 className="h-5 w-5 text-error" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Delete your data?</h3>
+                <p className="text-xs text-foreground-muted">This cannot be undone</p>
+              </div>
+            </div>
+            <p className="text-sm text-foreground-secondary mb-5">
+              This will immediately erase your uploaded MRI, all segmentation results, and any simulation outputs from our server.
+            </p>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setDeleteConfirm(false)}>Cancel</Button>
+              <button
+                onClick={handleDeleteSession}
+                disabled={deleting}
+                className="flex-1 rounded-lg bg-error px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              >
+                {deleting ? "Deleting…" : "Delete everything"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Download Cards */}
       <div className="rounded-2xl border border-border bg-surface p-6 shadow-medical">
@@ -139,10 +206,11 @@ export default function ResultsStep() {
       <div className="rounded-xl border border-border-subtle bg-background-secondary p-4">
         <h3 className="text-[10px] font-bold uppercase tracking-widest font-mono text-accent mb-2">// Output Info</h3>
         <ul className="mt-2 space-y-1 text-sm text-foreground-secondary">
-          <li>Segmentation results are in NIfTI format with FreeSurfer-compatible labels</li>
-          <li>TES simulation uses ROAST-11 (MATLAB MCR) and/or SimNIBS FEM solvers</li>
-          <li>Simulation outputs include E-field magnitude and voltage maps</li>
-          <li>Session data is automatically deleted after 24 hours</li>
+          <li>Segmentation results are in NIfTI format (.nii.gz) compatible with FSL, FreeSurfer, and SPM</li>
+          <li>tDCS simulation uses ROAST-11 (MATLAB) and/or SimNIBS FEM solvers</li>
+          <li>Simulation outputs include E-field magnitude (V/m) and current density (A/m²) maps</li>
+          <li>Your session data is stored securely and <strong>automatically deleted after 24 hours</strong></li>
+          <li>Use <strong>Delete My Data</strong> above to erase your files immediately</li>
         </ul>
       </div>
     </div>

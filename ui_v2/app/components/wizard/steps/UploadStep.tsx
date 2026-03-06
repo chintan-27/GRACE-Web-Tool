@@ -107,6 +107,9 @@ export default function UploadStep() {
             <p className="text-sm text-foreground-secondary">
               Upload only <strong>de-identified MRI data</strong>. Ensure your use complies with applicable ethics, privacy, and data governance requirements.
             </p>
+            <p className="text-sm text-foreground-secondary">
+              Uploaded files are stored securely on our server and <strong>automatically deleted after 24 hours</strong>. You can also delete your session immediately from the results page.
+            </p>
           </div>
         </div>
       </div>

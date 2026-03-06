@@ -20,14 +20,14 @@ interface ModelOption {
 
 const spaceOptions: SpaceOption[] = [
   {
-    id: "native",
-    name: "Native Space",
-    description: "Segment directly in each subject's native anatomical space. Best for structural analysis.",
-  },
-  {
     id: "freesurfer",
     name: "FreeSurfer Space",
-    description: "Use volumes aligned to FreeSurfer-derived space. Best for group comparisons.",
+    description: "The space our models are trained on — produces the most accurate segmentations. Your MRI is conformed to 1mm isotropic resolution before processing.",
+  },
+  {
+    id: "native",
+    name: "Native Space",
+    description: "Segment directly in your MRI's original coordinate space, skipping the FreeSurfer conformation step. Faster, but may reduce accuracy.",
   },
 ];
 
@@ -124,7 +124,14 @@ export default function ConfigureStep() {
                 )}
 
                 <div className="pr-8">
-                  <h3 className="font-mono font-semibold tracking-wide text-foreground">{option.name}</h3>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-mono font-semibold tracking-wide text-foreground">{option.name}</h3>
+                    {option.id === "freesurfer" && (
+                      <span className="rounded border border-accent/40 bg-accent/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-widest text-accent font-mono">
+                        Recommended
+                      </span>
+                    )}
+                  </div>
                   <p className="mt-1 text-sm text-foreground-secondary">
                     {option.description}
                   </p>
@@ -135,7 +142,7 @@ export default function ConfigureStep() {
 
           {/* FreeSurfer conversion option */}
           {selectedSpace === "freesurfer" && (
-            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-border bg-background-secondary p-4 transition-colors hover:bg-surface-elevated">
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border-2 border-accent/40 bg-accent/5 p-4 transition-colors hover:bg-accent/10">
               <input
                 type="checkbox"
                 checked={convertToFs}
@@ -143,12 +150,14 @@ export default function ConfigureStep() {
                 className="mt-0.5 h-4 w-4 rounded border-border text-accent focus:ring-accent focus:ring-offset-background"
               />
               <div>
-                <div className="text-sm font-medium text-foreground">
+                <div className="text-sm font-semibold text-foreground">
                   Convert input to FreeSurfer space
                 </div>
+                <div className="mt-1 text-xs font-semibold text-accent">
+                  If you have not run FreeSurfer on this MRI, keep this checked.
+                </div>
                 <div className="mt-0.5 text-xs text-foreground-muted">
-                  Enable if your input is in native space and needs to be converted.
-                  Leave unchecked if already in FreeSurfer space.
+                  Uncheck only if your MRI has already been conformed to FreeSurfer space (e.g. output of <code className="font-mono">mri_convert --conform</code>).
                 </div>
               </div>
             </label>

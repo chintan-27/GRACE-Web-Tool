@@ -342,6 +342,49 @@ export async function getSimNIBSResult(
 }
 
 // ---------------------------------------------------------------------
+// DELETE /session/{session_id}  — immediately delete session data
+// ---------------------------------------------------------------------
+export async function deleteSession(sessionId: string): Promise<void> {
+  await fetch(`${API_BASE}/session/${sessionId}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------
+// POST /session/notify  — request email restore link
+// ---------------------------------------------------------------------
+export async function requestNotification(
+  sessionId: string,
+  email: string,
+  filename?: string,
+): Promise<{ token: string; expires_in: number }> {
+  const res = await fetch(`${API_BASE}/session/notify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId, email, filename }),
+  });
+  if (!res.ok) {
+    let detail = "Failed to request notification";
+    try { const e = await res.json(); detail = e.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /session/restore/{token}  — resolve restore token → session_id
+// ---------------------------------------------------------------------
+export async function restoreSession(
+  token: string,
+): Promise<{ session_id: string; models: string[] }> {
+  const res = await fetch(`${API_BASE}/session/restore/${token}`);
+  if (!res.ok) {
+    let detail = "Invalid or expired restore link";
+    try { const e = await res.json(); detail = e.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return await res.json();
+}
+
+// ---------------------------------------------------------------------
 // POST /cancel/{session_id}
 // ---------------------------------------------------------------------
 export async function cancelJob(sessionId: string): Promise<void> {

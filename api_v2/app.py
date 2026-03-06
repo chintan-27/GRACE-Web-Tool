@@ -8,7 +8,9 @@ import gzip
 import shutil
 import subprocess
 import sqlite3
+import threading
 import time
+import uuid
 from pathlib import Path
 
 from runtime.session import create_session, session_input_native, model_output_path, session_log, roast_output_path, simnibs_output_path, cleanup_old_sessions
@@ -23,7 +25,7 @@ from services.redis_client import (
     enqueue_roast_job, get_roast_status, get_roast_progress, set_roast_status,
     enqueue_simnibs_job, get_simnibs_status, get_simnibs_progress, set_simnibs_status,
 )
-from config import GPU_COUNT, SESSION_DIR, DB_PATH
+from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -430,6 +432,95 @@ async def stream_simnibs(session_id: str):
         sse_stream(session_id, terminate_on=("simnibs_complete", "simnibs_error")),
         media_type="text/event-stream"
     )
+
+
+# ============================================================
+# DELETE /session/{session_id}  — Immediately delete session data
+# ============================================================
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    """Delete all data for a session immediately (directory + Redis keys)."""
+    # Sanitise session_id to prevent path traversal
+    if not session_id or "/" in session_id or ".." in session_id:
+        raise HTTPException(status_code=400, detail="Invalid session_id")
+
+    session_dir = SESSION_DIR / session_id
+    deleted_dir = False
+    if session_dir.exists():
+        shutil.rmtree(str(session_dir), ignore_errors=True)
+        deleted_dir = True
+
+    # Best-effort Redis cleanup (don't fail if keys are already gone)
+    try:
+        for key in redis_client.scan_iter(f"*{session_id}*"):
+            redis_client.delete(key)
+    except Exception:
+        pass
+
+    return {"deleted": session_id, "directory_removed": deleted_dir}
+
+
+# ============================================================
+# POST /session/notify  — Request an email restore link
+# ============================================================
+@app.post("/session/notify")
+async def session_notify(body: dict = Body(...)):
+    """
+    Store an email address for a session and send a time-limited restore link.
+    The link is valid for NOTIFY_TOKEN_TTL seconds (default 6 h).
+    """
+    session_id = body.get("session_id", "").strip()
+    email      = body.get("email", "").strip()
+    filename   = body.get("filename")
+
+    if not session_id or not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="session_id and a valid email are required")
+
+    session_dir = SESSION_DIR / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    token = str(uuid.uuid4())
+    redis_client.setex(
+        f"notify_token:{token}",
+        NOTIFY_TOKEN_TTL,
+        session_id,
+    )
+
+    restore_url = f"{FRONTEND_URL}/?restore={token}"
+
+    # Send email in background thread so the API returns immediately
+    from services.email import send_restore_email
+    threading.Thread(
+        target=send_restore_email,
+        args=(email, restore_url, filename),
+        daemon=True,
+    ).start()
+
+    return {"status": "sent", "token": token, "expires_in": NOTIFY_TOKEN_TTL}
+
+
+# ============================================================
+# GET /session/restore/{token}  — Resolve a restore token
+# ============================================================
+@app.get("/session/restore/{token}")
+async def session_restore(token: str):
+    """Return the session_id for a valid restore token."""
+    session_id = redis_client.get(f"notify_token:{token}")
+    if not session_id:
+        raise HTTPException(status_code=404, detail="Restore token is invalid or has expired")
+
+    session_dir = SESSION_DIR / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=410, detail="Session data has been deleted")
+
+    # Collect available models from completed output files
+    models = [
+        p.stem.replace(".nii", "")
+        for p in session_dir.glob("outputs/*.nii.gz")
+    ]
+
+    return {"session_id": session_id, "models": models}
 
 
 # ============================================================
