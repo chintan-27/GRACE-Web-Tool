@@ -64,6 +64,10 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
   const [elecHasGel, setElecHasGel]         = useState(false);
   const [elecError, setElecError]           = useState(false);
   const [elecOpacity, setElecOpacity]       = useState(0.85);
+  // Isolation: dim T1 to reveal only the mask
+  const [elecIsolated, setElecIsolated]     = useState(false);
+  const [gelIsolated, setGelIsolated]       = useState(false);
+  const MASK_BG_DIM = 0.08;
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
   const bufferCache     = useRef<Partial<Record<OutputType, ArrayBuffer>>>({});
@@ -291,6 +295,19 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
       }
     });
   }, [elecOpacity, elecReady]);
+
+  // Sync T1 dim when isolating electrode or gel
+  useEffect(() => {
+    if (!elecReady || !nvElecRef.current) return;
+    nvElecRef.current.setOpacity(0, elecIsolated ? MASK_BG_DIM : 1.0);
+    nvElecRef.current.drawScene();
+  }, [elecIsolated, elecReady]);
+
+  useEffect(() => {
+    if (!elecReady || !nvGelRef.current) return;
+    nvGelRef.current.setOpacity(0, gelIsolated ? MASK_BG_DIM : 1.0);
+    nvGelRef.current.drawScene();
+  }, [gelIsolated, elecReady]);
 
   // Sync opacity
   useEffect(() => {
@@ -633,6 +650,36 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
                     </div>
                   )}
                 </div>
+                {elecReady && elecHasElec && (
+                  <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
+                    <button
+                      type="button"
+                      onClick={() => setElecIsolated(false)}
+                      title="Show T1 anatomy"
+                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                      style={{ opacity: elecIsolated ? 0.3 : 1 }}
+                    >
+                      <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !elecIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
+                      <span className={cn("whitespace-nowrap", !elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setElecIsolated(true)}
+                      title="Isolate electrode mask"
+                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                      style={{ opacity: !elecIsolated ? 0.5 : 1 }}
+                    >
+                      <span className="inline-block h-3 w-3 rounded-[3px] bg-[#ff6000] ring-1 ring-white/10" style={{ transform: elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: elecIsolated ? "0 0 0 2px white, 0 0 0 3px #ff6000" : undefined }} />
+                      <span className={cn("whitespace-nowrap", elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Electrode Only</span>
+                    </button>
+                    {elecIsolated && (
+                      <button type="button" onClick={() => setElecIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
+                        Show all
+                      </button>
+                    )}
+                  </div>
+                )}
               </article>
 
               {/* Gel layer panel */}
@@ -667,6 +714,36 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
                     </div>
                   )}
                 </div>
+                {elecReady && elecHasGel && (
+                  <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
+                    <button
+                      type="button"
+                      onClick={() => setGelIsolated(false)}
+                      title="Show T1 anatomy"
+                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                      style={{ opacity: gelIsolated ? 0.3 : 1 }}
+                    >
+                      <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !gelIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
+                      <span className={cn("whitespace-nowrap", !gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGelIsolated(true)}
+                      title="Isolate gel mask"
+                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                      style={{ opacity: !gelIsolated ? 0.5 : 1 }}
+                    >
+                      <span className="inline-block h-3 w-3 rounded-[3px] bg-[#0080ff] ring-1 ring-white/10" style={{ transform: gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: gelIsolated ? "0 0 0 2px white, 0 0 0 3px #0080ff" : undefined }} />
+                      <span className={cn("whitespace-nowrap", gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Gel Only</span>
+                    </button>
+                    {gelIsolated && (
+                      <button type="button" onClick={() => setGelIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
+                        Show all
+                      </button>
+                    )}
+                  </div>
+                )}
               </article>
             </div>
           )}
