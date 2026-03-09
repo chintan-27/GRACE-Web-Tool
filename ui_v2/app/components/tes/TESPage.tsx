@@ -114,11 +114,12 @@ interface RunConfig {
 }
 
 interface RunState {
-  status:   RunStatus;
-  progress: number;
-  step:     string;
-  error?:   string;
-  config?:  RunConfig;
+  status:      RunStatus;
+  progress:    number;
+  step:        string;
+  error?:      string;
+  config?:     RunConfig;
+  completedAt?: number;
 }
 
 type PanelView =
@@ -334,7 +335,7 @@ export default function TESPage() {
         }
         if (evt.type === "complete") {
           clearActiveSim();
-          setRunState(key, { status: "complete", progress: 100, step: "Complete" });
+          setRunState(key, { status: "complete", progress: 100, step: "Complete", completedAt: Date.now() });
           setPanelView({ type: "roast", model: next.model });
           runningRef.current = false;
           processQueue();
@@ -367,7 +368,7 @@ export default function TESPage() {
         }
         if (evt.type === "complete") {
           clearActiveSim();
-          setRunState(key, { status: "complete", progress: 100, step: "Complete" });
+          setRunState(key, { status: "complete", progress: 100, step: "Complete", completedAt: Date.now() });
           setPanelView({ type: "simnibs", model: next.model });
           runningRef.current = false;
           processQueue();
@@ -1044,6 +1045,7 @@ export default function TESPage() {
           {(panelView.type === "roast" || panelView.type === "simnibs") && (
             <div className="h-full p-4">
               <RoastViewer
+                key={`${panelView.model}:${panelView.type}:${runStates[runKey(panelView.model, panelView.type as "roast" | "simnibs")]?.completedAt ?? ""}`}
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={panelView.model}
@@ -1054,6 +1056,7 @@ export default function TESPage() {
           {panelView.type === "comparison" && (
             <div className="h-full p-4">
               <TESComparisonViewer
+                key={`${panelView.model}:comparison:${runStates[runKey(panelView.model, "roast")]?.completedAt ?? ""}:${runStates[runKey(panelView.model, "simnibs")]?.completedAt ?? ""}`}
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={panelView.model}
