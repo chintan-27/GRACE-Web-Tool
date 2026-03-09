@@ -120,6 +120,28 @@ def _resolve_mcr(base: Path) -> Path:
     return base  # will fail with a clear MCR error from the launcher
 
 
+# Voxels to pad on all six sides before ROAST runs.
+# FreeSurfer-conformed volumes are 256³; temporal (T7/T8), mastoid (TP9/TP10),
+# and occipital (O1/O2) electrode positions sit within ~10 voxels of the image
+# boundary.  Padding prevents "goes out of image boundary" errors without any
+# change to the compiled MATLAB binary.
+_ZERO_PAD_VOXELS = 10
+
+
+def _zero_pad_nii(img: nib.Nifti1Image, pad: int) -> nib.Nifti1Image:
+    """Return a new NIfTI padded by *pad* zero-voxels on all six sides.
+
+    The affine is updated so world coordinates of existing tissue are preserved:
+    new voxel [0,0,0] maps to old voxel [-pad,-pad,-pad] in world space.
+    """
+    data = np.asarray(img.dataobj)
+    padded = np.pad(data, pad, mode="constant", constant_values=0)
+    affine = img.affine.copy()
+    # Translate origin: shift = R @ [-pad, -pad, -pad] where R is the rotation/scale part.
+    affine[:3, 3] = affine[:3, 3] + affine[:3, :3] @ np.array([-pad, -pad, -pad], dtype=float)
+    return nib.Nifti1Image(padded.astype(data.dtype), affine)
+
+
 class ROASTRunner:
     def __init__(self, session_id: str, model_name: str, payload: dict):
         self.session_id = session_id
@@ -256,6 +278,21 @@ class ROASTRunner:
                 dummy_c1 = self.work_dir / dummy_name
                 shutil.copy(t1_nii, dummy_c1)
             session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
+
+        # --- Zero-pad T1 and masks on all six sides ---
+        # Electrode pads extend outward from the scalp; positions near the image
+        # boundary (T7/T8 temporal, TP9/TP10 mastoid, O1/O2 occipital, A1/A2, etc.)
+        # trigger "goes out of image boundary" in generateElecMask without padding.
+        # We pad T1 and both masks uniformly so all three files stay aligned.
+        pad = _ZERO_PAD_VOXELS
+        t1_img = nib.load(str(t1_nii))
+        nib.save(_zero_pad_nii(t1_img, pad), str(t1_nii))
+        if seg_source != "spm":
+            mask_img = nib.load(str(mask_nii))
+            padded_mask = _zero_pad_nii(mask_img, pad)
+            nib.save(padded_mask, str(mask_nii))
+            nib.save(padded_mask, str(mask_ras_nii))
+        session_log(self.session_id, f"[ROAST] T1 and masks zero-padded by {pad} voxels on all sides")
 
         return str(t1_nii)
 
