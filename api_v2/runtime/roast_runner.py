@@ -190,30 +190,55 @@ class ROASTRunner:
                 shutil.copyfileobj(f_in, f_out)
             session_log(self.session_id, f"[ROAST] T1 gunzipped from native space → {t1_nii}")
 
-        # Reorient T1 to RAS canonical orientation.
-        # mri_convert --conform (used for FreeSurfer-space inputs) outputs LIA orientation.
-        # ROAST internally creates T1_ras.nii from T1.nii, and the bypass masks are
-        # expected to be in T1_ras space.  If we pre-write masks in LIA and name them
-        # T1_ras_* the electrode placement sees a coordinate system mismatch → electrodes
-        # appear disoriented.  Reorienting T1 to RAS here makes T1 ≡ T1_ras (ROAST's
-        # convertToRAS becomes a no-op) so the masks we pre-write are already aligned.
-        t1_img = nib.load(str(t1_nii))
+        # ---------------------------------------------------------------
+        # T1: reorient to RAS + zero-pad in a single load/save pass.
+        #
+        # WHY single pass: nib.load on an uncompressed .nii uses np.memmap.
+        # Writing back to the same path while the mmap is still open blocks
+        # indefinitely (mmap deadlock), causing a 9+ minute hang.
+        # Forcing the data into a new in-memory array (np.asarray(...).copy())
+        # before saving eliminates the file dependency.
+        #
+        # WHY RAS reorient: mri_convert --conform outputs LIA orientation.
+        # ROAST creates T1_ras.nii from T1.nii before checking bypass files.
+        # Bypass masks must be in T1_ras space (RAS).  Pre-writing LIA masks
+        # with RAS names causes a coordinate mismatch → disoriented electrodes.
+        # Reorienting T1 here makes T1 ≡ T1_ras so masks we write are aligned.
+        # ---------------------------------------------------------------
+        t1_raw = nib.load(str(t1_nii))
+        orig_axcodes = nib.aff2axcodes(t1_raw.affine)
+        # Force data into RAM — np.asarray() on a mmap'd file returns a view,
+        # .copy() creates an independent array so the file handle can be released.
+        t1_img = nib.Nifti1Image(
+            np.asarray(t1_raw.dataobj).copy(), t1_raw.affine, t1_raw.header
+        )
+        del t1_raw
         t1_ras = nib.as_closest_canonical(t1_img)
-        nib.save(t1_ras, str(t1_nii))
-        session_log(self.session_id, f"[ROAST] T1 reoriented to RAS canonical (was {nib.aff2axcodes(t1_img.affine)})")
+        del t1_img
+        # Zero-pad and save T1 once (no re-read of T1.nii)
+        t1_padded = _zero_pad_nii(t1_ras, _ZERO_PAD_VOXELS)
+        del t1_ras
+        nib.save(t1_padded, str(t1_nii))
+        session_log(self.session_id,
+                    f"[ROAST] T1 reoriented to RAS (was {orig_axcodes}), "
+                    f"zero-padded by {_ZERO_PAD_VOXELS} voxels → {t1_nii}")
 
-        # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement).
-        # Do NOT pass the old header — nibabel would keep the old dtype code
-        # (int16/float32) in the header even though the array is uint8, causing
-        # MATLAB's load_untouch_nii to read the wrong type. Creating a fresh
-        # Nifti1Image from only (data, affine) lets nibabel derive the correct
-        # uint8 dtype code automatically.
-        # Also reorient to RAS to match T1 (mask and T1 come from the same source
-        # space so as_closest_canonical applies the identical permutation to both).
+        # ---------------------------------------------------------------
+        # Mask: reorient to RAS → morphological processing → zero-pad →
+        # save both mask files in a single load/save pass.
+        #
+        # The .nii.gz source has no mmap so no deadlock risk there, but we
+        # still combine all operations to avoid redundant I/O.
+        # ---------------------------------------------------------------
         mask_gz = model_output_path(self.session_id, self.model_name)
         mask_nii = self.work_dir / "T1_T1orT2_masks.nii"
-        img = nib.as_closest_canonical(nib.load(mask_gz))
-        data = np.asarray(img.dataobj, dtype=np.uint8)
+        mask_raw = nib.load(mask_gz)
+        mask_ras_img = nib.as_closest_canonical(mask_raw)
+        del mask_raw
+        # Cast to uint8 for MATLAB cgalmesher; keep RAS affine
+        data = np.asarray(mask_ras_img.dataobj, dtype=np.uint8)
+        mask_affine = mask_ras_img.affine.copy()
+        del mask_ras_img
 
         # --- Pre-close the skin label (9) at the central sagittal slices ---
         # fitCap2individual.m has an unbounded while loop that grows a morphological
@@ -272,41 +297,30 @@ class ROASTRunner:
             # then ROAST's segTouchup (Step 2) will generate the masks file.
             session_log(self.session_id, "[ROAST] SPM mode: skipping NN mask and c1 bypass — ROAST will run SPM segmentation")
         else:
-            # NN mode: pre-write the GRACE/DOMINO mask so ROAST skips segTouchup
-            # (Step 2), and write dummy c1 files so ROAST skips SPM (Step 1).
-            nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
-            session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
-
-            # ROAST unconditionally reorients T1.nii → T1_ras.nii before running any
-            # bypass checks.  segTouchup (Step 2) looks for T1_ras_T1orT2_masks.nii,
-            # not T1_T1orT2_masks.nii.  Write both so the Step 2 bypass fires.
+            # NN mode: zero-pad the processed mask data, then save both mask files
+            # (T1_T1orT2_masks.nii and T1_ras_T1orT2_masks.nii) in one pass.
+            pad = _ZERO_PAD_VOXELS
+            data_padded = np.pad(data, pad, mode="constant", constant_values=0).astype(np.uint8)
+            # Compute padded affine: new voxel[0,0,0] maps to old voxel[-pad,-pad,-pad]
+            padded_affine = mask_affine.copy()
+            padded_affine[:3, 3] = (
+                mask_affine[:3, 3] + mask_affine[:3, :3] @ np.array([-pad, -pad, -pad], dtype=float)
+            )
+            padded_mask_img = nib.Nifti1Image(data_padded, padded_affine)
             mask_ras_nii = self.work_dir / "T1_ras_T1orT2_masks.nii"
-            shutil.copy(str(mask_nii), str(mask_ras_nii))
-            session_log(self.session_id, f"[ROAST] Mask also written as RAS-bypass name → {mask_ras_nii}")
+            nib.save(padded_mask_img, str(mask_nii))
+            nib.save(padded_mask_img, str(mask_ras_nii))
+            session_log(self.session_id,
+                        f"[ROAST] Masks saved (RAS, zero-padded by {pad} voxels) → "
+                        f"{mask_nii.name} + {mask_ras_nii.name}")
 
             # Bypass ROAST Step 1 (SPM segmentation) by pre-creating dummy c1 files.
             # ROAST first reorients T1.nii to RAS space → T1_ras.nii, then checks for
             # the c1 file AFTER that reorientation. The bypass check therefore looks for
             # c1T1_ras_T1orT2.nii, not c1T1_T1orT2.nii. We create both to be safe.
             for dummy_name in ("c1T1_T1orT2.nii", "c1T1_ras_T1orT2.nii"):
-                dummy_c1 = self.work_dir / dummy_name
-                shutil.copy(t1_nii, dummy_c1)
+                shutil.copy(t1_nii, self.work_dir / dummy_name)
             session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
-
-        # --- Zero-pad T1 and masks on all six sides ---
-        # Electrode pads extend outward from the scalp; positions near the image
-        # boundary (T7/T8 temporal, TP9/TP10 mastoid, O1/O2 occipital, A1/A2, etc.)
-        # trigger "goes out of image boundary" in generateElecMask without padding.
-        # We pad T1 and both masks uniformly so all three files stay aligned.
-        pad = _ZERO_PAD_VOXELS
-        t1_img = nib.load(str(t1_nii))
-        nib.save(_zero_pad_nii(t1_img, pad), str(t1_nii))
-        if seg_source != "spm":
-            mask_img = nib.load(str(mask_nii))
-            padded_mask = _zero_pad_nii(mask_img, pad)
-            nib.save(padded_mask, str(mask_nii))
-            nib.save(padded_mask, str(mask_ras_nii))
-        session_log(self.session_id, f"[ROAST] T1 and masks zero-padded by {pad} voxels on all sides")
 
         return str(t1_nii)
 
