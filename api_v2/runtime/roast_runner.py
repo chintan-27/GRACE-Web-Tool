@@ -241,6 +241,13 @@ class ROASTRunner:
             nib.save(nib.Nifti1Image(data, img.affine), str(mask_nii))
             session_log(self.session_id, f"[ROAST] Mask saved as uint8 → {mask_nii}")
 
+            # ROAST unconditionally reorients T1.nii → T1_ras.nii before running any
+            # bypass checks.  segTouchup (Step 2) looks for T1_ras_T1orT2_masks.nii,
+            # not T1_T1orT2_masks.nii.  Write both so the Step 2 bypass fires.
+            mask_ras_nii = self.work_dir / "T1_ras_T1orT2_masks.nii"
+            shutil.copy(str(mask_nii), str(mask_ras_nii))
+            session_log(self.session_id, f"[ROAST] Mask also written as RAS-bypass name → {mask_ras_nii}")
+
             # Bypass ROAST Step 1 (SPM segmentation) by pre-creating dummy c1 files.
             # ROAST first reorients T1.nii to RAS space → T1_ras.nii, then checks for
             # the c1 file AFTER that reorientation. The bypass check therefore looks for
