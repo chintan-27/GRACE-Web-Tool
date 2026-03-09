@@ -190,15 +190,29 @@ class ROASTRunner:
                 shutil.copyfileobj(f_in, f_out)
             session_log(self.session_id, f"[ROAST] T1 gunzipped from native space → {t1_nii}")
 
+        # Reorient T1 to RAS canonical orientation.
+        # mri_convert --conform (used for FreeSurfer-space inputs) outputs LIA orientation.
+        # ROAST internally creates T1_ras.nii from T1.nii, and the bypass masks are
+        # expected to be in T1_ras space.  If we pre-write masks in LIA and name them
+        # T1_ras_* the electrode placement sees a coordinate system mismatch → electrodes
+        # appear disoriented.  Reorienting T1 to RAS here makes T1 ≡ T1_ras (ROAST's
+        # convertToRAS becomes a no-op) so the masks we pre-write are already aligned.
+        t1_img = nib.load(str(t1_nii))
+        t1_ras = nib.as_closest_canonical(t1_img)
+        nib.save(t1_ras, str(t1_nii))
+        session_log(self.session_id, f"[ROAST] T1 reoriented to RAS canonical (was {nib.aff2axcodes(t1_img.affine)})")
+
         # Gunzip segmentation mask and cast to uint8 (cgalmesher requirement).
         # Do NOT pass the old header — nibabel would keep the old dtype code
         # (int16/float32) in the header even though the array is uint8, causing
         # MATLAB's load_untouch_nii to read the wrong type. Creating a fresh
         # Nifti1Image from only (data, affine) lets nibabel derive the correct
         # uint8 dtype code automatically.
+        # Also reorient to RAS to match T1 (mask and T1 come from the same source
+        # space so as_closest_canonical applies the identical permutation to both).
         mask_gz = model_output_path(self.session_id, self.model_name)
         mask_nii = self.work_dir / "T1_T1orT2_masks.nii"
-        img = nib.load(mask_gz)
+        img = nib.as_closest_canonical(nib.load(mask_gz))
         data = np.asarray(img.dataobj, dtype=np.uint8)
 
         # --- Pre-close the skin label (9) at the central sagittal slices ---
