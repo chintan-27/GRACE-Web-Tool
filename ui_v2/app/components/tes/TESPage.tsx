@@ -124,12 +124,13 @@ interface RunState {
 
 type PanelView =
   | { type: "segmentation" }
-  | { type: "roast";      model: string }
-  | { type: "simnibs";    model: string }
+  | { type: "roast";      model: string; runKey: string }
+  | { type: "simnibs";    model: string; runKey: string }
   | { type: "comparison"; model: string };
 
-function runKey(model: string, solver: "roast" | "simnibs") {
-  return `${model}:${solver}`;
+// Key includes anode+cathode so each distinct montage gets its own tab.
+function runKey(model: string, solver: "roast" | "simnibs", anode: string, cathode: string) {
+  return `${model}:${solver}:${anode}:${cathode}`;
 }
 function getDisplayName(model: string) {
   return model.replace("-native", "").replace("-fs", "").toUpperCase();
@@ -222,7 +223,7 @@ export default function TESPage() {
 
   // Run state
   const [runStates, setRunStates] = useState<Record<string, RunState>>({});
-  const runQueueRef = useRef<{ model: string; solver: "roast" | "simnibs" }[]>([]);
+  const runQueueRef = useRef<{ model: string; solver: "roast" | "simnibs"; key: string }[]>([]);
   const runningRef  = useRef(false);
 
   // Right-panel view
@@ -311,7 +312,7 @@ export default function TESPage() {
     if (!next) { runningRef.current = false; return; }
 
     runningRef.current = true;
-    const key      = runKey(next.model, next.solver);
+    const key      = next.key;
     const recipe   = buildRecipe(electrodeConfig);
     const electype = buildElectype(electrodeConfig);
 
@@ -336,7 +337,7 @@ export default function TESPage() {
         if (evt.type === "complete") {
           clearActiveSim();
           setRunState(key, { status: "complete", progress: 100, step: "Complete", completedAt: Date.now() });
-          setPanelView({ type: "roast", model: next.model });
+          setPanelView({ type: "roast", model: next.model, runKey: key });
           runningRef.current = false;
           processQueue();
         }
@@ -369,7 +370,7 @@ export default function TESPage() {
         if (evt.type === "complete") {
           clearActiveSim();
           setRunState(key, { status: "complete", progress: 100, step: "Complete", completedAt: Date.now() });
-          setPanelView({ type: "simnibs", model: next.model });
+          setPanelView({ type: "simnibs", model: next.model, runKey: key });
           runningRef.current = false;
           processQueue();
         }
@@ -398,12 +399,12 @@ export default function TESPage() {
       quality,
     };
 
-    const queue: { model: string; solver: "roast" | "simnibs" }[] = [];
+    const queue: { model: string; solver: "roast" | "simnibs"; key: string }[] = [];
     const init: Record<string, RunState> = {};
     for (const m of selectedModels) {
       for (const s of solvers) {
-        const k = runKey(m, s);
-        queue.push({ model: m, solver: s });
+        const k = runKey(m, s, configSnapshot.anode, configSnapshot.cathode);
+        queue.push({ model: m, solver: s, key: k });
         init[k] = { status: "pending", progress: 0, step: "Queued", config: configSnapshot };
       }
     }
@@ -420,14 +421,26 @@ export default function TESPage() {
   const isRunning  = runEntries.some(([, r]) => r.status === "running");
   const allDone    = hasRuns && runEntries.every(([, r]) => r.status === "complete" || r.status === "error");
 
-  // Tabs visible for completed runs AND in-progress re-runs (so old results stay accessible)
-  const completedByModel: Record<string, ("roast" | "simnibs")[]> = {};
-  for (const [key, state] of runEntries) {
-    if (state.status !== "complete" && state.status !== "running") continue;
-    const [m, s] = key.split(":") as [string, "roast" | "simnibs"];
-    (completedByModel[m] ??= []).push(s);
+  // Each distinct model:solver:anode:cathode run gets its own tab.
+  type VisibleRun = { key: string; model: string; solver: "roast" | "simnibs"; state: RunState };
+  const visibleRuns: VisibleRun[] = runEntries
+    .filter(([, s]) => s.status === "complete" || s.status === "running")
+    .map(([key, state]) => {
+      const parts = key.split(":");
+      return { key, model: parts[0], solver: parts[1] as "roast" | "simnibs", state };
+    });
+  const completedCount = visibleRuns.filter(r => r.state.status === "complete").length;
+
+  // Comparison tab: models with at least one completed ROAST + one completed SimNIBS.
+  const completedSolversByModel = new Map<string, Set<"roast" | "simnibs">>();
+  for (const { model, solver, state } of visibleRuns) {
+    if (state.status !== "complete") continue;
+    if (!completedSolversByModel.has(model)) completedSolversByModel.set(model, new Set());
+    completedSolversByModel.get(model)!.add(solver);
   }
-  const completedCount = Object.keys(completedByModel).length;
+  const comparisonModels = [...completedSolversByModel.entries()]
+    .filter(([, s]) => s.has("roast") && s.has("simnibs"))
+    .map(([m]) => m);
 
   // ── No-session guard ──────────────────────────────────────────────────────
   if (!sessionId || !inputBlobUrl) {
@@ -511,6 +524,7 @@ export default function TESPage() {
   // ── Tab helpers ───────────────────────────────────────────────────────────
   const isPanelActive = (v: PanelView) => {
     if (panelView.type !== v.type) return false;
+    if ("runKey" in panelView && "runKey" in v) return panelView.runKey === (v as { runKey: string }).runKey;
     if ("model" in panelView && "model" in v) return panelView.model === v.model;
     return true;
   };
@@ -945,92 +959,62 @@ export default function TESPage() {
             Segmentation
           </button>
 
-          {Object.entries(completedByModel).flatMap(([model, solvers]) => {
-            const tabs = [];
+          {visibleRuns.map(({ key, model, solver, state }) => {
+            const cfg = state.config;
             const space = getSpaceLabel(model);
-            const roastState  = runStates[runKey(model, "roast")];
-            const simnibsState = runStates[runKey(model, "simnibs")];
-            const roastCfg  = roastState?.config;
-            const simnibsCfg = simnibsState?.config;
-            const roastRunning  = roastState?.status === "running";
-            const simnibsRunning = simnibsState?.status === "running";
+            const isRunning = state.status === "running";
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setPanelView({ type: solver, model, runKey: key })}
+                className={tabCls(isPanelActive({ type: solver, model, runKey: key }))}
+              >
+                {isRunning
+                  ? <div className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  : <Check className="h-3 w-3 text-success shrink-0" />
+                }
+                <span className="font-semibold">{getDisplayName(model)}</span>
+                {space && (
+                  <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
+                )}
+                <span className="text-foreground-muted">·</span>
+                <span>{solver === "roast" ? "ROAST" : "SimNIBS"}</span>
+                {cfg && (
+                  <span className="font-mono text-[10px] text-foreground-muted">
+                    {cfg.anode}→{cfg.cathode} {cfg.currentMa}mA
+                  </span>
+                )}
+                {cfg && !isRunning && (
+                  <span className="rounded bg-border/40 px-1 py-0.5 text-[10px] text-foreground-muted">{cfg.quality}</span>
+                )}
+              </button>
+            );
+          })}
 
-            if (solvers.includes("roast"))
-              tabs.push(
-                <button
-                  key={`${model}:roast`}
-                  type="button"
-                  onClick={() => setPanelView({ type: "roast", model })}
-                  className={tabCls(isPanelActive({ type: "roast", model }))}
-                >
-                  {roastRunning
-                    ? <div className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    : <Check className="h-3 w-3 text-success shrink-0" />
-                  }
-                  <span className="font-semibold">{getDisplayName(model)}</span>
-                  {space && (
-                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
-                  )}
-                  <span className="text-foreground-muted">·</span>
-                  <span>ROAST</span>
-                  {roastCfg && (
-                    <span className="font-mono text-[10px] text-foreground-muted">
-                      {roastCfg.anode}→{roastCfg.cathode} {roastCfg.currentMa}mA
-                    </span>
-                  )}
-                  {roastCfg && !roastRunning && (
-                    <span className="rounded bg-border/40 px-1 py-0.5 text-[10px] text-foreground-muted">{roastCfg.quality}</span>
-                  )}
-                </button>,
-              );
-            if (solvers.includes("simnibs"))
-              tabs.push(
-                <button
-                  key={`${model}:simnibs`}
-                  type="button"
-                  onClick={() => setPanelView({ type: "simnibs", model })}
-                  className={tabCls(isPanelActive({ type: "simnibs", model }))}
-                >
-                  {simnibsRunning
-                    ? <div className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                    : <Check className="h-3 w-3 text-success shrink-0" />
-                  }
-                  <span className="font-semibold">{getDisplayName(model)}</span>
-                  {space && (
-                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
-                  )}
-                  <span className="text-foreground-muted">·</span>
-                  <span>SimNIBS</span>
-                  {simnibsCfg && (
-                    <span className="font-mono text-[10px] text-foreground-muted">
-                      {simnibsCfg.anode}→{simnibsCfg.cathode} {simnibsCfg.currentMa}mA
-                    </span>
-                  )}
-                </button>,
-              );
-            if (solvers.includes("roast") && solvers.includes("simnibs"))
-              tabs.push(
-                <button
-                  key={`${model}:comparison`}
-                  type="button"
-                  onClick={() => setPanelView({ type: "comparison", model })}
-                  className={tabCls(isPanelActive({ type: "comparison", model }))}
-                >
-                  <GitCompare className="h-3 w-3 shrink-0" />
-                  <span className="font-semibold">{getDisplayName(model)}</span>
-                  {space && (
-                    <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
-                  )}
-                  <span className="text-foreground-muted">·</span>
-                  <span>Compare</span>
-                </button>,
-              );
-            return tabs;
+          {comparisonModels.map(model => {
+            const space = getSpaceLabel(model);
+            return (
+              <button
+                key={`${model}:comparison`}
+                type="button"
+                onClick={() => setPanelView({ type: "comparison", model })}
+                className={tabCls(isPanelActive({ type: "comparison", model }))}
+              >
+                <GitCompare className="h-3 w-3 shrink-0" />
+                <span className="font-semibold">{getDisplayName(model)}</span>
+                {space && (
+                  <span className="rounded bg-border/60 px-1 py-0.5 text-[10px] font-medium text-foreground-muted">{space}</span>
+                )}
+                <span className="text-foreground-muted">·</span>
+                <span>Compare</span>
+              </button>
+            );
           })}
 
           {completedCount > 0 && (
             <div className="ml-auto shrink-0 pl-4 text-[11px] text-foreground-muted">
-              {completedCount} model{completedCount > 1 ? "s" : ""} complete
+              {completedCount} run{completedCount > 1 ? "s" : ""} complete
             </div>
           )}
         </div>
@@ -1045,7 +1029,7 @@ export default function TESPage() {
           {(panelView.type === "roast" || panelView.type === "simnibs") && (
             <div className="h-full p-4">
               <RoastViewer
-                key={`${panelView.model}:${panelView.type}:${runStates[runKey(panelView.model, panelView.type as "roast" | "simnibs")]?.completedAt ?? ""}`}
+                key={`${panelView.runKey}:${runStates[panelView.runKey]?.completedAt ?? ""}`}
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={panelView.model}
@@ -1056,7 +1040,11 @@ export default function TESPage() {
           {panelView.type === "comparison" && (
             <div className="h-full p-4">
               <TESComparisonViewer
-                key={`${panelView.model}:comparison:${runStates[runKey(panelView.model, "roast")]?.completedAt ?? ""}:${runStates[runKey(panelView.model, "simnibs")]?.completedAt ?? ""}`}
+                key={`${panelView.model}:comparison:${
+                  Math.max(0, ...visibleRuns.filter(r => r.model === panelView.model && r.solver === "roast" && r.state.status === "complete").map(r => r.state.completedAt ?? 0))
+                }:${
+                  Math.max(0, ...visibleRuns.filter(r => r.model === panelView.model && r.solver === "simnibs" && r.state.status === "complete").map(r => r.state.completedAt ?? 0))
+                }`}
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={panelView.model}
