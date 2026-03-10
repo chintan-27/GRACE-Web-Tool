@@ -268,6 +268,8 @@ async def simulate(body: dict = Body(...)):
     seg_source = body.get("seg_source", "nn")
     session_log(session_id, f"[ROAST] seg_source={seg_source} (SPM bypass not yet implemented — requires ROAST+SPM rebuild)")
 
+    run_id = uuid.uuid4().hex[:12]
+
     payload = {
         "model_name": model_name,
         "recipe": recipe,
@@ -278,6 +280,7 @@ async def simulate(body: dict = Body(...)):
         "simulation_tag": body.get("simulation_tag"),
         "quality": body.get("quality", "standard"),  # "fast" or "standard"
         "seg_source": seg_source,
+        "run_id": run_id,
     }
 
     # Flush stale SSE events from previous runs so the new stream doesn't
@@ -285,19 +288,20 @@ async def simulate(body: dict = Body(...)):
     from runtime.sse import redis_event_key
     redis_client.delete(redis_event_key(session_id))
 
-    set_roast_status(session_id, "queued", model_name)
+    set_roast_status(session_id, "queued", model_name, run_id)
     enqueue_roast_job(session_id, payload)
     recipe_log = " ".join(str(x) for x in (recipe or []))
-    session_log(session_id, f"ROAST job enqueued for model={model_name} recipe=[{recipe_log}] quality={payload['quality']}")
+    session_log(session_id, f"ROAST job enqueued for model={model_name} run_id={run_id} recipe=[{recipe_log}] quality={payload['quality']}")
 
     from runtime.sse import push_event
     push_event(session_id, {"event": "roast_queued", "progress": 0, "model": model_name})
 
-    return {"session_id": session_id, "status": "queued"}
+    return {"session_id": session_id, "status": "queued", "run_id": run_id}
 
 
 # ============================================================
 # GET /simulate/results/{session_id}/{model_name}/{output_type}
+# (legacy — no run_id; kept for backward compatibility)
 # ============================================================
 @app.get("/simulate/results/{session_id}/{model_name}/{output_type}")
 async def get_simulate_result(session_id: str, model_name: str, output_type: str):
@@ -323,6 +327,40 @@ async def get_simulate_result(session_id: str, model_name: str, output_type: str
 
     if not out_path.exists():
         raise HTTPException(status_code=404, detail=f"ROAST output '{output_type}' not found for model '{model_name}'. Run simulation first.")
+
+    return FileResponse(
+        path=str(out_path),
+        filename=f"{output_type}.nii",
+        media_type="application/octet-stream",
+    )
+
+
+# ============================================================
+# GET /simulate/results/{session_id}/{model_name}/{run_id}/{output_type}
+# (new — includes run_id so each electrode configuration is isolated)
+# ============================================================
+@app.get("/simulate/results/{session_id}/{model_name}/{run_id}/{output_type}")
+async def get_simulate_result_by_run(session_id: str, model_name: str, run_id: str, output_type: str):
+    if output_type not in ("voltage", "efield", "emag", "mask_elec", "mask_gel"):
+        raise HTTPException(status_code=400, detail="output_type must be one of: voltage, efield, emag, mask_elec, mask_gel")
+
+    import json as _json
+    from runtime.session import roast_working_dir as _roast_wd
+    sim_tag = "tDCSLAB"
+    config_path = _roast_wd(session_id, model_name, run_id) / "config.json"
+    if config_path.exists():
+        try:
+            sim_tag = _json.loads(config_path.read_text()).get("simulationtag", "tDCSLAB")
+        except Exception:
+            pass
+
+    try:
+        out_path = roast_output_path(session_id, output_type, model_name, sim_tag, run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not out_path.exists():
+        raise HTTPException(status_code=404, detail=f"ROAST output '{output_type}' not found for model '{model_name}' run '{run_id}'. Run simulation first.")
 
     return FileResponse(
         path=str(out_path),
@@ -372,25 +410,28 @@ async def simulate_simnibs(body: dict = Body(...)):
         )
 
     recipe = body.get("recipe")
+    run_id = uuid.uuid4().hex[:12]
     payload = {
         "model_name": model_name,
         "recipe": recipe,
         "electrode_type": body.get("electrode_type"),
         "seg_source": body.get("seg_source", "deep_learning"),
+        "run_id": run_id,
     }
 
-    set_simnibs_status(session_id, "queued", model_name)
+    set_simnibs_status(session_id, "queued", model_name, run_id)
     enqueue_simnibs_job(session_id, payload)
-    session_log(session_id, f"[SimNIBS] Job enqueued for model={model_name}")
+    session_log(session_id, f"[SimNIBS] Job enqueued for model={model_name} run_id={run_id}")
 
     from runtime.sse import push_event
     push_event(session_id, {"event": "simnibs_queued", "progress": 0, "model": model_name})
 
-    return {"session_id": session_id, "status": "queued"}
+    return {"session_id": session_id, "status": "queued", "run_id": run_id}
 
 
 # ============================================================
 # GET /simulate/simnibs/results/{session_id}/{model_name}/{output_type}
+# (legacy — no run_id; kept for backward compatibility)
 # ============================================================
 @app.get("/simulate/simnibs/results/{session_id}/{model_name}/{output_type}")
 async def get_simnibs_result(session_id: str, model_name: str, output_type: str):
@@ -406,6 +447,33 @@ async def get_simnibs_result(session_id: str, model_name: str, output_type: str)
         raise HTTPException(
             status_code=404,
             detail=f"SimNIBS output '{output_type}' not found for model '{model_name}'. Run simulation first."
+        )
+
+    return FileResponse(
+        path=str(out_path),
+        filename=f"simnibs_{model_name}_{output_type}.nii.gz",
+        media_type="application/gzip",
+    )
+
+
+# ============================================================
+# GET /simulate/simnibs/results/{session_id}/{model_name}/{run_id}/{output_type}
+# (new — includes run_id so each electrode configuration is isolated)
+# ============================================================
+@app.get("/simulate/simnibs/results/{session_id}/{model_name}/{run_id}/{output_type}")
+async def get_simnibs_result_by_run(session_id: str, model_name: str, run_id: str, output_type: str):
+    if output_type not in ("magnJ", "wm_magnJ", "gm_magnJ", "wm_gm_magnJ"):
+        raise HTTPException(status_code=400, detail="output_type must be: magnJ, wm_magnJ, gm_magnJ, or wm_gm_magnJ")
+
+    try:
+        out_path = simnibs_output_path(session_id, model_name, output_type, run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not out_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"SimNIBS output '{output_type}' not found for model '{model_name}' run '{run_id}'. Run simulation first."
         )
 
     return FileResponse(

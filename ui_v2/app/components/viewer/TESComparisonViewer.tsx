@@ -24,9 +24,11 @@ interface TESComparisonViewerProps {
   inputUrl: string;
   sessionId: string;
   modelName: string;
+  roastRunId?: string;
+  simnibsRunId?: string;
 }
 
-export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: TESComparisonViewerProps) {
+export default function TESComparisonViewer({ inputUrl, sessionId, modelName, roastRunId = "", simnibsRunId = "" }: TESComparisonViewerProps) {
   // One canvas per panel — 4 total
   const canvasRefs = [
     useRef<HTMLCanvasElement>(null),
@@ -65,15 +67,15 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName }: 
     if (bufferCache.current[key]) return bufferCache.current[key];
     try {
       const blob = solver === "roast"
-        ? await getSimulationResult(sessionId, modelName, type as RoastOutputType)
-        : await getSimNIBSResult(sessionId, modelName, type as SimNIBSOutputType);
+        ? await getSimulationResult(sessionId, modelName, roastRunId, type as RoastOutputType)
+        : await getSimNIBSResult(sessionId, modelName, simnibsRunId, type as SimNIBSOutputType);
       const buf = await blob.arrayBuffer();
       bufferCache.current[key] = buf;
       return buf;
     } catch {
       return null;
     }
-  }, [sessionId, modelName]);
+  }, [sessionId, modelName, roastRunId, simnibsRunId]);
 
   const loadOverlay = useCallback(async (
     nv: Niivue,

@@ -55,10 +55,11 @@ interface RoastViewerProps {
   inputUrl: string;
   sessionId: string;
   modelName: string;
+  runId: string;
   solver?: "roast" | "simnibs";
 }
 
-export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "roast" }: RoastViewerProps) {
+export default function RoastViewer({ inputUrl, sessionId, modelName, runId, solver = "roast" }: RoastViewerProps) {
   const PANELS = solver === "simnibs" ? SIMNIBS_PANELS : ROAST_PANELS;
   const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
   const nvRefs = useRef<(Niivue | null)[]>([null, null]);
@@ -113,15 +114,15 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     if (bufferCache.current[type]) return bufferCache.current[type]!;
     try {
       const blob = solver === "simnibs"
-        ? await getSimNIBSResult(sessionId, modelName, SIMNIBS_TYPE_MAP[type])
-        : await getSimulationResult(sessionId, modelName, type);
+        ? await getSimNIBSResult(sessionId, modelName, runId, SIMNIBS_TYPE_MAP[type])
+        : await getSimulationResult(sessionId, modelName, runId, type);
       const buf  = await blob.arrayBuffer();
       bufferCache.current[type] = buf;
       return buf;
     } catch {
       return null;
     }
-  }, [sessionId, modelName, solver]);
+  }, [sessionId, modelName, runId, solver]);
 
   const loadOverlay = useCallback(async (
     nv: Niivue,
@@ -259,7 +260,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
       // Fetch masks
       const fetchMask = async (type: "mask_elec" | "mask_gel"): Promise<ArrayBuffer | null> => {
         try {
-          const blob = await getSimulationResult(sessionId, modelName, type);
+          const blob = await getSimulationResult(sessionId, modelName, runId, type);
           const buf = await blob.arrayBuffer();
           return buf.byteLength > 0 ? buf : null;
         } catch { return null; }
@@ -303,7 +304,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
     initElec().catch(() => { if (mounted) setElecError(true); });
     return () => { mounted = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialized, inputUrl, sessionId, modelName, solver]);
+  }, [initialized, inputUrl, sessionId, modelName, runId, solver]);
 
   // Sync electrode mask opacity
   useEffect(() => {
@@ -541,7 +542,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "
               <div className="flex items-center gap-3 px-4 py-5 text-foreground-muted">
                 <AlertTriangle className="h-4 w-4 shrink-0 text-foreground-muted/60" />
                 <p className="text-sm">
-                  {panel.label} output was not produced by the solver — only E-field magnitude is available.
+                  {panel.label} output is not yet available — the simulation may still be running, or this file was not produced by the solver.
                 </p>
               </div>
             ) : (
