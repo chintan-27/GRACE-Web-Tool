@@ -353,7 +353,7 @@ class SimNIBSRunner:
         return base_m2m
 
     # ------------------------------------------------------------------
-    def build_mesh(self, seg_path: Path) -> Path:
+    def build_mesh(self, seg_path: Path | None) -> Path:
         """
         Build a FEM mesh from the remapped segmentation labels.
 
@@ -388,15 +388,21 @@ class SimNIBSRunner:
             settings_file.write_text(content)
 
         # Step 4 — save custom labels into m2m for post-processing
+        # In "charm" mode, keep CHARM's own segmentation (don't overwrite with deep learning labels)
+        seg_source = self.payload.get("seg_source", "deep_learning")
         custom_tissues = model_m2m / "custom_tissues.nii.gz"
-        shutil.copy2(str(seg_path), str(custom_tissues))
-        session_log(self.session_id, f"[SimNIBS] Custom labels → {custom_tissues}")
+        if seg_source == "charm":
+            session_log(self.session_id, "[SimNIBS] CHARM segmentation mode: using CHARM's own tissue labels")
+        else:
+            shutil.copy2(str(seg_path), str(custom_tissues))
+            session_log(self.session_id, f"[SimNIBS] Custom labels → {custom_tissues}")
 
         # Step 5 — meshmesh
         custom_mesh = self.work_dir / f"{SUBJECT}_custom_mesh.msh"
         self._emit("simnibs_charm_mesh", 65)
         session_log(self.session_id, "[SimNIBS] meshmesh: building FEM mesh from custom labels…")
-        cmd      = _meshmesh_cmd() + [str(seg_path), str(custom_mesh), "--voxsize_meshing", "0.5"]
+        mesh_input = custom_tissues if seg_path is None else seg_path
+        cmd      = _meshmesh_cmd() + [str(mesh_input), str(custom_mesh), "--voxsize_meshing", "0.5"]
         deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
         self._run_proc(cmd, "meshmesh", self.work_dir, deadline)
 
@@ -542,8 +548,13 @@ class SimNIBSRunner:
             set_simnibs_status(self.session_id, "running", self.model_name)
             self._emit("simnibs_start", 2)
 
-            seg_path = self.prepare_segmentation()
-            self._emit("simnibs_seg_ready", 5)
+            seg_source = self.payload.get("seg_source", "deep_learning")
+            if seg_source == "charm":
+                seg_path = None
+                self._emit("simnibs_seg_ready", 5)
+            else:
+                seg_path = self.prepare_segmentation()
+                self._emit("simnibs_seg_ready", 5)
 
             mesh_path = self.build_mesh(seg_path)
             self.run_fem(mesh_path)

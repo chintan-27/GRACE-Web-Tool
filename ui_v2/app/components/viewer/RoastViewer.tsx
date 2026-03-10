@@ -8,8 +8,8 @@ import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 import { cn } from "@/lib/utils";
 
-// Two fixed panels — primary ROAST scalar outputs (2D only)
-const PANELS = [
+// Panel definitions — labels differ between ROAST and SimNIBS
+const ROAST_PANELS = [
   {
     type: "emag",
     label: "E-field Magnitude",
@@ -28,7 +28,26 @@ const PANELS = [
   },
 ] as const;
 
-type OutputType = typeof PANELS[number]["type"];
+const SIMNIBS_PANELS = [
+  {
+    type: "emag",
+    label: "Current Density (J)",
+    unit: "A/m²",
+    description: "Total current density magnitude across all tissues",
+    recommended: true,
+    note: null,
+  },
+  {
+    type: "voltage",
+    label: "Brain J (WM+GM)",
+    unit: "A/m²",
+    description: "Current density restricted to white and gray matter",
+    recommended: false,
+    note: "Masked to white matter and gray matter only — isolates the current delivered to cortical and subcortical tissue.",
+  },
+] as const;
+
+type OutputType = "emag" | "voltage";
 
 const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 
@@ -40,6 +59,7 @@ interface RoastViewerProps {
 }
 
 export default function RoastViewer({ inputUrl, sessionId, modelName, solver = "roast" }: RoastViewerProps) {
+  const PANELS = solver === "simnibs" ? SIMNIBS_PANELS : ROAST_PANELS;
   const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
   const nvRefs = useRef<(Niivue | null)[]>([null, null]);
 

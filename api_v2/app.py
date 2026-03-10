@@ -376,6 +376,7 @@ async def simulate_simnibs(body: dict = Body(...)):
         "model_name": model_name,
         "recipe": recipe,
         "electrode_type": body.get("electrode_type"),
+        "seg_source": body.get("seg_source", "deep_learning"),
     }
 
     set_simnibs_status(session_id, "queued", model_name)
