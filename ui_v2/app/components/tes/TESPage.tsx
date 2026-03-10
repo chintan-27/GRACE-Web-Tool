@@ -216,7 +216,7 @@ export default function TESPage() {
   const [selectedModels, setSelectedModels]     = useState<string[]>([]);
   const [solver, setSolver]                     = useState<Solver>("roast");
   const [quality, setQuality]                   = useState<"fast" | "standard">("fast");
-  const [segSource, setSegSource]               = useState<"nn" | "spm">("nn");
+  const [segSource, setSegSource]               = useState<"nn" | "roast">("nn");
   const [electrodeConfig, setElectrodeConfig]   = useState<ElectrodeConfig>({
     anode: "F3", cathode: "F4", currentMa: 2, electrodeType: "pad",
   });
@@ -818,7 +818,7 @@ export default function TESPage() {
             <div>
               <SectionLabel>Segmentation Source</SectionLabel>
               <div className="flex gap-2">
-                {(["nn", "spm"] as const).map(src => (
+                {(["nn", "roast"] as const).map(src => (
                   <button
                     key={src}
                     type="button"
@@ -830,11 +830,11 @@ export default function TESPage() {
                         : "border-border bg-background text-foreground-muted hover:border-accent/30",
                     )}
                   >
-                    {src === "nn" ? "Neural Network" : "SPM"}
+                    {src === "nn" ? "Neural Network" : "ROAST"}
                   </button>
                 ))}
               </div>
-              {segSource === "spm" ? (
+              {segSource === "roast" ? (
                 <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
                   <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
                   <div className="space-y-0.5">

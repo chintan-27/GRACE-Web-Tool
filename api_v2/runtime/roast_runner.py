@@ -291,11 +291,11 @@ class ROASTRunner:
 
         seg_source = self.payload.get("seg_source", "nn")
 
-        if seg_source == "spm":
-            # SPM mode: do NOT pre-write the mask or dummy c1 files.
+        if seg_source == "roast":
+            # ROAST segmentation mode: do NOT pre-write the mask or dummy c1 files.
             # roast_run.m will call run_spm_seg() to run the full SPM pipeline,
             # then ROAST's segTouchup (Step 2) will generate the masks file.
-            session_log(self.session_id, "[ROAST] SPM mode: skipping NN mask and c1 bypass — ROAST will run SPM segmentation")
+            session_log(self.session_id, "[ROAST] ROAST segmentation mode: skipping NN mask and c1 bypass — ROAST will run SPM segmentation")
         else:
             # NN mode: zero-pad the processed mask data, then save both mask files
             # (T1_T1orT2_masks.nii and T1_ras_T1orT2_masks.nii) in one pass.

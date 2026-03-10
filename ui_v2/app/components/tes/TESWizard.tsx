@@ -170,6 +170,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [solver, setSolver]               = useState<Solver>("roast");
   const [quality, setQuality]             = useState<"fast" | "standard">("fast");
+  const [roastSegSource, setRoastSegSource]     = useState<"nn" | "roast">("nn");
+  const [simnibsSegSource, setSimnibsSegSource] = useState<"deep_learning" | "charm">("deep_learning");
   const [electrodeConfig, setElectrodeConfig] = useState<ElectrodeConfig>({
     anode: "F3", cathode: "F4", currentMa: 2, electrodeType: "pad",
   });
@@ -208,7 +210,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       setRunState(key, { status: "running", progress: 2, step: "Starting..." });
 
       try {
-        await startSimulation(sessionId, next.model, quality, recipe, electype);
+        await startSimulation(sessionId, next.model, quality, recipe, electype, roastSegSource);
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message || "Failed to start ROAST" });
         runningRef.current = false;
@@ -247,7 +249,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       setRunState(key, { status: "running", progress: 2, step: "Starting..." });
 
       try {
-        await startSimNIBSSimulation(sessionId, next.model, recipe, electype);
+        await startSimNIBSSimulation(sessionId, next.model, recipe, electype, simnibsSegSource);
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message || "Failed to start SimNIBS" });
         runningRef.current = false;
@@ -442,36 +444,59 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       <ElectrodeConfigPanel config={electrodeConfig} onChange={setElectrodeConfig} />
 
       {(solver === "roast" || solver === "both") && (
-        <div className="rounded-xl border border-border bg-surface p-4 space-y-2">
-          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// ROAST Quality</h3>
-          <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
-            <button
-              type="button"
-              onClick={() => setQuality("fast")}
-              className={cn(
-                "flex-1 py-2 transition-colors",
-                quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
-              )}
-            >
-              ⚡ Fast (~10–15 min)
-            </button>
-            <button
-              type="button"
-              onClick={() => setQuality("standard")}
-              className={cn(
-                "flex-1 py-2 transition-colors",
-                quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated",
-              )}
-            >
-              🎯 Standard (~20–30 min)
-            </button>
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// ROAST Options</h3>
+          <div>
+            <p className="text-xs text-foreground-muted mb-1.5">Mesh quality</p>
+            <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
+              <button type="button" onClick={() => setQuality("fast")} className={cn("flex-1 py-2 transition-colors", quality === "fast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                ⚡ Fast (~10–15 min)
+              </button>
+              <button type="button" onClick={() => setQuality("standard")} className={cn("flex-1 py-2 transition-colors", quality === "standard" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                🎯 Standard (~20–30 min)
+              </button>
+            </div>
+            <p className="text-xs text-foreground-muted mt-1">
+              {quality === "fast" ? "Coarser mesh, faster solve — good for exploration." : "Full mesh resolution — recommended for final results."}
+            </p>
           </div>
-          <p className="text-xs text-foreground-muted">
-            {quality === "fast" ? "Coarser mesh, faster solve — good for exploration." : "Full mesh resolution — recommended for final results."}
-          </p>
-          <p className="text-[11px] text-foreground-muted/60 mt-1">
+          <div>
+            <p className="text-xs text-foreground-muted mb-1.5">Segmentation source</p>
+            <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
+              <button type="button" onClick={() => setRoastSegSource("nn")} className={cn("flex-1 py-2 transition-colors", roastSegSource === "nn" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                Deep Learning
+              </button>
+              <button type="button" onClick={() => setRoastSegSource("roast")} className={cn("flex-1 py-2 transition-colors", roastSegSource === "roast" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                ROAST (SPM)
+              </button>
+            </div>
+            <p className="text-xs text-foreground-muted mt-1">
+              {roastSegSource === "nn" ? "Use GRACE/DOMINO/DOMINO++ segmentation (recommended)." : "Use ROAST's built-in SPM segmentation (slower, no model required)."}
+            </p>
+          </div>
+          <p className="text-[11px] text-foreground-muted/60">
             First run after deploy may take 3–5 min longer (runtime cache cold start).
           </p>
+        </div>
+      )}
+
+      {(solver === "simnibs" || solver === "both") && (
+        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
+          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// SimNIBS Options</h3>
+          <div>
+            <p className="text-xs text-foreground-muted mb-1.5">Segmentation source</p>
+            <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
+              <button type="button" onClick={() => setSimnibsSegSource("deep_learning")} className={cn("flex-1 py-2 transition-colors", simnibsSegSource === "deep_learning" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                Deep Learning
+              </button>
+              <button type="button" onClick={() => setSimnibsSegSource("charm")} className={cn("flex-1 py-2 transition-colors", simnibsSegSource === "charm" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
+                CHARM
+              </button>
+            </div>
+            <p className="text-xs text-foreground-muted mt-1">
+              {simnibsSegSource === "deep_learning" ? "Use GRACE/DOMINO/DOMINO++ segmentation (recommended)." : "Use SimNIBS CHARM segmentation (no model required, slower initialization)."}
+            </p>
+          </div>
         </div>
       )}
 
