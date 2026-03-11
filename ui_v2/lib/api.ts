@@ -161,6 +161,7 @@ export async function getInput(sessionId: string): Promise<Blob> {
 export interface SimulateResponse {
   session_id: string;
   status: "queued";
+  run_id: string;
 }
 
 export async function startSimulation(
@@ -243,9 +244,13 @@ export function connectROASTSSE(
 export async function getSimulationResult(
   sessionId: string,
   modelName: string,
+  runId: string,
   outputType: "voltage" | "efield" | "emag" | "mask_elec" | "mask_gel"
 ): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/simulate/results/${sessionId}/${modelName}/${outputType}`);
+  const path = runId
+    ? `${API_BASE}/simulate/results/${sessionId}/${modelName}/${runId}/${outputType}`
+    : `${API_BASE}/simulate/results/${sessionId}/${modelName}/${outputType}`;
+  const res = await fetch(path);
   if (!res.ok) throw new Error(`Simulation result not found: ${outputType}`);
   return await res.blob();
 }
@@ -336,9 +341,13 @@ export type SimNIBSOutputType = "magnJ" | "wm_magnJ" | "gm_magnJ" | "wm_gm_magnJ
 export async function getSimNIBSResult(
   sessionId: string,
   modelName: string,
+  runId: string,
   outputType: SimNIBSOutputType
 ): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/simulate/simnibs/results/${sessionId}/${modelName}/${outputType}`);
+  const path = runId
+    ? `${API_BASE}/simulate/simnibs/results/${sessionId}/${modelName}/${runId}/${outputType}`
+    : `${API_BASE}/simulate/simnibs/results/${sessionId}/${modelName}/${outputType}`;
+  const res = await fetch(path);
   if (!res.ok) throw new Error(`SimNIBS result not found: ${outputType}`);
   return await res.blob();
 }

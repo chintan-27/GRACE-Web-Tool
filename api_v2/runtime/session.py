@@ -35,8 +35,10 @@ def model_output_path(session_id: str, model_name: str) -> Path:
 # -----------------------------------------------------------
 # ROAST HELPERS
 # -----------------------------------------------------------
-def roast_working_dir(session_id: str, model_name: str = "") -> Path:
-    if model_name:
+def roast_working_dir(session_id: str, model_name: str = "", run_id: str = "") -> Path:
+    if model_name and run_id:
+        d = session_path(session_id) / "roast" / model_name / run_id
+    elif model_name:
         d = session_path(session_id) / "roast" / model_name
     else:
         d = session_path(session_id) / "roast"
@@ -44,8 +46,8 @@ def roast_working_dir(session_id: str, model_name: str = "") -> Path:
     return d
 
 
-def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB") -> Path:
-    work_dir = roast_working_dir(session_id, model_name)
+def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB", run_id: str = "") -> Path:
+    work_dir = roast_working_dir(session_id, model_name, run_id)
     if output_type == "mask_elec":
         matches = sorted(work_dir.glob("T1_sim_*_mask_elec.nii"), key=lambda p: p.stat().st_mtime, reverse=True)
         return matches[0] if matches else work_dir / "_missing_mask_elec.nii"
@@ -65,8 +67,11 @@ def roast_output_path(session_id: str, output_type: str, model_name: str = "", s
 # -----------------------------------------------------------
 # SIMNIBS HELPERS
 # -----------------------------------------------------------
-def simnibs_working_dir(session_id: str, model_name: str) -> Path:
-    d = session_path(session_id) / "simnibs" / model_name
+def simnibs_working_dir(session_id: str, model_name: str, run_id: str = "") -> Path:
+    if run_id:
+        d = session_path(session_id) / "simnibs" / model_name / run_id
+    else:
+        d = session_path(session_id) / "simnibs" / model_name
     d.mkdir(parents=True, exist_ok=True)
     return d
 
@@ -85,14 +90,14 @@ def simnibs_charm_base_dir(session_id: str) -> Path:
 SIMNIBS_OUTPUT_TYPES = ("magnJ", "wm_magnJ", "gm_magnJ", "wm_gm_magnJ")
 
 
-def simnibs_output_path(session_id: str, model_name: str, output_type: str) -> Path:
+def simnibs_output_path(session_id: str, model_name: str, output_type: str, run_id: str = "") -> Path:
     """Collected SimNIBS output NIfTIs per segmentation model."""
     if output_type not in SIMNIBS_OUTPUT_TYPES:
         raise ValueError(
             f"Unknown SimNIBS output type: {output_type!r}. "
             f"Valid: {SIMNIBS_OUTPUT_TYPES}"
         )
-    return simnibs_working_dir(session_id, model_name) / "outputs" / f"{output_type}.nii.gz"
+    return simnibs_working_dir(session_id, model_name, run_id) / "outputs" / f"{output_type}.nii.gz"
 
 
 # -----------------------------------------------------------

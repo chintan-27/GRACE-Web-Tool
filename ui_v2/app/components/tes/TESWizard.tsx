@@ -33,6 +33,7 @@ interface RunState {
   progress: number;
   step:     string;
   error?:   string;
+  runId?:   string;
 }
 
 interface TESWizardProps {
@@ -210,7 +211,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       setRunState(key, { status: "running", progress: 2, step: "Starting..." });
 
       try {
-        await startSimulation(sessionId, next.model, quality, recipe, electype, roastSegSource);
+        const { run_id } = await startSimulation(sessionId, next.model, quality, recipe, electype, roastSegSource);
+        setRunState(key, { status: "running", progress: 2, step: "Starting...", runId: run_id });
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message || "Failed to start ROAST" });
         runningRef.current = false;
@@ -249,7 +251,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       setRunState(key, { status: "running", progress: 2, step: "Starting..." });
 
       try {
-        await startSimNIBSSimulation(sessionId, next.model, recipe, electype, simnibsSegSource);
+        const { run_id } = await startSimNIBSSimulation(sessionId, next.model, recipe, electype, simnibsSegSource);
+        setRunState(key, { status: "running", progress: 2, step: "Starting...", runId: run_id });
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message || "Failed to start SimNIBS" });
         runningRef.current = false;
@@ -773,6 +776,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={activeView.model}
+                runId={runStates[runKey(activeView.model, activeView.solver)]?.runId ?? ""}
                 solver={activeView.solver}
               />
             )}
@@ -781,6 +785,8 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 inputUrl={inputBlobUrl}
                 sessionId={sessionId}
                 modelName={activeView.model}
+                roastRunId={runStates[runKey(activeView.model, "roast")]?.runId ?? ""}
+                simnibsRunId={runStates[runKey(activeView.model, "simnibs")]?.runId ?? ""}
               />
             )}
           </div>

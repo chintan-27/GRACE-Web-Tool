@@ -120,6 +120,7 @@ interface RunState {
   error?:      string;
   config?:     RunConfig;
   completedAt?: number;
+  runId?:      string;
 }
 
 type PanelView =
@@ -319,7 +320,8 @@ export default function TESPage() {
     if (next.solver === "roast") {
       setRunState(key, { status: "running", progress: 2, step: "Starting…" });
       try {
-        await startSimulation(sessionId!, next.model, quality, recipe, electype, segSource);
+        const { run_id } = await startSimulation(sessionId!, next.model, quality, recipe, electype, segSource);
+        setRunState(key, { status: "running", progress: 2, step: "Starting…", runId: run_id });
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message });
         runningRef.current = false;
@@ -352,7 +354,8 @@ export default function TESPage() {
     } else {
       setRunState(key, { status: "running", progress: 2, step: "Starting…" });
       try {
-        await startSimNIBSSimulation(sessionId!, next.model, recipe, electype);
+        const { run_id } = await startSimNIBSSimulation(sessionId!, next.model, recipe, electype);
+        setRunState(key, { status: "running", progress: 2, step: "Starting…", runId: run_id });
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message });
         runningRef.current = false;
@@ -1028,29 +1031,41 @@ export default function TESPage() {
           )}
           {(panelView.type === "roast" || panelView.type === "simnibs") && (
             <div className="h-full p-4">
-              <RoastViewer
-                key={`${panelView.runKey}:${runStates[panelView.runKey]?.completedAt ?? ""}`}
-                inputUrl={inputBlobUrl}
-                sessionId={sessionId}
-                modelName={panelView.model}
-                solver={panelView.type}
-              />
+              {runStates[panelView.runKey]?.status !== "complete" ? (
+                <div className="flex h-full flex-col items-center justify-center gap-3 text-foreground-muted">
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                  <p className="text-sm">Simulation in progress — results will appear here when complete.</p>
+                </div>
+              ) : (
+                <RoastViewer
+                  key={`${panelView.runKey}:${runStates[panelView.runKey]?.completedAt ?? ""}`}
+                  inputUrl={inputBlobUrl}
+                  sessionId={sessionId}
+                  modelName={panelView.model}
+                  runId={runStates[panelView.runKey]?.runId ?? ""}
+                  solver={panelView.type}
+                />
+              )}
             </div>
           )}
-          {panelView.type === "comparison" && (
-            <div className="h-full p-4">
-              <TESComparisonViewer
-                key={`${panelView.model}:comparison:${
-                  Math.max(0, ...visibleRuns.filter(r => r.model === panelView.model && r.solver === "roast" && r.state.status === "complete").map(r => r.state.completedAt ?? 0))
-                }:${
-                  Math.max(0, ...visibleRuns.filter(r => r.model === panelView.model && r.solver === "simnibs" && r.state.status === "complete").map(r => r.state.completedAt ?? 0))
-                }`}
-                inputUrl={inputBlobUrl}
-                sessionId={sessionId}
-                modelName={panelView.model}
-              />
-            </div>
-          )}
+          {panelView.type === "comparison" && (() => {
+            const completedRoastRuns = visibleRuns.filter(r => r.model === panelView.model && r.solver === "roast" && r.state.status === "complete");
+            const completedSimnibsRuns = visibleRuns.filter(r => r.model === panelView.model && r.solver === "simnibs" && r.state.status === "complete");
+            const latestRoast = completedRoastRuns.reduce<VisibleRun | null>((best, r) => !best || (r.state.completedAt ?? 0) > (best.state.completedAt ?? 0) ? r : best, null);
+            const latestSimnibs = completedSimnibsRuns.reduce<VisibleRun | null>((best, r) => !best || (r.state.completedAt ?? 0) > (best.state.completedAt ?? 0) ? r : best, null);
+            return (
+              <div className="h-full p-4">
+                <TESComparisonViewer
+                  key={`${panelView.model}:comparison:${latestRoast?.state.completedAt ?? 0}:${latestSimnibs?.state.completedAt ?? 0}`}
+                  inputUrl={inputBlobUrl}
+                  sessionId={sessionId}
+                  modelName={panelView.model}
+                  roastRunId={latestRoast?.state.runId ?? ""}
+                  simnibsRunId={latestSimnibs?.state.runId ?? ""}
+                />
+              </div>
+            );
+          })()}
         </div>
 
       </div>

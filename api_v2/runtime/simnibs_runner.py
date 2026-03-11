@@ -211,7 +211,8 @@ class SimNIBSRunner:
         self.session_id = session_id
         self.payload    = payload
         self.model_name = payload.get("model_name", "")
-        self.work_dir   = simnibs_working_dir(session_id, self.model_name)
+        self.run_id     = payload.get("run_id", "")
+        self.work_dir   = simnibs_working_dir(session_id, self.model_name, self.run_id)
 
     # ------------------------------------------------------------------
     def _emit(self, event: str, progress: int, detail: str | None = None):
@@ -220,7 +221,7 @@ class SimNIBSRunner:
             data["detail"] = detail
         push_event(self.session_id, data)
         log_event(self.session_id, data)
-        set_simnibs_progress(self.session_id, progress, self.model_name)
+        set_simnibs_progress(self.session_id, progress, self.model_name, self.run_id)
 
     # ------------------------------------------------------------------
     def _run_proc(self, cmd: list, tag: str, cwd: Path, deadline: float) -> None:
@@ -545,7 +546,7 @@ class SimNIBSRunner:
     def run(self):
         """Full pipeline: remap seg → charm base → mesh → FEM → collect."""
         try:
-            set_simnibs_status(self.session_id, "running", self.model_name)
+            set_simnibs_status(self.session_id, "running", self.model_name, self.run_id)
             self._emit("simnibs_start", 2)
 
             seg_source = self.payload.get("seg_source", "deep_learning")
@@ -560,12 +561,12 @@ class SimNIBSRunner:
             self.run_fem(mesh_path)
             self.collect_outputs()
 
-            set_simnibs_status(self.session_id, "complete", self.model_name)
+            set_simnibs_status(self.session_id, "complete", self.model_name, self.run_id)
             self._emit("simnibs_complete", 100)
             session_log(self.session_id, "[SimNIBS] Completed successfully")
 
         except Exception as exc:
             log_error(self.session_id, f"[SimNIBS] Failed: {exc}")
-            set_simnibs_status(self.session_id, "error", self.model_name)
+            set_simnibs_status(self.session_id, "error", self.model_name, self.run_id)
             self._emit("simnibs_error", -1, detail=str(exc))
             raise
