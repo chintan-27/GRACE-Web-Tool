@@ -290,6 +290,31 @@ class ROASTRunner:
                 data[:, :, zi][new_vox] = label
         session_log(self.session_id, "[ROAST] Tissue holes filled per axial slice")
 
+        # --- Ensure blood label (6) is present ---
+        # If the model predicted 0 blood voxels, ROAST's mesh has no blood subdomain.
+        # prepareForGetDP (Step 5) then finds one fewer domain than expected and
+        # misidentifies the electrode subdomain index → "Electrode not meshed properly".
+        # Fix: inject a small sphere (r=4 vox, ≈33–100 voxels hitting WM) near the WM
+        # centroid.  Negligible FEM impact; just ensures the blood subdomain exists.
+        if not (data == 6).any():
+            wm_coords = np.argwhere(data == 1)
+            if wm_coords.size > 0:
+                ci, cj, ck = wm_coords.mean(axis=0).astype(int)
+            else:
+                ci, cj, ck = (np.array(data.shape) // 2).tolist()
+            r = 4
+            i0, i1 = max(0, ci - r), min(data.shape[0], ci + r + 1)
+            j0, j1 = max(0, cj - r), min(data.shape[1], cj + r + 1)
+            k0, k1 = max(0, ck - r), min(data.shape[2], ck + r + 1)
+            ii, jj, kk = np.ogrid[i0:i1, j0:j1, k0:k1]
+            sphere = (ii - ci) ** 2 + (jj - cj) ** 2 + (kk - ck) ** 2 <= r * r
+            sub = data[i0:i1, j0:j1, k0:k1]
+            inject = sphere & (sub == 1)
+            sub[inject] = 6
+            session_log(self.session_id,
+                        f"[ROAST] Blood label absent — injected {int(inject.sum())} synthetic "
+                        f"blood voxels (sphere r={r}) at WM centroid ({ci},{cj},{ck})")
+
         seg_source = self.payload.get("seg_source", "nn")
 
         if seg_source == "roast":
