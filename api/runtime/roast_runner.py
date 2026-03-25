@@ -160,12 +160,54 @@ class ROASTRunner:
         set_roast_progress(self.session_id, progress, self.model_name, self.run_id)
 
     # ------------------------------------------------------------------
+    def _prepared_cache_dir(self) -> Path:
+        """
+        Shared preparation cache for this model+seg_source combination.
+        Stored one level above run directories so all runs of the same model can reuse it.
+        """
+        seg_source = self.payload.get("seg_source", "nn")
+        return self.work_dir.parent / f"_prepared_{seg_source}"
+
+    def _restore_from_cache(self, cache_dir: Path, t1_nii: Path) -> bool:
+        """Copy cached prepared files into this run's working directory. Returns True on success."""
+        required = [cache_dir / "T1.nii"]
+        if not all(p.exists() for p in required):
+            return False
+        for src in cache_dir.iterdir():
+            shutil.copy2(str(src), str(self.work_dir / src.name))
+        session_log(self.session_id, f"[ROAST] Reused prepared files from cache → {cache_dir}")
+        return True
+
+    def _save_to_cache(self, cache_dir: Path) -> None:
+        """Cache the prepared files so subsequent runs can skip expensive preprocessing."""
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cacheable = [
+            "T1.nii",
+            "T1_T1orT2_masks.nii",
+            "T1_ras_T1orT2_masks.nii",
+            "c1T1_T1orT2.nii",
+            "c1T1_ras_T1orT2.nii",
+        ]
+        for name in cacheable:
+            src = self.work_dir / name
+            if src.exists():
+                shutil.copy2(str(src), str(cache_dir / name))
+        session_log(self.session_id, f"[ROAST] Saved prepared files to cache → {cache_dir}")
+
     def prepare_working_directory(self) -> str:
         """
         Gunzip T1 and segmentation mask into the roast/ working directory.
         Returns the absolute path to T1.nii.
+
+        Results are cached at the model level so subsequent runs with the same
+        model and seg_source skip the expensive nibabel morphological operations.
         """
         session_log(self.session_id, "[ROAST] Preparing working directory")
+
+        t1_nii = self.work_dir / "T1.nii"
+        cache_dir = self._prepared_cache_dir()
+        if self._restore_from_cache(cache_dir, t1_nii):
+            return str(t1_nii)
 
         # Use the T1 that matches the segmentation mask's coordinate space.
         # FS models produce masks in FreeSurfer conformed space (256³ 1mm isotropic);
@@ -348,6 +390,7 @@ class ROASTRunner:
                 shutil.copy(t1_nii, self.work_dir / dummy_name)
             session_log(self.session_id, "[ROAST] Dummy c1 files written (bypasses SPM step 1)")
 
+        self._save_to_cache(cache_dir)
         return str(t1_nii)
 
     # ------------------------------------------------------------------

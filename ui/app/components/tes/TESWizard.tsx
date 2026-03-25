@@ -242,6 +242,11 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
             processQueue();
           }
         },
+        () => {
+          setRunState(key, { status: "error", error: "Connection lost — simulation may still be running." });
+          runningRef.current = false;
+          processQueue();
+        },
       );
 
     } else {
@@ -280,6 +285,11 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
             runningRef.current = false;
             processQueue();
           }
+        },
+        () => {
+          setRunState(key, { status: "error", error: "Connection lost — simulation may still be running." });
+          runningRef.current = false;
+          processQueue();
         },
       );
     }
