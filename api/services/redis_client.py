@@ -1,6 +1,6 @@
 import redis
 import json
-from config import REDIS_HOST, REDIS_PORT, REDIS_DB
+from config import REDIS_HOST, REDIS_PORT, REDIS_DB, REDIS_PASSWORD
 
 # -------------------------------------------------------------
 # Redis client
@@ -9,6 +9,7 @@ redis_client = redis.Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
     db=REDIS_DB,
+    password=REDIS_PASSWORD,
     decode_responses=True
 )
 

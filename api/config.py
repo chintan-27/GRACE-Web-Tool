@@ -24,9 +24,10 @@ MODEL_DIR.mkdir(exist_ok=True)
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "") or None
 
 # Keys prefixing to avoid collisions
-REDIS_PREFIX = "api_v2"
+REDIS_PREFIX = "api"
 
 # -------------------------------------------------------
 # SECURITY CONFIG
@@ -35,6 +36,19 @@ JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_ME")
 JWT_ALGORITHM = "HS256"
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "CHANGE_ME_HMAC")
+
+# Warn loudly if placeholder secrets are in use
+_WEAK_SECRETS = {"CHANGE_ME", "CHANGE_ME_HMAC", "change_me_in_production", "change_me_hmac_in_production"}
+if JWT_SECRET in _WEAK_SECRETS or HMAC_SECRET in _WEAK_SECRETS:
+    print("[SECURITY WARNING] JWT_SECRET or HMAC_SECRET is set to a weak default. "
+          "Set strong random values in your .env before deploying to production.")
+
+# Allowed CORS origins (comma-separated list, or "*" for dev)
+ALLOWED_ORIGINS: list[str] = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")
+    if o.strip()
+]
 
 # SSE heartbeat interval
 SSE_HEARTBEAT_SECONDS = 15
