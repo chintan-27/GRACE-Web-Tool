@@ -16,7 +16,7 @@ services:
   # Whole-Head Segmentation API v2
   api:
     build:
-      context: ./api_v2
+      context: ./api
       dockerfile: Dockerfile
     container_name: whs-api
     restart: unless-stopped
@@ -24,23 +24,23 @@ services:
       - "8000:8100"
     volumes:
       # Pre-trained model weights (read-only)
-      - ${MODELS_HOST_PATH:-/home/chintan/wws_v2/api_v2/models}:/app/models:ro
+      - ${MODELS_HOST_PATH:-/home/chintan/wws_v2/api/models}:/app/models:ro
       # Session outputs
-      - ./api_v2/sessions:/app/sessions
+      - ./api/sessions:/app/sessions
       # Application logs
-      - ./api_v2/logs:/app/logs
+      - ./api/logs:/app/logs
       # FreeSurfer license file
       - ${FREESURFER_LICENSE_PATH:-/home/chintan/licenses/freesurfer.txt}:/usr/local/freesurfer/license.txt:ro
-      # ROAST-11 compiled binary directory  (api_v2/.env: ROAST_BUILD_DIR)
+      # ROAST-11 compiled binary directory  (api/.env: ROAST_BUILD_DIR)
       - ${ROAST_BUILD_DIR:-/home/chintan/roast11/build}:/opt/roast/build
-      # MATLAB Component Runtime (required by ROAST)  (api_v2/.env: MATLAB_RUNTIME)
+      # MATLAB Component Runtime (required by ROAST)  (api/.env: MATLAB_RUNTIME)
       - ${MATLAB_RUNTIME:-/home/chintan/MATLAB/MATLAB_Runtime/R2025b}:/opt/mcr/R2025b:ro
       # MCR cache — persists extracted MEX binaries across container restarts.
       # Without this, MCR re-extracts cgalmesh.mexa64 fresh every restart (no execute
       # bit) and executes it before the chmod thread can fix permissions → crash.
       # Mounting the host cache (warmed by test runs) eliminates the race condition.
       - ${MCR_CACHE_HOST_PATH:-/home/chintan/.MathWorks}:/root/.MathWorks
-      # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)  (api_v2/.env: SIMNIBS_HOME)
+      # SimNIBS installation directory (contains bin/charm, simnibs_env/, etc.)  (api/.env: SIMNIBS_HOME)
       - ${SIMNIBS_HOME:-/home/chintan/SimNIBS-4.5}:/opt/simnibs:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
@@ -78,7 +78,7 @@ services:
   # CROWN frontend — deployed on Vercel, not run here
   # ui:
   #   build:
-  #     context: ./ui_v2
+  #     context: ./ui
   #     dockerfile: Dockerfile
   #     args:
   #       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://10.15.224.253:8000}

@@ -43,20 +43,12 @@ public/grace.onnx
 temp
 grace.onnx
 
-api/models/*
-api/models/GRACE.pth
-api/outputs
-api/uploads
-api/1.nii.gz
-api/__pycache__
 *.log
 logs*
 .env
-api/core.*
 api/models/*.pth
-api_v2/models/*.pth
-api_v2/models/
-api_v2/sessions/*
+api/models/
+api/sessions/*
 ._.DS_Store
 */._.DS_Store
 */__pycache__
@@ -70,3 +62,7 @@ simnibs/
 
 # abstracts / papers (local only)
 abstracts/
+
+# Legacy archived folders (local only)
+api_archive/
+ui_archive/

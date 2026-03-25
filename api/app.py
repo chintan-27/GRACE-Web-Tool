@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
@@ -25,10 +25,39 @@ from services.redis_client import (
     enqueue_roast_job, get_roast_status, get_roast_progress, set_roast_status,
     enqueue_simnibs_job, get_simnibs_status, get_simnibs_progress, set_simnibs_status,
 )
-from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL
+from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL, ALLOWED_ORIGINS
+from services.auth import require_jwt
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# ============================================================
+# Security helpers
+# ============================================================
+import re as _re
+
+_UUID_RE = _re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", _re.IGNORECASE)
+
+ALLOWED_MODELS = {
+    "grace-native", "grace-fs",
+    "domino-native", "domino-fs",
+    "dominopp-native", "dominopp-fs",
+}
+
+
+def _validate_session_id(session_id: str) -> str:
+    """Raise 400 if session_id is not a valid UUID."""
+    if not session_id or not _UUID_RE.match(session_id):
+        raise HTTPException(status_code=400, detail="Invalid session_id")
+    return session_id
+
+
+def _validate_model_name(model_name: str) -> str:
+    """Raise 400 if model_name is not in the known model list."""
+    if model_name not in ALLOWED_MODELS:
+        raise HTTPException(status_code=400, detail=f"Unknown model '{model_name}'")
+    return model_name
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -109,10 +138,11 @@ app = FastAPI(
 # ============================================================
 # CORS
 # ============================================================
+_cors_allow_credentials = "*" not in ALLOWED_ORIGINS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # restrict later
-    allow_credentials=True,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_credentials=_cors_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -131,6 +161,12 @@ async def predict(
     # Validate input
     if not (file.filename.endswith(".nii") or file.filename.endswith(".nii.gz")):
         raise HTTPException(status_code=400, detail="File must be NIfTI")
+
+    # Validate file content via magic bytes (gzip: 0x1f 0x8b, or raw NIfTI starts with valid header)
+    header_bytes = await file.read(2)
+    if file.filename.endswith(".nii.gz") and header_bytes[:2] != b"\x1f\x8b":
+        raise HTTPException(status_code=400, detail="File does not appear to be a valid gzip archive")
+    await file.seek(0)
 
     # Parse convert_to_fs boolean
     should_convert_to_fs = convert_to_fs.lower() == "true"
@@ -208,6 +244,8 @@ async def stream(session_id: str):
 # ============================================================
 @app.get("/results/{session_id}/{model_name}")
 async def get_result(session_id: str, model_name: str):
+    _validate_session_id(session_id)
+    _validate_model_name(model_name)
     out_path = model_output_path(session_id, model_name)
 
     if not out_path.exists():
@@ -225,6 +263,7 @@ async def get_result(session_id: str, model_name: str):
 # ============================================================
 @app.get("/results/{session_id}/input")
 async def get_input(session_id: str):
+    _validate_session_id(session_id)
     input_path = session_input_native(session_id)
 
     if not input_path.exists():
@@ -508,11 +547,9 @@ async def stream_simnibs(session_id: str):
 # DELETE /session/{session_id}  — Immediately delete session data
 # ============================================================
 @app.delete("/session/{session_id}")
-async def delete_session(session_id: str):
-    """Delete all data for a session immediately (directory + Redis keys)."""
-    # Sanitise session_id to prevent path traversal
-    if not session_id or "/" in session_id or ".." in session_id:
-        raise HTTPException(status_code=400, detail="Invalid session_id")
+async def delete_session(session_id: str, _: str = Depends(require_jwt)):
+    """Delete all data for a session immediately (directory + Redis keys). Requires JWT."""
+    _validate_session_id(session_id)
 
     session_dir = SESSION_DIR / session_id
     deleted_dir = False
@@ -594,10 +631,10 @@ async def session_restore(token: str):
 
 
 # ============================================================
-# GET /logs  — Dev endpoint: list all sessions with logs
+# GET /logs  — Dev endpoint: list all sessions with logs (requires JWT)
 # ============================================================
 @app.get("/logs")
-def list_sessions():
+def list_sessions(_: str = Depends(require_jwt)):
     sessions_path = Path(SESSION_DIR)
     if not sessions_path.exists():
         return {"sessions": []}
@@ -615,10 +652,10 @@ def list_sessions():
 
 
 # ============================================================
-# GET /logs/{session_id}  — Dev endpoint
+# GET /logs/{session_id}  — Dev endpoint (requires JWT)
 # ============================================================
 @app.get("/logs/{session_id}")
-def get_session_logs(session_id: str):
+def get_session_logs(session_id: str, _: str = Depends(require_jwt)):
     lp = Path(SESSION_DIR) / session_id / "logs.jsonl"
     if not lp.exists():
         raise HTTPException(404, "No logs for session")
@@ -691,7 +728,7 @@ async def health():
 # GET /admin/logs/{session_id}
 # ============================================================
 @app.get("/admin/logs/{session_id}")
-def get_logs(session_id: str):
+def get_logs(session_id: str, _: str = Depends(require_jwt)):
     lp = Path(SESSION_DIR) / session_id / "logs.jsonl"
     if not lp.exists():
         raise HTTPException(404, "No logs for session")
@@ -702,7 +739,7 @@ def get_logs(session_id: str):
 # GET /admin/audit
 # ============================================================
 @app.get("/admin/audit")
-def get_audit():
+def get_audit(_: str = Depends(require_jwt)):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute(

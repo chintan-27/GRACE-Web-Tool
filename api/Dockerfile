@@ -1,27 +1,116 @@
-FROM python:3.10-slim
+# =============================================================================
+# Whole-Head Segmentation API v2 - Dockerfile
+# =============================================================================
+# Multi-stage build for GPU-accelerated MRI segmentation
+# Requires NVIDIA Container Toolkit for GPU support
+# =============================================================================
 
-WORKDIR /app
-ENV PYTHONUNBUFFERED=1
+# -----------------------------------------------------------------------------
+# Stage 1: Base image with CUDA and Python
+# -----------------------------------------------------------------------------
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04 AS base
 
+# Prevent interactive prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Etc/UTC
+
+# Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    git wget build-essential && \
-    rm -rf /var/lib/apt/lists/*
+    python3.11 \
+    python3.11-venv \
+    python3.11-dev \
+    python3-pip \
+    wget \
+    curl \
+    ca-certificates \
+    libgomp1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1-mesa-glx \
+    # MATLAB Runtime (MCR) dependencies — full GUI stack for headless CEF plugin
+    libnss3 \
+    libnspr4 \
+    libxss1 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libxshmfence1 \
+    libasound2 \
+    libx11-xcb1 \
+    libxcb-dri3-0 \
+    libpango-1.0-0 \
+    # Virtual framebuffer — lets MCR initialise display plugins headlessly
+    xvfb \
+    && rm -rf /var/lib/apt/lists/*
 
-# Torch + torchvision + torchaudio (Pascal-compatible CUDA 11.7)
+# Set Python 3.11 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+
+# Upgrade pip
+RUN python -m pip install --upgrade pip setuptools wheel
+
+# -----------------------------------------------------------------------------
+# Stage 2: FreeSurfer from official image
+# -----------------------------------------------------------------------------
+FROM freesurfer/freesurfer:7.4.1 AS freesurfer
+
+# -----------------------------------------------------------------------------
+# Stage 3: Final production image
+# -----------------------------------------------------------------------------
+FROM base AS production
+
+# Set working directory
+WORKDIR /app
+
+# Copy FreeSurfer from official image
+ENV FREESURFER_HOME=/usr/local/freesurfer
+COPY --from=freesurfer /usr/local/freesurfer ${FREESURFER_HOME}
+ENV PATH="${FREESURFER_HOME}/bin:${PATH}"
+ENV FS_LICENSE=${FREESURFER_HOME}/license.txt
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+# Using PyTorch with CUDA 12.1 support
 RUN pip install --no-cache-dir \
-    torch==1.13.1+cu117 \
-    torchvision==0.14.1+cu117 \
-    --extra-index-url https://download.pytorch.org/whl/cu117
+    torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 
-# MONAI for PyTorch 1.13
-RUN pip install --no-cache-dir monai==1.2.0
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY api/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Copy application code
+COPY . .
 
-COPY api/ /app/api
+# Create necessary directories
+RUN mkdir -p /app/sessions /app/models /app/logs
 
-WORKDIR /app/api
+# Environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV REDIS_HOST=redis
+ENV REDIS_PORT=6379
+ENV GPU_COUNT=4
 
-EXPOSE 8080
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Expose API port
+EXPOSE 8100
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8100/health || exit 1
+
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+# Run both scheduler and API
+ENTRYPOINT ["/docker-entrypoint.sh"]
