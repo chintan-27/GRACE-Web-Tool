@@ -5,16 +5,16 @@ import { cmapper } from "@niivue/niivue";
 import type { ColormapId } from "./ViewerControls";
 
 const TISSUE_LABELS = [
-  { id: 0, label: "Background" },
-  { id: 1, label: "WM" },
-  { id: 2, label: "GM" },
-  { id: 3, label: "Eyes" },
-  { id: 4, label: "CSF" },
-  { id: 5, label: "Air" },
-  { id: 6, label: "Blood" },
-  { id: 7, label: "Cancellous Bone" },
-  { id: 8, label: "Cortical Bone" },
-  { id: 9, label: "Skin" },
+  { id: 0,  label: "Background" },
+  { id: 1,  label: "WM" },
+  { id: 2,  label: "GM" },
+  { id: 3,  label: "Eyes" },
+  { id: 4,  label: "CSF" },
+  { id: 5,  label: "Air" },
+  { id: 6,  label: "Blood" },
+  { id: 7,  label: "Cancellous Bone" },
+  { id: 8,  label: "Cortical Bone" },
+  { id: 9,  label: "Skin" },
   { id: 10, label: "Fat" },
   { id: 11, label: "Muscle" },
 ] as const;
@@ -53,76 +53,87 @@ function getLabelColors(colormapName: ColormapId): string[] {
 
 interface SegmentationLegendProps {
   colormap: ColormapId;
-  selectedLabel?: number | null;
-  onLabelSelect?: (labelId: number) => void;
+  selectedLabels?: Set<number>;
+  onLabelToggle?: (labelId: number) => void;
+  onClearAll?: () => void;
 }
 
-export default function SegmentationLegend({ colormap, selectedLabel = null, onLabelSelect }: SegmentationLegendProps) {
+export default function SegmentationLegend({
+  colormap,
+  selectedLabels = new Set(),
+  onLabelToggle,
+  onClearAll,
+}: SegmentationLegendProps) {
   const colors = useMemo(() => getLabelColors(colormap), [colormap]);
-  const isFiltering = selectedLabel !== null;
-  const selectedTissue = isFiltering ? TISSUE_LABELS.find(t => t.id === selectedLabel) : null;
+  const isolating = selectedLabels.size > 0;
+  const selectedCount = selectedLabels.size;
 
   return (
     <div
-      className="rounded-xl border border-border bg-surface px-5 py-3"
+      className="rounded-xl border border-border bg-surface px-4 py-3 space-y-2.5"
       role="region"
       aria-label="Segmentation tissue legend"
     >
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
-        <div className="flex items-center gap-2 shrink-0">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
           <span className="text-xs font-semibold uppercase tracking-wider text-foreground-muted">
-            Legend
+            Tissues
           </span>
-          {isFiltering ? (
-            <span className="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-              {selectedTissue?.label} only
+          {isolating ? (
+            <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent">
+              {selectedCount} isolated
             </span>
           ) : (
             <span className="text-[10px] text-foreground-muted italic">
-              click to isolate
+              click to isolate · multi-select supported
             </span>
           )}
         </div>
+        {isolating && (
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2 transition-colors shrink-0"
+          >
+            Show all
+          </button>
+        )}
+      </div>
 
-        <div className="h-4 w-px bg-border hidden sm:block" aria-hidden="true" />
-
+      {/* Tissue pills */}
+      <div className="flex flex-wrap gap-1.5">
         {TISSUE_LABELS.map((tissue, i) => {
-          const isSelected = selectedLabel === tissue.id;
-          const isDimmed   = isFiltering && !isSelected;
+          const isSelected = selectedLabels.has(tissue.id);
+          const isDimmed   = isolating && !isSelected;
           return (
             <button
               key={tissue.id}
               type="button"
-              onClick={() => onLabelSelect?.(tissue.id)}
-              title={isSelected ? `Click to show all` : `Click to isolate ${tissue.label}`}
-              className="flex items-center gap-1.5 select-none transition-opacity duration-150 focus:outline-none"
-              style={{ opacity: isDimmed ? 0.2 : 1 }}
+              onClick={() => onLabelToggle?.(tissue.id)}
+              title={isSelected ? `Remove ${tissue.label} from isolation` : `Isolate ${tissue.label}`}
+              aria-pressed={isSelected}
+              className="flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-ring select-none"
+              style={{
+                borderColor: isSelected ? colors[i] : undefined,
+                backgroundColor: isSelected ? `${colors[i]}22` : undefined,
+                opacity: isDimmed ? 0.3 : 1,
+              }}
             >
               <span
-                className="inline-block h-3 w-3 flex-shrink-0 rounded-[3px] ring-1 ring-white/10 transition-transform duration-150"
+                className="inline-block h-2.5 w-2.5 flex-shrink-0 rounded-[3px] ring-1 ring-white/10 transition-transform duration-150"
                 style={{
                   backgroundColor: colors[i],
-                  transform: isSelected ? "scale(1.5)" : "scale(1)",
-                  boxShadow: isSelected ? `0 0 0 2px white, 0 0 0 3px ${colors[i]}` : undefined,
+                  transform: isSelected ? "scale(1.2)" : "scale(1)",
                 }}
                 aria-hidden="true"
               />
-              <span className={`text-xs whitespace-nowrap transition-colors duration-150 ${isSelected ? "font-semibold text-foreground" : "text-foreground-secondary"}`}>
+              <span className={isSelected ? "font-semibold text-foreground" : "text-foreground-secondary"}>
                 {tissue.label}
               </span>
             </button>
           );
         })}
-
-        {isFiltering && (
-          <button
-            type="button"
-            onClick={() => selectedLabel !== null && onLabelSelect?.(selectedLabel)}
-            className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2 transition-colors shrink-0"
-          >
-            Show all
-          </button>
-        )}
       </div>
     </div>
   );
