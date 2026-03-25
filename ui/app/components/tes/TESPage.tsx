@@ -349,6 +349,12 @@ export default function TESPage() {
           runningRef.current = false;
           processQueue();
         }
+      }, () => {
+        // SSE dropped without complete/error — unblock the queue
+        clearActiveSim();
+        setRunState(key, { status: "error", error: "Connection lost — simulation may still be running." });
+        runningRef.current = false;
+        processQueue();
       });
 
     } else {
@@ -383,6 +389,11 @@ export default function TESPage() {
           runningRef.current = false;
           processQueue();
         }
+      }, () => {
+        clearActiveSim();
+        setRunState(key, { status: "error", error: "Connection lost — simulation may still be running." });
+        runningRef.current = false;
+        processQueue();
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
