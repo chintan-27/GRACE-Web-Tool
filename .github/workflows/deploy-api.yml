@@ -36,13 +36,21 @@ jobs:
             git checkout main
             git reset --hard origin/main
 
+            # Use api/.env if it exists, otherwise rely on docker-compose.yml defaults
+            ENV_FILE_FLAG=""
+            if [ -f ./api/.env ]; then
+              ENV_FILE_FLAG="--env-file ./api/.env"
+              echo "[deploy] Using api/.env"
+            else
+              echo "[deploy] No api/.env found, using docker-compose.yml defaults"
+            fi
+
             echo "[deploy] Building new image (old container stays up during build)..."
-            cd /home/chintan/GRACE-Web-Tool
-            DOCKER_BUILDKIT=1 docker compose --env-file ./api/.env build api
+            DOCKER_BUILDKIT=1 docker compose $ENV_FILE_FLAG build api
 
             echo "[deploy] Swapping containers (minimal downtime)..."
-            docker compose --env-file ./api/.env down || true
-            docker compose --env-file ./api/.env up -d
+            docker compose $ENV_FILE_FLAG down || true
+            docker compose $ENV_FILE_FLAG up -d
 
             echo "[deploy] Checking container status..."
             docker compose ps
