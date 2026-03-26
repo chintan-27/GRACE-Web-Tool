@@ -6,10 +6,11 @@ Pipeline
 --------
 1. Gunzip T1 into working directory
 2. Load GRACE segmentation → remap 11-tissue labels to SimNIBS/CHARM labels
-3. Run `charm --forceqform <subject> <t1>` once per session (shared base):
-   creates m2m_subject/ with EEG positions, T1fs_conform, atlas registration
-4. Copy charm base into model working directory; inject remapped labels as
-   custom_tissues.nii.gz
+3. Run `charm --initatlas <subject> <t1>` once per session (shared base, ~30s):
+   atlas affine registration only — no SAMSEG segmentation
+4. Per-model: copy initatlas base → inject remapped labels as
+   label_prep/tissue_labeling_upsampled.nii.gz, then run
+   `charm --surfaces --mesh` to build subject-accurate surfaces + EEG positions
 5. Run `meshmesh <labels.nii.gz> <subject_custom_mesh.msh> --voxsize_meshing 0.5`
    to build the FEM mesh from the custom labels
 6. Configure a SimNIBS TDCSLIST session (j-field) and call run_simnibs()
@@ -86,16 +87,6 @@ LABEL_MAP = {
     11: 10,  # muscle
 }
 
-# charm stdout substrings → (sse_event, overall_progress)
-CHARM_MAP = [
-    ("registering",   "simnibs_charm_register",  15),
-    ("segmenting",    "simnibs_charm_segment",    25),
-    ("classif",       "simnibs_charm_tissue",     35),
-    ("surface",       "simnibs_charm_surface",    42),
-    ("meshing",       "simnibs_charm_mesh",       50),
-    ("finaliz",       "simnibs_charm_finalize",   55),
-    ("saving",        "simnibs_charm_saving",     58),
-]
 
 
 def _find_simnibs_home() -> str:
@@ -273,14 +264,11 @@ class SimNIBSRunner:
         return out_path
 
     # ------------------------------------------------------------------
-    def _build_charm_base(self) -> None:
+    def _run_charm_initatlas(self) -> None:
         """
-        Build the session-level shared charm base:
-          charm --forceqform <subject> <T1.nii>
-
-        Creates m2m_subject/ with EEG cap positions, T1fs_conform, atlas
-        registration, and all files needed by the FEM solver.
-        This is paid once per session; all models reuse the result.
+        Run charm --initatlas only (shared, ~30s).
+        Performs affine atlas registration → creates m2m_subject/ with T1.nii.gz
+        and segmentation/coregistrationMatrices.mat. No SAMSEG.
         """
         base_work = simnibs_charm_base_dir(self.session_id)
         deadline  = time.time() + SIMNIBS_TIMEOUT_SECONDS
@@ -292,92 +280,103 @@ class SimNIBSRunner:
                 shutil.copyfileobj(fi, fo)
         session_log(self.session_id, f"[SimNIBS] Base T1 → {t1_nii}")
 
-        session_log(self.session_id, "[SimNIBS] charm --forceqform: atlas + EEG positions…")
-        proc = subprocess.Popen(
-            _charm_cmd() + ["--forceqform", SUBJECT, str(t1_nii)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            cwd=str(base_work),
-            env=_simnibs_env(),
-        )
-        last_pct = 5
-        for line in proc.stdout:
-            line = line.rstrip()
-            if line:
-                session_log(self.session_id, f"[charm-base] {line}")
-            line_l = line.lower()
-            for substr, evt, pct in CHARM_MAP:
-                if substr in line_l and pct > last_pct:
-                    self._emit(evt, pct)
-                    last_pct = pct
-                    break
-            if time.time() > deadline:
-                proc.kill()
-                raise TimeoutError("charm --forceqform timed out")
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"charm --forceqform exited with code {proc.returncode}")
-
-        session_log(self.session_id, f"[SimNIBS] Charm base ready → {base_work / f'm2m_{SUBJECT}'}")
+        session_log(self.session_id, "[SimNIBS] charm --initatlas: affine atlas registration…")
+        cmd = _charm_cmd() + ["--forceqform", "--initatlas", SUBJECT, str(t1_nii)]
+        self._run_proc(cmd, "charm-initatlas", base_work, deadline)
+        session_log(self.session_id, f"[SimNIBS] Atlas registration done → {base_work / f'm2m_{SUBJECT}'}")
 
     # ------------------------------------------------------------------
-    def _ensure_charm_base(self) -> Path:
+    def _ensure_initatlas_base(self) -> Path:
         """
-        Return the shared m2m_subject/ path, building it if this is the first
-        model in the session.  Uses a Redis lock so only one model builds;
-        the rest wait and then reuse the result.
+        Return the shared m2m_subject/ path after --initatlas, running it if
+        this is the first model in the session. Uses a Redis lock so only one
+        model builds; the rest wait and then reuse the result.
         """
         base_m2m = simnibs_charm_base_dir(self.session_id) / f"m2m_{SUBJECT}"
 
         if is_charm_base_ready(self.session_id) and base_m2m.exists():
-            session_log(self.session_id, "[SimNIBS] Reusing existing charm base.")
+            session_log(self.session_id, "[SimNIBS] Reusing existing atlas base.")
             return base_m2m
 
         if acquire_charm_base_lock(self.session_id):
-            session_log(self.session_id, "[SimNIBS] Building charm base (first model in session)…")
+            session_log(self.session_id, "[SimNIBS] Running charm --initatlas (first model in session)…")
             try:
-                self._build_charm_base()
+                self._run_charm_initatlas()
                 set_charm_base_ready(self.session_id)
             except Exception:
                 release_charm_base_lock(self.session_id)
                 raise
         else:
-            session_log(self.session_id, "[SimNIBS] Waiting for charm base (built by another model)…")
+            session_log(self.session_id, "[SimNIBS] Waiting for atlas base (built by another model)…")
             deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
             while not is_charm_base_ready(self.session_id):
                 if time.time() > deadline:
-                    raise TimeoutError("Timed out waiting for shared charm base")
+                    raise TimeoutError("Timed out waiting for shared atlas base")
                 time.sleep(CHARM_BASE_POLL_INTERVAL)
-            session_log(self.session_id, "[SimNIBS] Charm base is ready.")
+            session_log(self.session_id, "[SimNIBS] Atlas base is ready.")
 
         return base_m2m
 
     # ------------------------------------------------------------------
-    def build_mesh(self, seg_path: Path | None) -> Path:
+    def _inject_labels_and_run_charm(self, model_m2m: Path, seg_path: Path, deadline: float) -> None:
+        """
+        Inject our DL segmentation into charm's label_prep directory (resampled
+        to the conformated T1 space), then run charm --surfaces --mesh to build
+        subject-accurate cortical surfaces and EEG cap positions from our labels.
+        Skips SAMSEG entirely.
+        """
+        from nibabel.processing import resample_from_to
+
+        # Conformated T1 produced by --initatlas
+        t1_path = model_m2m / "T1.nii.gz"
+        if not t1_path.exists():
+            raise FileNotFoundError(f"Conformated T1 not found in m2m: {t1_path}")
+
+        t1_img  = nib.load(str(t1_path))
+        seg_img = nib.load(str(seg_path))
+
+        # Resample labels to conformated T1 space (nearest-neighbour for discrete labels)
+        seg_resampled = resample_from_to(seg_img, t1_img, order=0, cval=0)
+
+        label_prep = model_m2m / "label_prep"
+        label_prep.mkdir(exist_ok=True)
+        label_out = label_prep / "tissue_labeling_upsampled.nii.gz"
+        nib.save(seg_resampled, str(label_out))
+        session_log(self.session_id, f"[SimNIBS] Injected labels → {label_out}")
+
+        # Run charm --surfaces --mesh from the model working dir (parent of m2m_subject/)
+        session_log(self.session_id, "[SimNIBS] charm --surfaces --mesh: building surfaces + EEG positions…")
+        cmd = _charm_cmd() + ["--surfaces", "--mesh", SUBJECT]
+        self._run_proc(cmd, "charm-surfaces-mesh", model_m2m.parent, deadline)
+        session_log(self.session_id, "[SimNIBS] Surfaces + EEG positions ready.")
+
+    # ------------------------------------------------------------------
+    def build_mesh(self, seg_path: Path) -> Path:
         """
         Build a FEM mesh from the remapped segmentation labels.
 
         Steps:
-          1. Ensure shared charm base (builds or waits per Redis lock).
-          2. Copy charm base m2m_subject/ into model working directory.
-          3. Rewrite settings.ini paths to the model directory.
-          4. Save remapped labels as m2m_subject/custom_tissues.nii.gz
-             (used in post-processing for WM/GM masked outputs).
-          5. Run meshmesh to build the FEM mesh from custom labels.
+          1. Ensure shared --initatlas base (fast, once per session).
+          2. Copy initatlas base into model working directory.
+          3. Rewrite settings.ini paths to model directory.
+          4. Inject labels + run charm --surfaces --mesh (per model):
+             builds subject-accurate surfaces and EEG positions from our labels.
+          5. Save remapped labels as custom_tissues.nii.gz for post-processing.
+          6. Run meshmesh to build the FEM mesh from custom labels.
         """
-        self._emit("simnibs_charm", 8)
+        deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+        self._emit("simnibs_charm", 5)
 
-        # Step 1 — shared charm base
-        base_m2m = self._ensure_charm_base()
-        self._emit("simnibs_charm_register", 60)
+        # Step 1 — shared --initatlas base (fast, ~30s)
+        base_m2m = self._ensure_initatlas_base()
+        self._emit("simnibs_charm_register", 12)
 
-        # Step 2 — copy base m2m into model working directory
+        # Step 2 — copy initatlas base into model working directory
         model_m2m = self.work_dir / f"m2m_{SUBJECT}"
         if model_m2m.exists():
             shutil.rmtree(str(model_m2m))
         shutil.copytree(str(base_m2m), str(model_m2m))
-        session_log(self.session_id, f"[SimNIBS] Copied charm base → {model_m2m}")
+        session_log(self.session_id, f"[SimNIBS] Copied atlas base → {model_m2m}")
 
         # Step 3 — rewrite absolute paths in settings.ini to model dir
         settings_file = model_m2m / "settings.ini"
@@ -388,18 +387,21 @@ class SimNIBSRunner:
             content = content.replace(base_work_str, model_work_str)
             settings_file.write_text(content)
 
-        # Step 4 — save custom labels into m2m for post-processing
+        # Step 4 — inject DL labels + charm --surfaces --mesh (per model)
+        self._emit("simnibs_charm_surface", 15)
+        self._inject_labels_and_run_charm(model_m2m, seg_path, deadline)
+        self._emit("simnibs_charm_done", 55)
+
+        # Step 5 — save custom labels as custom_tissues.nii.gz for post-processing
         custom_tissues = model_m2m / "custom_tissues.nii.gz"
         shutil.copy2(str(seg_path), str(custom_tissues))
         session_log(self.session_id, f"[SimNIBS] Custom labels → {custom_tissues}")
 
-        # Step 5 — meshmesh
+        # Step 6 — meshmesh
         custom_mesh = self.work_dir / f"{SUBJECT}_custom_mesh.msh"
-        self._emit("simnibs_charm_mesh", 65)
+        self._emit("simnibs_charm_mesh", 58)
         session_log(self.session_id, "[SimNIBS] meshmesh: building FEM mesh from custom labels…")
-        mesh_input = seg_path
-        cmd      = _meshmesh_cmd() + [str(mesh_input), str(custom_mesh), "--voxsize_meshing", "0.5"]
-        deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+        cmd = _meshmesh_cmd() + [str(seg_path), str(custom_mesh), "--voxsize_meshing", "0.5"]
         self._run_proc(cmd, "meshmesh", self.work_dir, deadline)
 
         if not custom_mesh.exists():
