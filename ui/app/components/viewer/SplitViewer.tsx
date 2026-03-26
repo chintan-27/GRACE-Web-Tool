@@ -480,7 +480,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           // Check if the volume was actually loaded
           if (nv.volumes.length > 1) {
             console.log(`Volume loaded successfully, total volumes: ${nv.volumes.length}`);
-            applySegColormap(nv, currentColormap, showBg, currentOpacity, null);
+            applySegColormap(nv, currentColormap, showBg, currentOpacity);
             return true;
           } else {
             console.error(`Volume was not added after loadFromArrayBuffer for ${model}`);
