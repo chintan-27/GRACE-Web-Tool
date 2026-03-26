@@ -272,12 +272,10 @@ export async function startSimNIBSSimulation(
   modelName: string,
   recipe?: (string | number)[],
   electrode_type?: string[],
-  segSource?: "deep_learning" | "charm",
 ): Promise<SimulateResponse> {
   const body: Record<string, unknown> = { session_id: sessionId, model_name: modelName };
   if (recipe) body.recipe = recipe;
   if (electrode_type) body.electrode_type = electrode_type;
-  if (segSource) body.seg_source = segSource;
 
   const res = await fetch(`${API_BASE}/simulate/simnibs`, {
     method: "POST",

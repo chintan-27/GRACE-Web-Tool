@@ -30,9 +30,10 @@ const TISSUE_COLORS: [number, number, number][] = [
 ];
 
 // Build a 256-entry stepped LUT from the hard-coded tissue colors.
-// When hoveredLabel is set, only that label gets full alpha; others are dimmed to 25.
-function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = null) {
+// When selectedLabels is non-empty, only those labels get full alpha; others are hidden.
+function buildGraceLUT(showBackground: boolean, selectedLabels: Set<number> = new Set()) {
   const R: number[] = [], G: number[] = [], B: number[] = [], A: number[] = [];
+  const isolating = selectedLabels.size > 0;
   for (let i = 0; i < 256; i++) {
     const label = Math.min(11, Math.round((i / 255) * 11));
     const [r, g, b] = TISSUE_COLORS[label];
@@ -40,10 +41,10 @@ function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = nu
     let alpha: number;
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
-    } else if (hoveredLabel !== null) {
+    } else if (isolating) {
       // Niivue's orient shader binarizes alpha via step(0.00001, a):
       // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
-      alpha = label === hoveredLabel ? 255 : 0;
+      alpha = selectedLabels.has(label) ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -59,7 +60,7 @@ function buildGraceLUT(showBackground: boolean, hoveredLabel: number | null = nu
 function buildSteppedLUT(
   cmapId: string,
   showBackground: boolean,
-  hoveredLabel: number | null = null,
+  selectedLabels: Set<number> = new Set(),
 ): { R: number[]; G: number[]; B: number[]; A: number[]; I: number[] } {
   // Get the fully-interpolated 256-RGBA LUT from NiiVue's module-level cmapper singleton.
   const lut: Uint8ClampedArray = cmapper.colormap(cmapId, false);
@@ -74,6 +75,7 @@ function buildSteppedLUT(
 
   // Build the stepped LUT: each LUT position maps to a label, then to that label's color.
   const R: number[] = [], G: number[] = [], B: number[] = [], A: number[] = [];
+  const isolating = selectedLabels.size > 0;
   for (let i = 0; i < 256; i++) {
     const label = Math.min(11, Math.round((i / 255) * 11));
     const [r, g, b] = labelColors[label];
@@ -81,10 +83,8 @@ function buildSteppedLUT(
     let alpha: number;
     if (label === 0) {
       alpha = showBackground ? 180 : 0;
-    } else if (hoveredLabel !== null) {
-      // Niivue's orient shader binarizes alpha via step(0.00001, a):
-      // alpha > 0 → opaque, alpha = 0 → hidden. Use 0 to truly hide non-selected labels.
-      alpha = label === hoveredLabel ? 255 : 0;
+    } else if (isolating) {
+      alpha = selectedLabels.has(label) ? 255 : 0;
     } else {
       alpha = 255;
     }
@@ -120,7 +120,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   const [error, setError] = useState<string | null>(null);
   const [showBgLeft, setShowBgLeft] = useState(false);
   const [showBgRight, setShowBgRight] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState<number | null>(null);
+  const [selectedLabels, setSelectedLabels] = useState<Set<number>>(new Set());
   const [bgDim, setBgDim] = useState(0.35);
   const [fullscreenEl, setFullscreenEl] = useState<"section" | "left" | "right" | null>(null);
 
@@ -187,7 +187,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
     cmap: ColormapId,
     showBg: boolean,
     opacity: number,
-    hovered: number | null = null,
+    selectedLabels: Set<number> = new Set(),
   ) => {
     if (nv.volumes.length < 2) return;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -195,8 +195,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
     // Build LUT: custom tissue colors for grace_seg_tissues, sampled gradient for all others.
     const lut = cmap === "grace_seg_tissues"
-      ? buildGraceLUT(showBg, hovered)
-      : buildSteppedLUT(cmap, showBg, hovered);
+      ? buildGraceLUT(showBg, selectedLabels)
+      : buildSteppedLUT(cmap, showBg, selectedLabels);
 
     // Always use the same key — addColormap overwrites cmapper.cluts[key] in place,
     // so refreshColormaps() (called inside updateGLVolume) picks up the new LUT.
@@ -210,8 +210,8 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
     nv.updateGLVolume();
     nv.setOpacity(1, opacity);
-    // Dim the base MRI when isolating a single label so the tissue stands out.
-    nv.setOpacity(0, hovered !== null ? bgDimRef.current : 1.0);
+    // Dim the base MRI when isolating labels so the tissue stands out.
+    nv.setOpacity(0, selectedLabels.size > 0 ? bgDimRef.current : 1.0);
     nv.drawScene();
   }, []);
 
@@ -393,7 +393,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
                 if (nv.volumes.length > 1) {
                   const showBg = panelName === "left" ? showBgLeft : showBgRight;
-                  applySegColormap(nv, colormap, showBg, overlayOpacity, null);
+                  applySegColormap(nv, colormap, showBg, overlayOpacity, new Set());
                   console.log(`${model} loaded to ${panelName} panel successfully`);
                   return true;
                 }
@@ -550,12 +550,12 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // MRI dim fast path — only active while isolating, no orient re-run needed.
   useEffect(() => {
-    if (!initialized || selectedLabel === null) return;
+    if (!initialized || selectedLabels.size === 0) return;
     [leftNvRef, rightNvRef].forEach((ref) => {
       const nv = ref.current;
       if (nv) { nv.setOpacity(0, bgDim); nv.drawScene(); }
     });
-  }, [bgDim, initialized, selectedLabel]);
+  }, [bgDim, initialized, selectedLabels]);
 
   // Colormap / background / selected-label changes.
   // addColormap() overwrites the LUT in cmapper, and updateGLVolume() (called inside
@@ -564,12 +564,12 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
   useEffect(() => {
     if (!initialized) return;
     if (leftNvRef.current && leftModel !== null)
-      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacityRef.current, selectedLabel);
+      applySegColormap(leftNvRef.current, colormap, showBgLeft, overlayOpacityRef.current, selectedLabels);
     if (rightNvRef.current && rightModel !== null)
-      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacityRef.current, selectedLabel);
+      applySegColormap(rightNvRef.current, colormap, showBgRight, overlayOpacityRef.current, selectedLabels);
     // overlayOpacity intentionally read via ref — see opacity-only effect below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colormap, showBgLeft, showBgRight, selectedLabel, initialized, leftModel, rightModel, applySegColormap]);
+  }, [colormap, showBgLeft, showBgRight, selectedLabels, initialized, leftModel, rightModel, applySegColormap]);
 
   // Get display names
   const getDisplayName = (model: string): string => {
@@ -655,7 +655,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
           onOpacityChange={setOverlayOpacity}
           colormap={colormap}
           onColormapChange={setColormap}
-          isIsolating={selectedLabel !== null}
+          isIsolating={selectedLabels.size > 0}
           bgDim={bgDim}
           onBgDimChange={setBgDim}
         />
@@ -868,8 +868,13 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
       {/* Segmentation Legend */}
       <SegmentationLegend
         colormap={colormap}
-        selectedLabel={selectedLabel}
-        onLabelSelect={(id) => setSelectedLabel(prev => prev === id ? null : id)}
+        selectedLabels={selectedLabels}
+        onLabelToggle={(id) => setSelectedLabels(prev => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id); else next.add(id);
+          return next;
+        })}
+        onClearAll={() => setSelectedLabels(new Set())}
       />
 
       {/* Debug info in development */}
