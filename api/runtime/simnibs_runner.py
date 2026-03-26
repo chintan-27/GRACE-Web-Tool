@@ -353,10 +353,16 @@ class SimNIBSRunner:
         surfaces_dir = model_m2m / "surfaces"
         surfaces_dir.mkdir(exist_ok=True)
 
-        # norm_image.nii.gz — intensity-normalised T1 in conform space.
-        # CAT12 normalises internally; providing the raw conform T1 is sufficient.
-        shutil.copy2(str(t1_path), str(surfaces_dir / "norm_image.nii.gz"))
-        session_log(self.session_id, "[SimNIBS] Created surfaces/norm_image.nii.gz from T1")
+        # norm_image.nii.gz — CAT12 "Ymf" tissue-class image.
+        # CAT12 expects tissue class values, not raw T1 intensities:
+        #   WM=3, GM=2, CSF=1, background=0
+        # Passing raw T1 here causes run_cat_multiprocessing.py to exit with code 1.
+        norm_data = np.zeros(seg_data.shape, dtype=np.float32)
+        norm_data[seg_data == 1] = 3.0  # WM
+        norm_data[seg_data == 2] = 2.0  # GM
+        norm_data[seg_data == 4] = 1.0  # CSF
+        nib.save(nib.Nifti1Image(norm_data, affine), str(surfaces_dir / "norm_image.nii.gz"))
+        session_log(self.session_id, "[SimNIBS] Created surfaces/norm_image.nii.gz (Ymf: WM=3, GM=2, CSF=1)")
 
         # hemi_mask.nii.gz — 1=left-hemisphere WM+GM, 2=right-hemisphere WM+GM.
         # Split at x=0 in RAS space using the conform affine.
