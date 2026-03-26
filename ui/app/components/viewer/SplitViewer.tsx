@@ -504,7 +504,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for left panel
   const handleLeftModelChange = async (model: string | null) => {
-    setSelectedLabel(null);
+    setSelectedLabels(new Set());
     const success = await loadOverlayToPanel(leftNvRef.current, model, overlayOpacity, colormap, showBgLeft);
     if (success) {
       setLeftModel(model);
@@ -513,7 +513,7 @@ export default function SplitViewer({ inputUrl, sessionId, models }: SplitViewer
 
   // Handle model selection for right panel
   const handleRightModelChange = async (model: string | null) => {
-    setSelectedLabel(null);
+    setSelectedLabels(new Set());
     const success = await loadOverlayToPanel(rightNvRef.current, model, overlayOpacity, colormap, showBgRight);
     if (success) {
       setRightModel(model);
