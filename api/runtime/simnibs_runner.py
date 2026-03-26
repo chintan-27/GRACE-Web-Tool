@@ -337,12 +337,45 @@ class SimNIBSRunner:
 
         # Resample labels to conformated T1 space (nearest-neighbour for discrete labels)
         seg_resampled = resample_from_to(seg_img, t1_img, order=0, cval=0)
+        seg_data = np.asarray(seg_resampled.dataobj, dtype=np.int16)
 
+        # --- label_prep/tissue_labeling_upsampled.nii.gz ---
         label_prep = model_m2m / "label_prep"
         label_prep.mkdir(exist_ok=True)
         label_out = label_prep / "tissue_labeling_upsampled.nii.gz"
         nib.save(seg_resampled, str(label_out))
         session_log(self.session_id, f"[SimNIBS] Injected labels → {label_out}")
+
+        # --- surfaces/ intermediate files needed by charm --surfaces ---
+        # charm --surfaces (CAT12) expects these to exist before it runs its
+        # cortical reconstruction. We create them from our DL labels + T1,
+        # bypassing the SAMSEG step that would normally produce them.
+        surfaces_dir = model_m2m / "surfaces"
+        surfaces_dir.mkdir(exist_ok=True)
+
+        # norm_image.nii.gz — intensity-normalised T1 in conform space.
+        # CAT12 normalises internally; providing the raw conform T1 is sufficient.
+        shutil.copy2(str(t1_path), str(surfaces_dir / "norm_image.nii.gz"))
+        session_log(self.session_id, "[SimNIBS] Created surfaces/norm_image.nii.gz from T1")
+
+        # hemi_mask.nii.gz — 1=left-hemisphere WM+GM, 2=right-hemisphere WM+GM.
+        # Split at x=0 in RAS space using the conform affine.
+        brain_mask = (seg_data == 1) | (seg_data == 2)   # WM(1) + GM(2)
+        affine = seg_resampled.affine
+        nx = seg_data.shape[0]
+        # RAS x-coordinate for each voxel index along the x-axis
+        x_ras = affine[0, 0] * np.arange(nx) + affine[0, 3]
+        left_x = x_ras < 0   # RAS x < 0 → left hemisphere
+        hemi_mask = np.zeros(seg_data.shape, dtype=np.int8)
+        hemi_mask[left_x[:, None, None] & brain_mask] = 1
+        hemi_mask[(~left_x[:, None, None]) & brain_mask] = 2
+        nib.save(nib.Nifti1Image(hemi_mask, affine), str(surfaces_dir / "hemi_mask.nii.gz"))
+        session_log(self.session_id, "[SimNIBS] Created surfaces/hemi_mask.nii.gz from WM+GM labels")
+
+        # cereb_mask.nii.gz — cerebellum mask (empty: no dedicated label in our scheme).
+        cereb_mask = np.zeros(seg_data.shape, dtype=np.int8)
+        nib.save(nib.Nifti1Image(cereb_mask, affine), str(surfaces_dir / "cereb_mask.nii.gz"))
+        session_log(self.session_id, "[SimNIBS] Created surfaces/cereb_mask.nii.gz (empty, no cerebellum label)")
 
         # Run charm --surfaces --mesh from the model working dir (parent of m2m_subject/)
         session_log(self.session_id, "[SimNIBS] charm --surfaces --mesh: building surfaces + EEG positions…")
