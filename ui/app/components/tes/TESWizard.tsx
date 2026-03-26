@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import {
-  Zap, ChevronRight, ChevronLeft, Check, AlertTriangle, Construction,
+  Zap, ChevronRight, ChevronLeft, Check, AlertTriangle,
   GitCompare, RotateCcw, Eye, Layers,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -172,7 +172,6 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
   const [solver, setSolver]               = useState<Solver>("roast");
   const [quality, setQuality]             = useState<"fast" | "standard">("fast");
   const [roastSegSource, setRoastSegSource]     = useState<"nn" | "roast">("nn");
-  const [simnibsSegSource, setSimnibsSegSource] = useState<"deep_learning" | "charm">("deep_learning");
   const [electrodeConfig, setElectrodeConfig] = useState<ElectrodeConfig>({
     anode: "F3", cathode: "F4", currentMa: 2, electrodeType: "pad",
   });
@@ -256,7 +255,7 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
       setRunState(key, { status: "running", progress: 2, step: "Starting..." });
 
       try {
-        const { run_id } = await startSimNIBSSimulation(sessionId, next.model, recipe, electype, simnibsSegSource);
+        const { run_id } = await startSimNIBSSimulation(sessionId, next.model, recipe, electype);
         setRunState(key, { status: "running", progress: 2, step: "Starting...", runId: run_id });
       } catch (e: unknown) {
         setRunState(key, { status: "error", error: (e as Error).message || "Failed to start SimNIBS" });
@@ -405,7 +404,6 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
                 solver === s
                   ? "border-accent bg-accent/10 text-accent"
                   : "border-border bg-surface text-foreground-muted hover:border-accent/40",
-                s === "simnibs" && "opacity-60",
               )}
             >
               {s === "roast"   && "ROAST-11"}
@@ -419,20 +417,6 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
           {solver === "simnibs" && "SimNIBS uses FEM with charm meshing on the CROWN segmentation."}
           {solver === "both"    && "Run both solvers for direct comparison. Runs sequentially."}
         </p>
-        {(solver === "simnibs" || solver === "both") && (
-          <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
-            <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-            <div className="space-y-0.5">
-              <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">Under Development</p>
-              <p className="text-[11px] leading-snug text-foreground-muted">
-                SimNIBS integration is not yet at the correct version. Please use{" "}
-                <button type="button" onClick={() => setSolver("roast")} className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover">
-                  ROAST
-                </button>{" "}for reliable results.
-              </p>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="flex justify-end">
@@ -493,25 +477,6 @@ export default function TESWizard({ sessionId, models, inputBlobUrl }: TESWizard
         </div>
       )}
 
-      {(solver === "simnibs" || solver === "both") && (
-        <div className="rounded-xl border border-border bg-surface p-4 space-y-3">
-          <h3 className="font-mono text-[10px] font-bold uppercase tracking-widest text-accent">// SimNIBS Options</h3>
-          <div>
-            <p className="text-xs text-foreground-muted mb-1.5">Segmentation source</p>
-            <div className="flex rounded-lg border border-border overflow-hidden text-sm font-medium">
-              <button type="button" onClick={() => setSimnibsSegSource("deep_learning")} className={cn("flex-1 py-2 transition-colors", simnibsSegSource === "deep_learning" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
-                Deep Learning
-              </button>
-              <button type="button" onClick={() => setSimnibsSegSource("charm")} className={cn("flex-1 py-2 transition-colors", simnibsSegSource === "charm" ? "bg-accent text-white" : "text-foreground-muted hover:bg-surface-elevated")}>
-                CHARM
-              </button>
-            </div>
-            <p className="text-xs text-foreground-muted mt-1">
-              {simnibsSegSource === "deep_learning" ? "Use GRACE/DOMINO/DOMINO++ segmentation (recommended)." : "Use SimNIBS CHARM segmentation (no model required, slower initialization)."}
-            </p>
-          </div>
-        </div>
-      )}
 
       {/* Summary */}
       <div className="rounded-lg bg-surface-elevated border border-border/60 px-4 py-3 text-sm">

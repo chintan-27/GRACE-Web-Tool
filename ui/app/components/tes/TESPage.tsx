@@ -634,7 +634,6 @@ export default function TESPage() {
                     solver === s
                       ? "border-accent bg-accent/10 text-accent"
                       : "border-border bg-background text-foreground-muted hover:border-accent/30",
-                    s === "simnibs" && "opacity-60",
                   )}
                 >
                   {s === "simnibs" ? "SimNIBS" : s === "roast" ? "ROAST" : "Both"}
@@ -647,28 +646,6 @@ export default function TESPage() {
               {solver === "both"    && "Both solvers run sequentially — enables side-by-side comparison"}
             </p>
 
-            {/* SimNIBS not-ready notice */}
-            {(solver === "simnibs" || solver === "both") && (
-              <div className="mt-2 flex gap-2 rounded-lg border border-warning/40 bg-warning/5 px-3 py-2.5">
-                <Construction className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
-                <div className="space-y-0.5">
-                  <p className="font-mono text-[10px] font-bold uppercase tracking-widest text-warning">
-                    Under Development
-                  </p>
-                  <p className="text-[11px] leading-snug text-foreground-muted">
-                    SimNIBS integration is not yet at the correct version. Please use{" "}
-                    <button
-                      type="button"
-                      onClick={() => setSolver("roast")}
-                      className="font-semibold text-accent underline underline-offset-2 hover:text-accent-hover"
-                    >
-                      ROAST
-                    </button>{" "}
-                    for reliable results.
-                  </p>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* ── Montage presets ── */}

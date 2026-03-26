@@ -454,7 +454,6 @@ async def simulate_simnibs(body: dict = Body(...)):
         "model_name": model_name,
         "recipe": recipe,
         "electrode_type": body.get("electrode_type"),
-        "seg_source": body.get("seg_source", "deep_learning"),
         "run_id": run_id,
     }
 
