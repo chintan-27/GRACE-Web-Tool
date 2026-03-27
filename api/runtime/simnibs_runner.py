@@ -366,23 +366,28 @@ class SimNIBSRunner:
         nib.save(nib.Nifti1Image(norm_data, affine), str(surfaces_dir / "norm_image.nii.gz"))
         session_log(self.session_id, "[SimNIBS] Created surfaces/norm_image.nii.gz (Ymf: WM=3, GM=2, CSF=1)")
 
-        # hemi_mask.nii.gz — 1=left-hemisphere WM+GM, 2=right-hemisphere WM+GM.
-        # Split at x=0 in RAS space using the conform affine.
+        # Hemisphere split: RAS x < 0 → left hemisphere
         brain_mask = (seg_data == 1) | (seg_data == 2)   # WM(1) + GM(2)
         nx = seg_data.shape[0]
-        # RAS x-coordinate for each voxel index along the x-axis
         x_ras = affine[0, 0] * np.arange(nx) + affine[0, 3]
-        left_x = x_ras < 0   # RAS x < 0 → left hemisphere
+        left_x = x_ras < 0
+
+        # hemi_mask.nii.gz → passed as --Yleft_path (Yleft in createCS).
+        # createCS expects a BINARY mask: 1=left brain, 0=elsewhere.
+        # It inverts this for the right hemisphere (logical_not).
         hemi_mask = np.zeros(seg_data.shape, dtype=np.int8)
         hemi_mask[left_x[:, None, None] & brain_mask] = 1
-        hemi_mask[(~left_x[:, None, None]) & brain_mask] = 2
         nib.save(nib.Nifti1Image(hemi_mask, affine), str(surfaces_dir / "hemi_mask.nii.gz"))
-        session_log(self.session_id, "[SimNIBS] Created surfaces/hemi_mask.nii.gz from WM+GM labels")
+        session_log(self.session_id, "[SimNIBS] Created surfaces/hemi_mask.nii.gz (Yleft: binary left-brain)")
 
-        # cereb_mask.nii.gz — cerebellum mask (empty: no dedicated label in our scheme).
+        # cereb_mask.nii.gz → passed as --Ymaskhemis_path (Ymaskhemis in createCS).
+        # createCS uses: Ymfs = Ymf * (Ymaskhemis == 1) for lh, * (Ymaskhemis == 2) for rh.
+        # Must be 1=left cerebrum, 2=right cerebrum (NOT all zeros, or mask is empty → crash).
         cereb_mask = np.zeros(seg_data.shape, dtype=np.int8)
+        cereb_mask[left_x[:, None, None] & brain_mask] = 1
+        cereb_mask[(~left_x[:, None, None]) & brain_mask] = 2
         nib.save(nib.Nifti1Image(cereb_mask, affine), str(surfaces_dir / "cereb_mask.nii.gz"))
-        session_log(self.session_id, "[SimNIBS] Created surfaces/cereb_mask.nii.gz (empty, no cerebellum label)")
+        session_log(self.session_id, "[SimNIBS] Created surfaces/cereb_mask.nii.gz (Ymaskhemis: 1=left, 2=right)")
 
         # Run charm --surfaces --mesh from the model working dir (parent of m2m_subject/)
         session_log(self.session_id, "[SimNIBS] charm --surfaces --mesh: building surfaces + EEG positions…")
