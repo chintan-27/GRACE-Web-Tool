@@ -346,6 +346,8 @@ class SimNIBSRunner:
         nib.save(seg_resampled, str(label_out))
         session_log(self.session_id, f"[SimNIBS] Injected labels → {label_out}")
 
+        affine = seg_resampled.affine
+
         # --- surfaces/ intermediate files needed by charm --surfaces ---
         # charm --surfaces (CAT12) expects these to exist before it runs its
         # cortical reconstruction. We create them from our DL labels + T1,
@@ -367,7 +369,6 @@ class SimNIBSRunner:
         # hemi_mask.nii.gz — 1=left-hemisphere WM+GM, 2=right-hemisphere WM+GM.
         # Split at x=0 in RAS space using the conform affine.
         brain_mask = (seg_data == 1) | (seg_data == 2)   # WM(1) + GM(2)
-        affine = seg_resampled.affine
         nx = seg_data.shape[0]
         # RAS x-coordinate for each voxel index along the x-axis
         x_ras = affine[0, 0] * np.arange(nx) + affine[0, 3]
