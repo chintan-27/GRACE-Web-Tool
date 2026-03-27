@@ -17,6 +17,22 @@ import {
   PredictResponse,
 } from "../lib/api";
 
+// ── Persist completed session so TES page survives page reload / deployment ──
+const SEG_SESSION_KEY = "grace_seg_session";
+type PersistedSession = { sessionId: string; models: string[]; space: string };
+function saveSegSession(s: PersistedSession) {
+  try { localStorage.setItem(SEG_SESSION_KEY, JSON.stringify(s)); } catch {}
+}
+export function loadSegSession(): PersistedSession | null {
+  try {
+    const raw = localStorage.getItem(SEG_SESSION_KEY);
+    return raw ? (JSON.parse(raw) as PersistedSession) : null;
+  } catch { return null; }
+}
+function clearSegSession() {
+  try { localStorage.removeItem(SEG_SESSION_KEY); } catch {}
+}
+
 // ------------------------------------------------------------
 // TYPES
 // ------------------------------------------------------------
@@ -165,6 +181,13 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, [status, viewerReady, currentStep]);
 
+  // Persist session to localStorage when complete so TES page survives reload
+  useEffect(() => {
+    if (status === "complete" && sessionId && models.length > 0) {
+      saveSegSession({ sessionId, models, space });
+    }
+  }, [status, sessionId, models, space]);
+
   // ------------------------------------------------------------
   // SSE SUBSCRIBE
   // ------------------------------------------------------------
@@ -277,6 +300,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     if (inputBlobUrl) {
       URL.revokeObjectURL(inputBlobUrl);
     }
+
+    // Clear persisted session
+    clearSegSession();
 
     // Reset session state
     setSessionId(null);

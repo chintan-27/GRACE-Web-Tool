@@ -27,8 +27,10 @@ import {
   connectSimNIBSSSE,
   getHealth,
   getSimulationStatus,
+  API_BASE,
   type HealthResponse,
 } from "@/lib/api";
+import { loadSegSession } from "@/context/JobContext";
 
 // ─── localStorage key for job persistence across refreshes ───────────────────
 const ACTIVE_SIM_KEY = "grace_active_sim";
@@ -208,7 +210,14 @@ function RunCard({ label, badge, state }: {
 // ─── TESPage ──────────────────────────────────────────────────────────────────
 export default function TESPage() {
   const router = useRouter();
-  const { sessionId, models, inputBlobUrl } = useJob();
+  const { sessionId: ctxSessionId, models: ctxModels, inputBlobUrl } = useJob();
+
+  // Recover from localStorage if context was cleared (page reload / deployment)
+  const [recovered] = useState(() => loadSegSession());
+  const sessionId = ctxSessionId ?? recovered?.sessionId ?? null;
+  const models    = ctxModels.length > 0 ? ctxModels : (recovered?.models ?? []);
+  // Use blob URL when available; fall back to API endpoint after reload
+  const inputUrl  = inputBlobUrl ?? (sessionId ? `${API_BASE}/results/${sessionId}/input` : null);
 
   // Config
   const [selectedModels, setSelectedModels]     = useState<string[]>([]);
@@ -454,7 +463,7 @@ export default function TESPage() {
     .map(([m]) => m);
 
   // ── No-session guard ──────────────────────────────────────────────────────
-  if (!sessionId || !inputBlobUrl) {
+  if (!sessionId || !inputUrl) {
     // If we found a saved job, show reconnect UI instead of error
     if (reconnect && reconnect.status !== "none") {
       const { sim, status, progress, step } = reconnect;
@@ -1011,7 +1020,7 @@ export default function TESPage() {
         <div className="flex-1 overflow-auto">
           {panelView.type === "segmentation" && (
             <div className="h-full p-4">
-              <SplitViewer inputUrl={inputBlobUrl} sessionId={sessionId} models={models} />
+              <SplitViewer inputUrl={inputUrl} sessionId={sessionId} models={models} />
             </div>
           )}
           {(panelView.type === "roast" || panelView.type === "simnibs") && (
@@ -1024,7 +1033,7 @@ export default function TESPage() {
               ) : (
                 <RoastViewer
                   key={`${panelView.runKey}:${runStates[panelView.runKey]?.completedAt ?? ""}`}
-                  inputUrl={inputBlobUrl}
+                  inputUrl={inputUrl}
                   sessionId={sessionId}
                   modelName={panelView.model}
                   runId={runStates[panelView.runKey]?.runId ?? ""}
@@ -1042,7 +1051,7 @@ export default function TESPage() {
               <div className="h-full p-4">
                 <TESComparisonViewer
                   key={`${panelView.model}:comparison:${latestRoast?.state.completedAt ?? 0}:${latestSimnibs?.state.completedAt ?? 0}`}
-                  inputUrl={inputBlobUrl}
+                  inputUrl={inputUrl}
                   sessionId={sessionId}
                   modelName={panelView.model}
                   roastRunId={latestRoast?.state.runId ?? ""}
