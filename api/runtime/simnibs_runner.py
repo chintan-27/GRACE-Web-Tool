@@ -346,6 +346,15 @@ class SimNIBSRunner:
         nib.save(seg_resampled, str(label_out))
         session_log(self.session_id, f"[SimNIBS] Injected labels → {label_out}")
 
+        # --- segmentation/labeling.nii.gz ---
+        # "Improving GM from surfaces" loads this after surface creation.
+        # Normally produced by SAMSEG; we provide our DL labels instead.
+        seg_dir = model_m2m / "segmentation"
+        seg_dir.mkdir(exist_ok=True)
+        labeling_out = seg_dir / "labeling.nii.gz"
+        nib.save(seg_resampled, str(labeling_out))
+        session_log(self.session_id, f"[SimNIBS] Created segmentation/labeling.nii.gz from DL labels")
+
         affine = seg_resampled.affine
 
         # --- surfaces/ intermediate files needed by charm --surfaces ---
