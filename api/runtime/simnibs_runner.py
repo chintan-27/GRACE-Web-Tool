@@ -68,6 +68,53 @@ from services.logger import log_event, log_error
 # Fixed subject name used for charm and SimNIBS session
 SUBJECT = "subject"
 
+
+# ---------------------------------------------------------------------------
+# Displacement-field helpers (used by _create_mni_warp_fields)
+# ---------------------------------------------------------------------------
+
+def _compute_affine_displacement(
+    shape: tuple, ref_affine: np.ndarray, transform: np.ndarray
+) -> np.ndarray:
+    """
+    Return a (X, Y, Z, 3) float32 displacement field for an affine transform.
+
+    For voxel (i, j, k) with world position p = ref_affine @ [i, j, k, 1]:
+        displacement = (transform @ p)[:3] - p[:3]
+
+    Uses per-axis broadcasting so only the final (X,Y,Z,3) output array is
+    ever fully materialised (~192 MB for a 256³ volume).
+    """
+    X, Y, Z = shape[:3]
+
+    # Compose Δ = (T·A − A)[:3, :]  →  disp(vox) = Δ[:, :3] @ vox + Δ[:, 3]
+    Delta = ((transform @ ref_affine) - ref_affine)[:3, :]  # (3, 4)
+    M = Delta[:, :3].astype(np.float32)  # rotation / scale  (3, 3)
+    t = Delta[:,  3].astype(np.float32)  # translation       (3,)
+
+    i_g = np.arange(X, dtype=np.float32)
+    j_g = np.arange(Y, dtype=np.float32)
+    k_g = np.arange(Z, dtype=np.float32)
+
+    # Each outer-product term broadcasts lazily to (X, Y, Z, 3)
+    disp = (
+        np.outer(i_g, M[:, 0]).reshape(X, 1, 1, 3)
+        + np.outer(j_g, M[:, 1]).reshape(1, Y, 1, 3)
+        + np.outer(k_g, M[:, 2]).reshape(1, 1, Z, 3)
+        + t.reshape(1, 1, 1, 3)
+    )
+    return disp.astype(np.float32)
+
+
+def _save_displacement_nifti(
+    data: np.ndarray, affine: np.ndarray, path: str
+) -> None:
+    """Save a (X, Y, Z, 3) displacement field as NIfTI-1 with intent 1007."""
+    img = nib.Nifti1Image(data, affine)
+    img.header.set_intent(1007)        # NIFTI_INTENT_VECTOR
+    img.header.set_data_dtype(np.float32)
+    nib.save(img, path)
+
 # Seconds to sleep between polls when waiting for another model to build the charm base
 CHARM_BASE_POLL_INTERVAL = 10
 
@@ -318,6 +365,155 @@ class SimNIBSRunner:
         return base_m2m
 
     # ------------------------------------------------------------------
+    def _find_mni_template(self, model_m2m: Path) -> Path | None:
+        """
+        Locate the MNI atlas template NIfTI used by SimNIBS.
+
+        Search order:
+          1. settings.ini produced by charm --initatlas (template key)
+          2. Known paths under SIMNIBS_HOME
+          3. Broad rglob search under SIMNIBS_HOME
+        """
+        import configparser
+
+        # 1. settings.ini
+        settings_file = model_m2m / "settings.ini"
+        if settings_file.exists():
+            cfg = configparser.ConfigParser()
+            cfg.read(str(settings_file))
+            for section in cfg.sections():
+                for key, value in cfg.items(section):
+                    if "template" in key.lower() and value.endswith((".nii.gz", ".nii")):
+                        candidate = Path(value)
+                        if candidate.exists():
+                            return candidate
+
+        # 2. Known exact paths in the SimNIBS installation
+        home = _find_simnibs_home()
+        if not home:
+            return None
+        home_path = Path(home)
+
+        for candidate in [
+            home_path / "simnibs" / "segmentation" / "simnibs_samseg_atlas"
+            / "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+            home_path / "simnibs" / "segmentation" / "simnibs_samseg_atlas"
+            / "template.nii.gz",
+            home_path / "simnibs" / "segmentation" / "simnibs_samseg_atlas"
+            / "template.nii",
+            home_path / "resources" / "templates"
+            / "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+        ]:
+            if candidate.exists():
+                return candidate
+
+        # 3. Broad search
+        for pattern in (
+            "mni_icbm152_t1_tal_nlin_asym_09c.nii.gz",
+            "mni_icbm152_t1_tal_nlin_asym_09c.nii",
+        ):
+            for found in home_path.rglob(pattern):
+                return found
+
+        return None
+
+    # ------------------------------------------------------------------
+    def _create_mni_warp_fields(self, model_m2m: Path) -> None:
+        """
+        Create toMNI/ displacement field NIfTIs from the affine coregistration
+        matrix produced by charm --initatlas.
+
+        charm --mesh requires:
+          toMNI/MNI2Conform_nonl.nii.gz   – displacement field in MNI space
+          toMNI/Conform2MNI_nonl.nii.gz   – displacement field in Conform space
+
+        Normally these are written by SAMSEG's saveWarpField() which requires
+        the full non-linear mesh deformation.  We create affine-only
+        approximations from coregistrationMatrices.mat (worldToWorldTransformMatrix:
+        atlas_mm → image_mm, i.e. MNI → Conform).  The affine approximation is
+        sufficient for EEG electrode placement because charm projects the
+        approximate MNI→Conform positions onto the actual scalp mesh as a final
+        step, which corrects any residual linear-only error.
+        """
+        import scipy.io as sio
+
+        session_log(self.session_id, "[SimNIBS] Creating toMNI/ warp fields from affine registration…")
+
+        tomni_dir = model_m2m / "toMNI"
+        tomni_dir.mkdir(exist_ok=True)
+
+        # Load the affine produced by charm --initatlas
+        coreg_file = model_m2m / "segmentation" / "coregistrationMatrices.mat"
+        if not coreg_file.exists():
+            raise FileNotFoundError(
+                f"coregistrationMatrices.mat not found: {coreg_file}. "
+                "charm --initatlas must complete successfully first."
+            )
+
+        mat = sio.loadmat(str(coreg_file))
+        W2W: np.ndarray | None = None
+        for key in ("worldToWorldTransformMatrix", "worldToWorldTransform", "transform"):
+            if key in mat:
+                W2W = np.asarray(mat[key], dtype=np.float64).squeeze()
+                break
+
+        if W2W is None:
+            keys = [k for k in mat if not k.startswith("_")]
+            raise KeyError(
+                f"Affine matrix not found in {coreg_file}. "
+                f"Available keys: {keys}"
+            )
+
+        if W2W.shape != (4, 4):
+            raise ValueError(
+                f"Expected (4,4) affine from coregistrationMatrices.mat, got {W2W.shape}."
+            )
+
+        W2W_inv = np.linalg.inv(W2W)   # Conform_mm → MNI_mm
+        session_log(
+            self.session_id,
+            f"[SimNIBS] W2W (MNI→Conform): det={np.linalg.det(W2W):.4f}"
+        )
+
+        # Conform (subject) T1 → defines the Conform grid
+        t1_img    = nib.load(str(model_m2m / "T1.nii.gz"))
+        t1_shape  = t1_img.shape[:3]
+        t1_affine = t1_img.affine
+
+        # MNI template → defines the MNI grid
+        tmpl_path = self._find_mni_template(model_m2m)
+        if tmpl_path:
+            session_log(self.session_id, f"[SimNIBS] MNI template: {tmpl_path}")
+            tmpl_img    = nib.load(str(tmpl_path))
+            tmpl_shape  = tmpl_img.shape[:3]
+            tmpl_affine = tmpl_img.affine
+        else:
+            session_log(
+                self.session_id,
+                "[SimNIBS] MNI template not found – using Conform T1 grid as fallback grid."
+            )
+            tmpl_shape  = t1_shape
+            tmpl_affine = t1_affine
+
+        # Conform → MNI  (reference = Conform T1)
+        session_log(self.session_id, f"[SimNIBS] Computing Conform→MNI field {t1_shape}…")
+        conf2mni = _compute_affine_displacement(t1_shape, t1_affine, W2W_inv)
+        _save_displacement_nifti(
+            conf2mni, t1_affine,
+            str(tomni_dir / "Conform2MNI_nonl.nii.gz"),
+        )
+
+        # MNI → Conform  (reference = MNI template)
+        session_log(self.session_id, f"[SimNIBS] Computing MNI→Conform field {tmpl_shape}…")
+        mni2conf = _compute_affine_displacement(tmpl_shape, tmpl_affine, W2W)
+        _save_displacement_nifti(
+            mni2conf, tmpl_affine,
+            str(tomni_dir / "MNI2Conform_nonl.nii.gz"),
+        )
+
+        session_log(self.session_id, "[SimNIBS] toMNI/ warp fields created (affine approximation).")
+
+    # ------------------------------------------------------------------
     def _inject_labels_and_run_charm(self, model_m2m: Path, seg_path: Path, deadline: float) -> None:
         """
         Inject our DL segmentation into charm's label_prep directory (resampled
@@ -397,6 +593,13 @@ class SimNIBSRunner:
         cereb_mask[(~left_x[:, None, None]) & brain_mask] = 2
         nib.save(nib.Nifti1Image(cereb_mask, affine), str(surfaces_dir / "cereb_mask.nii.gz"))
         session_log(self.session_id, "[SimNIBS] Created surfaces/cereb_mask.nii.gz (Ymaskhemis: 1=left, 2=right)")
+
+        # --- toMNI/ warp fields needed by charm --mesh (EEG position transform) ---
+        # SAMSEG normally creates these via saveWarpField(); we create affine-only
+        # approximations from the coregistrationMatrices.mat affine.  The small
+        # linear error is corrected when charm projects MNI positions onto the
+        # actual scalp mesh.
+        self._create_mni_warp_fields(model_m2m)
 
         # Run charm --surfaces --mesh from the model working dir (parent of m2m_subject/)
         session_log(self.session_id, "[SimNIBS] charm --surfaces --mesh: building surfaces + EEG positions…")
