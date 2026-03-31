@@ -78,8 +78,6 @@ export default function LogsPanel({ token, onUnauth }: Props) {
   const [search, setSearch] = useState("");
   const [levelFilter, setLevelFilter] = useState<LevelFilter>("ALL");
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  const [autoScroll, setAutoScroll] = useState(true);
-  const logEndRef = useRef<HTMLDivElement>(null);
   const logContainerRef = useRef<HTMLDivElement>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -102,7 +100,15 @@ export default function LogsPanel({ token, onUnauth }: Props) {
       setExpanded(new Set());
     }
     adminGetLogs(token, sessionId)
-      .then((raw) => setLogs(parseLogs(raw)))
+      .then((raw) => {
+        // Preserve scroll position on poll refreshes
+        const el = logContainerRef.current;
+        const scrollTop = el?.scrollTop ?? 0;
+        setLogs(parseLogs(raw).reverse());
+        if (!initial && el) {
+          requestAnimationFrame(() => { el.scrollTop = scrollTop; });
+        }
+      })
       .catch((e) => {
         if (e.message === "UNAUTHORIZED") onUnauth();
         else if (initial) setLogs([{ ts: "", level: "ERROR", message: e.message, extra: null }]);
@@ -120,21 +126,6 @@ export default function LogsPanel({ token, onUnauth }: Props) {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [selected, fetchLogs]);
 
-  // Auto-scroll to bottom when new logs arrive
-  useEffect(() => {
-    if (autoScroll && logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [logs, autoScroll]);
-
-  // Detect manual scroll to disable auto-scroll
-  function handleScroll() {
-    const el = logContainerRef.current;
-    if (!el) return;
-    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-    setAutoScroll(atBottom);
-  }
-
   const filtered = logs.filter((l) => {
     if (levelFilter !== "ALL" && l.level !== levelFilter) return false;
     if (search && !l.message.toLowerCase().includes(search.toLowerCase())) return false;
@@ -149,11 +140,6 @@ export default function LogsPanel({ token, onUnauth }: Props) {
       s.has(i) ? s.delete(i) : s.add(i);
       return s;
     });
-  }
-
-  function scrollToBottom() {
-    setAutoScroll(true);
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }
 
   return (
@@ -245,7 +231,6 @@ export default function LogsPanel({ token, onUnauth }: Props) {
             <Card className="flex-1 overflow-hidden flex flex-col">
               <div
                 ref={logContainerRef}
-                onScroll={handleScroll}
                 className="flex-1 overflow-y-auto font-mono text-xs"
               >
                 {loadingLogs ? (
@@ -288,22 +273,9 @@ export default function LogsPanel({ token, onUnauth }: Props) {
                         )}
                       </div>
                     ))}
-                    <div ref={logEndRef} />
                   </div>
                 )}
               </div>
-
-              {/* Scroll-to-bottom button */}
-              {!autoScroll && filtered.length > 0 && (
-                <div className="border-t border-border px-3 py-1.5 flex justify-center">
-                  <button
-                    onClick={scrollToBottom}
-                    className="text-[11px] text-accent hover:underline"
-                  >
-                    Scroll to latest
-                  </button>
-                </div>
-              )}
             </Card>
           </>
         ) : (
