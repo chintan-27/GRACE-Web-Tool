@@ -218,13 +218,15 @@ def _meshmesh_cmd() -> list[str]:
     """Return the command list prefix for running meshmesh."""
     home = _find_simnibs_home()
     if home:
-        wrapper = Path(home) / "bin" / "meshmesh"
-        if wrapper.exists():
-            return [str(wrapper)]
+        # Prefer Python module invocation — bin/ wrapper scripts contain
+        # hardcoded paths from the host that break inside Docker.
         for pyname in ("python3", "python"):
             py = Path(home) / "simnibs_env" / "bin" / pyname
             if py.exists():
                 return [str(py), "-m", "simnibs.cli.meshmesh"]
+        wrapper = Path(home) / "bin" / "meshmesh"
+        if wrapper.exists():
+            return [str(wrapper)]
 
     found = shutil.which("meshmesh")
     if found:
