@@ -621,10 +621,9 @@ class SimNIBSRunner:
           5. Save remapped labels as custom_tissues.nii.gz for post-processing.
           6. Run meshmesh to build the FEM mesh from custom labels.
         """
-        deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
         self._emit("simnibs_charm", 5)
 
-        # Step 1 — shared --initatlas base (fast, ~30s)
+        # Step 1 — shared --initatlas base (fast, ~30s); has its own internal deadline
         base_m2m = self._ensure_initatlas_base()
         self._emit("simnibs_charm_register", 12)
 
@@ -644,9 +643,11 @@ class SimNIBSRunner:
             content = content.replace(base_work_str, model_work_str)
             settings_file.write_text(content)
 
-        # Step 4 — inject DL labels + charm --surfaces --mesh (per model)
+        # Step 4 — inject DL labels + charm --surfaces --mesh (per model).
+        # Fresh deadline: surfaces + mesh together can take ~60–90 min.
         self._emit("simnibs_charm_surface", 15)
-        self._inject_labels_and_run_charm(model_m2m, seg_path, deadline)
+        surfaces_deadline = time.time() + SIMNIBS_TIMEOUT_SECONDS
+        self._inject_labels_and_run_charm(model_m2m, seg_path, surfaces_deadline)
         self._emit("simnibs_charm_done", 55)
 
         # Step 5 — save custom labels as custom_tissues.nii.gz for post-processing
@@ -654,12 +655,12 @@ class SimNIBSRunner:
         shutil.copy2(str(seg_path), str(custom_tissues))
         session_log(self.session_id, f"[SimNIBS] Custom labels → {custom_tissues}")
 
-        # Step 6 — meshmesh
+        # Step 6 — meshmesh (fresh deadline)
         custom_mesh = self.work_dir / f"{SUBJECT}_custom_mesh.msh"
         self._emit("simnibs_charm_mesh", 58)
         session_log(self.session_id, "[SimNIBS] meshmesh: building FEM mesh from custom labels…")
         cmd = _meshmesh_cmd() + [str(seg_path), str(custom_mesh), "--voxsize_meshing", "0.5"]
-        self._run_proc(cmd, "meshmesh", self.work_dir, deadline)
+        self._run_proc(cmd, "meshmesh", self.work_dir, time.time() + SIMNIBS_TIMEOUT_SECONDS)
 
         if not custom_mesh.exists():
             raise FileNotFoundError(f"meshmesh did not produce expected mesh: {custom_mesh}")
