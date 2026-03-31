@@ -45,6 +45,7 @@ grace.onnx
 
 *.log
 logs*
+!*LogsPanel*
 .env
 api/models/*.pth
 api/models/
