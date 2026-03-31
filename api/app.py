@@ -25,8 +25,8 @@ from services.redis_client import (
     enqueue_roast_job, get_roast_status, get_roast_progress, set_roast_status,
     enqueue_simnibs_job, get_simnibs_status, get_simnibs_progress, set_simnibs_status,
 )
-from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL, ALLOWED_ORIGINS
-from services.auth import require_jwt
+from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL, ALLOWED_ORIGINS, ADMIN_PASSWORD
+from services.auth import require_jwt, create_jwt
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -735,18 +735,124 @@ def get_logs(session_id: str, _: str = Depends(require_jwt)):
 
 
 # ============================================================
+# POST /admin/login
+# ============================================================
+@app.post("/admin/login")
+async def admin_login(body: dict = Body(...)):
+    password = body.get("password", "")
+    if not password or password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Invalid password")
+    token = create_jwt({"role": "admin"})
+    return {"token": token}
+
+
+# ============================================================
+# GET /admin/jobs  — aggregate live jobs across all schedulers
+# ============================================================
+@app.get("/admin/jobs")
+def get_admin_jobs(_: str = Depends(require_jwt)):
+    jobs = []
+
+    # GPU locks: HASH  gpu_id → "free" | "{session_id}:{model}"
+    gpu_lock_map = redis_client.hgetall("gpu_locks") or {}
+
+    # --- GPU segmentation jobs ---
+    # job_status:{session_id} is a HASH of model → status
+    for key in redis_client.scan_iter("job_status:*"):
+        session_id = key[len("job_status:"):]
+        model_statuses = redis_client.hgetall(key)
+        for model, status in model_statuses.items():
+            if status == "complete":
+                continue
+            progress_raw = redis_client.hget("progress", f"{session_id}:{model}")
+            progress = float(progress_raw) if progress_raw else 0.0
+            gpu = next(
+                (gid for gid, holder in gpu_lock_map.items() if holder == f"{session_id}:{model}"),
+                None,
+            )
+            jobs.append({
+                "type": "gpu_seg",
+                "session_id": session_id,
+                "model": model,
+                "run_id": None,
+                "status": status,
+                "progress": progress,
+                "gpu": gpu,
+            })
+
+    # --- ROAST jobs ---
+    for key in redis_client.scan_iter("roast_job_status:*"):
+        suffix = key[len("roast_job_status:"):]
+        parts = suffix.split(":", 2)
+        session_id = parts[0]
+        model = parts[1] if len(parts) > 1 else ""
+        run_id = parts[2] if len(parts) > 2 else ""
+        status = redis_client.get(key) or "unknown"
+        if status == "complete":
+            continue
+        progress_raw = redis_client.get(f"roast_progress:{suffix}")
+        progress = float(progress_raw) if progress_raw else 0.0
+        jobs.append({
+            "type": "roast",
+            "session_id": session_id,
+            "model": model,
+            "run_id": run_id,
+            "status": status,
+            "progress": progress,
+            "gpu": None,
+        })
+
+    # --- SimNIBS jobs ---
+    for key in redis_client.scan_iter("simnibs_job_status:*"):
+        suffix = key[len("simnibs_job_status:"):]
+        parts = suffix.split(":", 2)
+        session_id = parts[0]
+        model = parts[1] if len(parts) > 1 else ""
+        run_id = parts[2] if len(parts) > 2 else ""
+        status = redis_client.get(key) or "unknown"
+        if status == "complete":
+            continue
+        progress_raw = redis_client.get(f"simnibs_progress:{suffix}")
+        progress = float(progress_raw) if progress_raw else 0.0
+        jobs.append({
+            "type": "simnibs",
+            "session_id": session_id,
+            "model": model,
+            "run_id": run_id,
+            "status": status,
+            "progress": progress,
+            "gpu": None,
+        })
+
+    queue_depths = {
+        "gpu_seg": redis_client.llen("job_queue"),
+        "roast": redis_client.llen("roast_job_queue"),
+        "simnibs": redis_client.llen("simnibs_job_queue"),
+    }
+
+    return {"jobs": jobs, "queue_depths": queue_depths}
+
+
+# ============================================================
 # GET /admin/audit
 # ============================================================
 @app.get("/admin/audit")
-def get_audit(_: str = Depends(require_jwt)):
+def get_audit(
+    _: str = Depends(require_jwt),
+    offset: int = 0,
+    limit: int = 100,
+):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM audit")
+    total = c.fetchone()[0]
     c.execute(
-        "SELECT ts, session_id, model, event, detail FROM audit ORDER BY id DESC LIMIT 500"
+        "SELECT ts, session_id, model, event, detail FROM audit ORDER BY id DESC LIMIT ? OFFSET ?",
+        (limit, offset),
     )
     rows = c.fetchall()
     conn.close()
-    return {"events": rows}
+    return {"events": rows, "total": total, "offset": offset, "limit": limit}
 
 
 # ============================================================

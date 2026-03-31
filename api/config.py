@@ -37,9 +37,11 @@ JWT_ALGORITHM = "HS256"
 
 HMAC_SECRET = os.getenv("HMAC_SECRET", "CHANGE_ME_HMAC")
 
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "CHANGE_ME_ADMIN")
+
 # Warn loudly if placeholder secrets are in use
-_WEAK_SECRETS = {"CHANGE_ME", "CHANGE_ME_HMAC", "change_me_in_production", "change_me_hmac_in_production"}
-if JWT_SECRET in _WEAK_SECRETS or HMAC_SECRET in _WEAK_SECRETS:
+_WEAK_SECRETS = {"CHANGE_ME", "CHANGE_ME_HMAC", "CHANGE_ME_ADMIN", "change_me_in_production", "change_me_hmac_in_production"}
+if JWT_SECRET in _WEAK_SECRETS or HMAC_SECRET in _WEAK_SECRETS or ADMIN_PASSWORD in _WEAK_SECRETS:
     print("[SECURITY WARNING] JWT_SECRET or HMAC_SECRET is set to a weak default. "
           "Set strong random values in your .env before deploying to production.")
 

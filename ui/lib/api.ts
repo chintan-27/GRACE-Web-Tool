@@ -405,6 +405,117 @@ export async function cancelJob(sessionId: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------
+// ADMIN — types
+// ---------------------------------------------------------------------
+export interface AdminJob {
+  type: "gpu_seg" | "roast" | "simnibs";
+  session_id: string;
+  model: string;
+  run_id: string | null;
+  status: string;
+  progress: number;
+  gpu: string | null;
+}
+
+export interface AdminJobsResponse {
+  jobs: AdminJob[];
+  queue_depths: { gpu_seg: number; roast: number; simnibs: number };
+}
+
+export interface AuditResponse {
+  events: [string, string, string, string, string][];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface SessionMeta {
+  session_id: string;
+  has_logs: boolean;
+  created: number;
+}
+
+function authHeader(token: string): HeadersInit {
+  return { Authorization: `Bearer ${token}` };
+}
+
+// ---------------------------------------------------------------------
+// POST /admin/login
+// ---------------------------------------------------------------------
+export async function adminLogin(password: string): Promise<{ token: string }> {
+  const res = await fetch(`${API_BASE}/admin/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  if (!res.ok) {
+    let detail = "Login failed";
+    try { const err = await res.json(); detail = err.detail || detail; } catch {}
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /admin/jobs
+// ---------------------------------------------------------------------
+export async function getAdminJobs(token: string): Promise<AdminJobsResponse> {
+  const res = await fetch(`${API_BASE}/admin/jobs`, { headers: authHeader(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to fetch jobs");
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /admin/audit
+// ---------------------------------------------------------------------
+export async function getAdminAudit(
+  token: string,
+  offset = 0,
+  limit = 100,
+): Promise<AuditResponse> {
+  const res = await fetch(
+    `${API_BASE}/admin/audit?offset=${offset}&limit=${limit}`,
+    { headers: authHeader(token) },
+  );
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to fetch audit log");
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /logs  — list sessions (admin)
+// ---------------------------------------------------------------------
+export async function adminListSessions(token: string): Promise<{ sessions: SessionMeta[] }> {
+  const res = await fetch(`${API_BASE}/logs`, { headers: authHeader(token) });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error("Failed to list sessions");
+  return res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /admin/logs/{session_id}  — raw JSONL text
+// ---------------------------------------------------------------------
+export async function adminGetLogs(token: string, sessionId: string): Promise<string> {
+  const res = await fetch(`${API_BASE}/admin/logs/${sessionId}`, {
+    headers: authHeader(token),
+  });
+  if (res.status === 401) throw new Error("UNAUTHORIZED");
+  if (!res.ok) throw new Error(`No logs for ${sessionId}`);
+  return res.text();
+}
+
+// ---------------------------------------------------------------------
+// DELETE /session/{session_id}  — admin delete with auth
+// ---------------------------------------------------------------------
+export async function adminDeleteSession(token: string, sessionId: string): Promise<void> {
+  await fetch(`${API_BASE}/session/${sessionId}`, {
+    method: "DELETE",
+    headers: authHeader(token),
+  });
+}
+
+// ---------------------------------------------------------------------
 // GET /health
 // ---------------------------------------------------------------------
 export async function getHealth(): Promise<HealthResponse> {
