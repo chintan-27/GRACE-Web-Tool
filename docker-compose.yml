@@ -51,6 +51,7 @@ services:
       # Security
       - JWT_SECRET=${JWT_SECRET:-change_me_in_production}
       - HMAC_SECRET=${HMAC_SECRET:-change_me_hmac_in_production}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-CHANGE_ME_ADMIN}
       # GPU
       - GPU_COUNT=${GPU_COUNT:-4}
       - JOB_TIMEOUT_SECONDS=${JOB_TIMEOUT_SECONDS:-3600}
