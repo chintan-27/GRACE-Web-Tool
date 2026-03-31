@@ -246,15 +246,39 @@ export default function TESPage() {
     pendingLeaveRef.current = () => router.back();
   }, [router]);
 
-  // Attach beforeunload for tab/window close
+  // Guard both browser back (popstate) and tab/window close (beforeunload).
+  // Next.js App Router handles back-button as client-side popstate navigation,
+  // so beforeunload alone does not intercept it.
   useEffect(() => {
-    const handler = (e: BeforeUnloadEvent) => {
+    // Push a duplicate history entry so the first back-press lands here
+    // instead of immediately leaving; we then show the modal.
+    window.history.pushState(null, "", window.location.href);
+
+    const onPopState = () => {
+      // Re-push to stay on this page, then open the guard modal.
+      window.history.pushState(null, "", window.location.href);
+      setLeaveGuardOpen(true);
+      pendingLeaveRef.current = () => {
+        // Remove listener before navigating so we don't loop.
+        window.removeEventListener("popstate", onPopState);
+        router.back();
+        // back() will pop twice: our synthetic entry + the real one.
+        router.back();
+      };
+    };
+
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = "";
     };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, []);
+
+    window.addEventListener("popstate", onPopState);
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+    };
+  }, [router]);
 
   // ── Reconnect state (for page-refresh recovery) ───────────────────────────
   type ReconnectStatus = "checking" | "running" | "complete" | "none";
