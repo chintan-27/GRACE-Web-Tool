@@ -751,6 +751,7 @@ async def admin_login(body: dict = Body(...)):
 # ============================================================
 @app.get("/admin/jobs")
 def get_admin_jobs(_: str = Depends(require_jwt)):
+    ACTIVE_STATUSES = {"queued", "waiting_gpu", "assigned", "running"}
     jobs = []
 
     # GPU locks: HASH  gpu_id → "free" | "{session_id}:{model}"
@@ -762,7 +763,7 @@ def get_admin_jobs(_: str = Depends(require_jwt)):
         session_id = key[len("job_status:"):]
         model_statuses = redis_client.hgetall(key)
         for model, status in model_statuses.items():
-            if status == "complete":
+            if status not in ACTIVE_STATUSES:
                 continue
             progress_raw = redis_client.hget("progress", f"{session_id}:{model}")
             progress = float(progress_raw) if progress_raw else 0.0
@@ -788,7 +789,7 @@ def get_admin_jobs(_: str = Depends(require_jwt)):
         model = parts[1] if len(parts) > 1 else ""
         run_id = parts[2] if len(parts) > 2 else ""
         status = redis_client.get(key) or "unknown"
-        if status == "complete":
+        if status not in ACTIVE_STATUSES:
             continue
         progress_raw = redis_client.get(f"roast_progress:{suffix}")
         progress = float(progress_raw) if progress_raw else 0.0
@@ -810,7 +811,7 @@ def get_admin_jobs(_: str = Depends(require_jwt)):
         model = parts[1] if len(parts) > 1 else ""
         run_id = parts[2] if len(parts) > 2 else ""
         status = redis_client.get(key) or "unknown"
-        if status == "complete":
+        if status not in ACTIVE_STATUSES:
             continue
         progress_raw = redis_client.get(f"simnibs_progress:{suffix}")
         progress = float(progress_raw) if progress_raw else 0.0

@@ -77,22 +77,34 @@ export default function AdminPage() {
     return <LoginGate onLogin={setToken} />;
   }
 
+  const runningCount = jobsData?.jobs.filter(j => j.status === "running").length ?? 0;
+
   return (
     <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between mb-8 pb-6 border-b border-border">
           <div>
-            <h1 className="text-xl font-bold">Admin</h1>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {jobsData ? `${jobsData.jobs.length} active job${jobsData.jobs.length !== 1 ? "s" : ""}` : "Loading…"}
+            <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
+            <p className="text-sm text-foreground-muted mt-1">
+              {jobsData ? (
+                <>
+                  {runningCount > 0 && (
+                    <span className="inline-flex items-center gap-1.5 mr-3">
+                      <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+                      <span className="text-accent font-medium">{runningCount} running</span>
+                    </span>
+                  )}
+                  <span>{jobsData.jobs.length} active job{jobsData.jobs.length !== 1 ? "s" : ""}</span>
+                </>
+              ) : "Loading…"}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <Button
               size="sm"
               variant="outline"
-              className="h-8 gap-1.5 text-xs"
+              className="h-9 gap-2 text-xs border-border hover:bg-surface-elevated"
               onClick={manualRefresh}
               disabled={refreshing}
             >
@@ -102,7 +114,7 @@ export default function AdminPage() {
             <Button
               size="sm"
               variant="ghost"
-              className="h-8 gap-1.5 text-xs text-muted-foreground"
+              className="h-9 gap-2 text-xs text-foreground-muted hover:text-foreground"
               onClick={handleUnauth}
             >
               <LogOut className="h-3.5 w-3.5" />
