@@ -44,28 +44,38 @@ def _upsert_job(job_type: str, session_id: str, model: str, run_id: str = "",
                 gpu: str | None = None) -> None:
     """Insert or update a job in the active_jobs registry.
 
-    Automatically removes the entry when `status` is terminal.
+    - Terminal status (complete/error/cancelled): removes the entry.
+    - Progress-only update (status=None) with no existing entry: skipped
+      (the job has already been removed, no need to recreate it).
     """
     field = _active_field(job_type, session_id, model, run_id)
     if status in _TERMINAL:
         redis_client.hdel(ACTIVE_JOBS_KEY, field)
         return
     raw = redis_client.hget(ACTIVE_JOBS_KEY, field)
-    data: dict = json.loads(raw) if raw else {
-        "type": job_type,
-        "session_id": session_id,
-        "model": model,
-        "run_id": run_id or None,
-        "status": "queued",
-        "progress": 0.0,
-        "gpu": None,
-    }
-    if status is not None:
-        data["status"] = status
-    if progress is not None:
-        data["progress"] = float(progress)
-    if gpu is not None:
-        data["gpu"] = str(gpu)
+    if raw is None:
+        if status is None:
+            # Progress-only update for a job not in the registry — already
+            # completed/removed, nothing to do.
+            return
+        # First time we see this job — create the entry.
+        data: dict = {
+            "type": job_type,
+            "session_id": session_id,
+            "model": model,
+            "run_id": run_id or None,
+            "status": status,
+            "progress": float(progress) if progress is not None else 0.0,
+            "gpu": str(gpu) if gpu is not None else None,
+        }
+    else:
+        data = json.loads(raw)
+        if status is not None:
+            data["status"] = status
+        if progress is not None:
+            data["progress"] = float(progress)
+        if gpu is not None:
+            data["gpu"] = str(gpu)
     redis_client.hset(ACTIVE_JOBS_KEY, field, json.dumps(data))
 
 

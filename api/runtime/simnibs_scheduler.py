@@ -34,12 +34,14 @@ class SimNIBSScheduler:
         session_log(session_id, "[SimNIBS] Dequeued job")
         push_event(session_id, {"event": "simnibs_start", "progress": 2})
 
+        model_name = payload.get("model_name", "")
+        run_id = payload.get("run_id", "")
         try:
             runner = SimNIBSRunner(session_id, payload)
             runner.run()
         except Exception as e:
             log_error(session_id, f"[SimNIBS] Job failed: {e}")
-            set_simnibs_status(session_id, "error")
+            set_simnibs_status(session_id, "error", model_name, run_id)
 
     def scheduler_loop(self):
         log_info("SYSTEM", f"[SimNIBS] Scheduler started ({self.max_workers} workers)")
