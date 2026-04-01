@@ -143,6 +143,7 @@ export default function AdminPage() {
             <HealthPanel
               health={health}
               queueDepths={jobsData?.queue_depths ?? null}
+              jobs={jobsData?.jobs ?? []}
               lastUpdated={lastUpdated}
             />
           </TabsContent>

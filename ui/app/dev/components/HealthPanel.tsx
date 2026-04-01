@@ -1,12 +1,13 @@
 "use client";
 
 import { Progress } from "@/components/ui/progress";
-import { HealthResponse, AdminJobsResponse } from "@/lib/api";
+import { HealthResponse, AdminJobsResponse, AdminJob } from "@/lib/api";
 import { Wifi, WifiOff, Cpu, HardDrive, Server, Activity } from "lucide-react";
 
 interface Props {
   health: HealthResponse | null;
   queueDepths: AdminJobsResponse["queue_depths"] | null;
+  jobs: AdminJob[];
   lastUpdated: Date | null;
 }
 
@@ -22,7 +23,7 @@ function utilBg(pct: number): string {
   return "bg-error/10 border-error/20";
 }
 
-export default function HealthPanel({ health, queueDepths, lastUpdated }: Props) {
+export default function HealthPanel({ health, queueDepths, jobs, lastUpdated }: Props) {
   if (!health) {
     return (
       <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
@@ -143,27 +144,41 @@ export default function HealthPanel({ health, queueDepths, lastUpdated }: Props)
         <p className="text-xs text-foreground-muted">GPU info: {health.gpu_usage}</p>
       )}
 
-      {/* Queue depths */}
+      {/* Job status by type */}
       {queueDepths && (
         <div>
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted mb-4">Queue Depths</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted mb-4">Jobs by Type</h3>
           <div className="grid grid-cols-3 gap-4">
             {([
-              { label: "Segmentation", key: "gpu_seg" as const, color: "text-accent", bg: "bg-accent/10 border-accent/20", icon: "bg-accent/10" },
-              { label: "ROAST", key: "roast" as const, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", icon: "bg-blue-500/10" },
-              { label: "SimNIBS", key: "simnibs" as const, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: "bg-purple-500/10" },
-            ] as const).map(({ label, key, color, bg, icon }) => (
-              <div key={key} className={`rounded-xl border p-5 shadow-medical-lg ${bg}`}>
-                <div className="flex items-center gap-3 mb-3">
-                  <div className={`p-2 rounded-lg ${icon}`}>
-                    <Server className={`h-4 w-4 ${color}`} />
+              { label: "Segmentation", type: "gpu_seg" as const, qKey: "gpu_seg" as const, color: "text-accent", bg: "bg-accent/10 border-accent/20", dot: "bg-accent" },
+              { label: "ROAST",        type: "roast"   as const, qKey: "roast"   as const, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", dot: "bg-blue-400" },
+              { label: "SimNIBS",      type: "simnibs" as const, qKey: "simnibs" as const, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", dot: "bg-purple-400" },
+            ] as const).map(({ label, type, qKey, color, bg, dot }) => {
+              const running  = jobs.filter(j => j.type === type && j.status === "running").length;
+              const active   = jobs.filter(j => j.type === type).length;
+              const pending  = queueDepths[qKey];
+              return (
+                <div key={qKey} className={`rounded-xl border p-5 shadow-medical-lg ${bg}`}>
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className={`p-2 rounded-lg ${bg.split(" ")[0]}`}>
+                      <Server className={`h-4 w-4 ${color}`} />
+                    </div>
+                    <span className="text-sm text-foreground-secondary">{label}</span>
                   </div>
-                  <span className="text-sm text-foreground-secondary">{label}</span>
+                  <div className="flex items-baseline gap-2 mb-3">
+                    <p className={`text-3xl font-bold ${color}`}>{active}</p>
+                    <p className="text-xs text-foreground-muted">active</p>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-foreground-muted">
+                    <span className="flex items-center gap-1.5">
+                      <span className={`h-1.5 w-1.5 rounded-full animate-pulse ${running > 0 ? dot : "bg-foreground-muted/30"}`} />
+                      {running} running
+                    </span>
+                    <span>{pending} pending</span>
+                  </div>
                 </div>
-                <p className={`text-3xl font-bold ${color}`}>{queueDepths[key]}</p>
-                <p className="text-xs text-foreground-muted mt-1">in queue</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

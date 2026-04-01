@@ -790,6 +790,20 @@ class SimNIBSRunner:
                     session_log(self.session_id, f"[SimNIBS] Collected {output_type} → {dest}")
                     break
 
+        # Fallback for magnJ: SimNIBS may use a longer name like
+        # subject_custom_mesh_TDCS_1_scalar_magnJ.nii.gz depending on mesh type.
+        # Search for any *magnJ.nii.gz that isn't a WM/GM masked variant.
+        if "magnJ" not in found:
+            all_magnj = [
+                f for f in fem_dir.rglob("*magnJ.nii.gz")
+                if not f.name.startswith(("wm_", "gm_"))
+            ]
+            if all_magnj:
+                dest = out_dir / "magnJ.nii.gz"
+                shutil.copy2(all_magnj[0], dest)
+                found["magnJ"] = dest
+                session_log(self.session_id, f"[SimNIBS] Collected magnJ (fallback) → {dest} (from {all_magnj[0].name})")
+
         if "magnJ" not in found:
             raise FileNotFoundError(
                 f"SimNIBS finished but required output 'magnJ' is missing. "
