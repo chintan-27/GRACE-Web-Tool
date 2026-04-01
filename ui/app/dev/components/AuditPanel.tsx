@@ -45,10 +45,10 @@ export default function AuditPanel({ token, onUnauth }: Props) {
   const end = Math.min((page + 1) * PAGE_SIZE, total);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
       {/* Pagination header */}
-      <div className="flex items-center justify-between text-xs text-muted-foreground">
-        <span>
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-foreground-muted">
           {total > 0 ? `Showing ${start}–${end} of ${total}` : "No audit events"}
         </span>
         <div className="flex gap-2">
@@ -75,58 +75,62 @@ export default function AuditPanel({ token, onUnauth }: Props) {
 
       {/* Table */}
       {loading ? (
-        <p className="text-sm text-muted-foreground">Loading…</p>
+        <p className="text-sm text-foreground-muted py-8 text-center">Loading…</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs font-mono">
-            <thead>
-              <tr className="border-b border-border text-[11px] text-muted-foreground uppercase">
-                <th className="text-left pb-2 pr-4">Timestamp</th>
-                <th className="text-left pb-2 pr-4">Session</th>
-                <th className="text-left pb-2 pr-4">Model</th>
-                <th className="text-left pb-2 pr-4">Event</th>
-                <th className="text-left pb-2">Detail</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/50">
-              {rows.map(([ts, sessionId, model, event, detail], i) => {
-                const truncated = detail.length > 60 ? detail.slice(0, 60) + "…" : detail;
-                const needsExpand = detail.length > 60;
-                return (
-                  <>
-                    <tr key={i} className="hover:bg-surface/40">
-                      <td className="py-2 pr-4 text-muted-foreground whitespace-nowrap">{ts}</td>
-                      <td className="py-2 pr-4">
-                        <span title={sessionId}>{sessionId.slice(0, 8)}…</span>
+        <div className="bg-surface border border-border rounded-xl shadow-medical-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-mono">
+              <thead>
+                <tr className="border-b border-border bg-surface-elevated/50">
+                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-foreground-muted font-sans">Timestamp</th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-foreground-muted font-sans">Session</th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-foreground-muted font-sans">Model</th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-foreground-muted font-sans">Event</th>
+                  <th className="text-left py-3 px-4 text-xs font-semibold uppercase tracking-wider text-foreground-muted font-sans">Detail</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(([ts, sessionId, model, event, detail], i) => {
+                  const truncated = detail.length > 60 ? detail.slice(0, 60) + "…" : detail;
+                  const needsExpand = detail.length > 60;
+                  return (
+                    <tr key={i} className="border-b border-border/50 hover:bg-surface-elevated/40 transition-colors">
+                      <td className="py-2.5 px-4 text-xs text-foreground-muted whitespace-nowrap">{ts}</td>
+                      <td className="py-2.5 px-4 text-xs">
+                        <span title={sessionId} className="text-foreground-secondary">{sessionId.slice(0, 8)}</span>
                       </td>
-                      <td className="py-2 pr-4 text-muted-foreground">{model || "—"}</td>
-                      <td className="py-2 pr-4">
-                        <span className="text-accent">{event}</span>
-                      </td>
-                      <td className="py-2">
-                        <span className="text-muted-foreground">
-                          {needsExpand && !expanded.has(i) ? truncated : detail}
+                      <td className="py-2.5 px-4 text-xs text-foreground-muted">{model || "—"}</td>
+                      <td className="py-2.5 px-4">
+                        <span className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium bg-accent/15 text-accent border border-accent/25">
+                          {event}
                         </span>
-                        {needsExpand && (
-                          <button
-                            onClick={() => toggleExpand(i)}
-                            className="ml-1 text-muted-foreground hover:text-foreground inline-flex items-center"
-                          >
-                            {expanded.has(i)
-                              ? <ChevronDown className="h-3 w-3" />
-                              : <ChevronRight className="h-3 w-3" />}
-                          </button>
-                        )}
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-foreground-muted">
+                            {needsExpand && !expanded.has(i) ? truncated : detail}
+                          </span>
+                          {needsExpand && (
+                            <button
+                              onClick={() => toggleExpand(i)}
+                              className="text-foreground-muted hover:text-foreground transition-colors shrink-0"
+                            >
+                              {expanded.has(i)
+                                ? <ChevronDown className="h-3.5 w-3.5" />
+                                : <ChevronRight className="h-3.5 w-3.5" />}
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
-          {rows.length === 0 && !loading && (
-            <p className="text-center text-muted-foreground text-sm py-8">No audit events yet.</p>
-          )}
+                  );
+                })}
+              </tbody>
+            </table>
+            {rows.length === 0 && !loading && (
+              <p className="text-center text-foreground-muted text-sm py-12">No audit events yet.</p>
+            )}
+          </div>
         </div>
       )}
     </div>

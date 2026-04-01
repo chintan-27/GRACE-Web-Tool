@@ -1,9 +1,8 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { HealthResponse, AdminJobsResponse } from "@/lib/api";
-import { Wifi, WifiOff, Cpu, HardDrive, Server } from "lucide-react";
+import { Wifi, WifiOff, Cpu, HardDrive, Server, Activity } from "lucide-react";
 
 interface Props {
   health: HealthResponse | null;
@@ -11,9 +10,26 @@ interface Props {
   lastUpdated: Date | null;
 }
 
+function utilColor(pct: number): string {
+  if (pct < 50) return "text-success";
+  if (pct < 80) return "text-warning";
+  return "text-error";
+}
+
+function utilBg(pct: number): string {
+  if (pct < 50) return "bg-success/10 border-success/20";
+  if (pct < 80) return "bg-warning/10 border-warning/20";
+  return "bg-error/10 border-error/20";
+}
+
 export default function HealthPanel({ health, queueDepths, lastUpdated }: Props) {
   if (!health) {
-    return <div className="text-sm text-muted-foreground">Loading system health…</div>;
+    return (
+      <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
+        <Activity className="h-4 w-4 mr-2 animate-pulse" />
+        Loading system health…
+      </div>
+    );
   }
 
   const memUsedMb = health.mem_total_mb - health.mem_available_mb;
@@ -21,74 +37,102 @@ export default function HealthPanel({ health, queueDepths, lastUpdated }: Props)
   const gpus = Array.isArray(health.gpu_usage) ? health.gpu_usage : [];
 
   return (
-    <div className="space-y-6">
-      {/* Top stat row */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <div className="space-y-8 animate-fade-in">
+      {/* System stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {/* Redis */}
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-1">
+        <div className="bg-surface border border-border rounded-xl p-5 shadow-medical-lg">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`p-2 rounded-lg ${health.redis ? "bg-success/10" : "bg-error/10"}`}>
               {health.redis
                 ? <Wifi className="h-4 w-4 text-success" />
-                : <WifiOff className="h-4 w-4 text-destructive" />}
-              <span className="text-xs text-muted-foreground">Redis</span>
+                : <WifiOff className="h-4 w-4 text-error" />}
             </div>
-            <p className={`text-sm font-semibold ${health.redis ? "text-success" : "text-destructive"}`}>
+            <span className="text-sm text-foreground-secondary">Redis</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`h-2 w-2 rounded-full ${health.redis ? "bg-success animate-pulse" : "bg-error"}`} />
+            <span className={`text-lg font-semibold ${health.redis ? "text-success" : "text-error"}`}>
               {health.redis ? "Connected" : "Down"}
-            </p>
-          </CardContent>
-        </Card>
+            </span>
+          </div>
+        </div>
 
         {/* CPU */}
-        <Card>
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-1">
-              <Cpu className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">CPU cores</span>
+        <div className="bg-surface border border-border rounded-xl p-5 shadow-medical-lg">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2 rounded-lg bg-blue-500/10">
+              <Cpu className="h-4 w-4 text-blue-400" />
             </div>
-            <p className="text-sm font-semibold">{health.cpu_count}</p>
-          </CardContent>
-        </Card>
+            <span className="text-sm text-foreground-secondary">CPU Cores</span>
+          </div>
+          <span className="text-2xl font-bold text-foreground">{health.cpu_count}</span>
+        </div>
 
         {/* Memory */}
-        <Card className="col-span-2">
-          <CardContent className="pt-5">
-            <div className="flex items-center gap-2 mb-2">
-              <HardDrive className="h-4 w-4 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">System memory</span>
-              <span className="ml-auto text-xs text-muted-foreground">
-                {memUsedMb.toFixed(0)} / {health.mem_total_mb.toFixed(0)} MB
-              </span>
+        <div className="bg-surface border border-border rounded-xl p-5 shadow-medical-lg">
+          <div className="flex items-center gap-3 mb-3">
+            <div className={`p-2 rounded-lg ${utilBg(memPct)}`}>
+              <HardDrive className={`h-4 w-4 ${utilColor(memPct)}`} />
             </div>
-            <Progress value={memPct} className="h-2" />
-          </CardContent>
-        </Card>
+            <span className="text-sm text-foreground-secondary">System Memory</span>
+          </div>
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className={`text-2xl font-bold ${utilColor(memPct)}`}>{Math.round(memPct)}%</span>
+            <span className="text-xs text-foreground-muted">
+              {(memUsedMb / 1024).toFixed(1)} / {(health.mem_total_mb / 1024).toFixed(1)} GB
+            </span>
+          </div>
+          <Progress value={memPct} className="h-2" />
+        </div>
       </div>
 
-      {/* GPU cards */}
+      {/* GPUs */}
       {gpus.length > 0 && (
         <div>
-          <h3 className="text-xs font-medium uppercase text-muted-foreground mb-3">GPUs</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted mb-4">GPUs</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {gpus.map((g) => {
               const vramPct = g.mem_total > 0 ? (g.mem_used / g.mem_total) * 100 : 0;
               return (
-                <Card key={g.gpu}>
-                  <CardHeader className="pb-2 pt-4 px-4">
-                    <CardTitle className="text-xs text-muted-foreground flex justify-between">
-                      <span>GPU {g.gpu}</span>
-                      <span className="text-foreground font-semibold">{g.util}%</span>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="px-4 pb-4 space-y-2">
-                    <Progress value={g.util} className="h-1.5" />
-                    <div className="flex justify-between text-[11px] text-muted-foreground">
-                      <span>VRAM</span>
-                      <span>{(g.mem_used / 1024).toFixed(1)} / {(g.mem_total / 1024).toFixed(1)} GB</span>
+                <div
+                  key={g.gpu}
+                  className="bg-surface border border-border rounded-xl p-4 shadow-medical-lg hover:shadow-glow transition-shadow duration-300"
+                >
+                  <div className="flex items-center justify-between mb-4">
+                    <span className="text-sm font-medium text-foreground">GPU {g.gpu}</span>
+                    <span className={`text-lg font-bold ${utilColor(g.util)}`}>{g.util}%</span>
+                  </div>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between text-[11px] text-foreground-muted mb-1.5">
+                        <span>Utilization</span>
+                      </div>
+                      <div className="h-2 bg-surface-elevated rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            g.util < 50 ? "bg-success" : g.util < 80 ? "bg-warning" : "bg-error"
+                          }`}
+                          style={{ width: `${g.util}%` }}
+                        />
+                      </div>
                     </div>
-                    <Progress value={vramPct} className="h-1" />
-                  </CardContent>
-                </Card>
+                    <div>
+                      <div className="flex justify-between text-[11px] text-foreground-muted mb-1.5">
+                        <span>VRAM</span>
+                        <span>{(g.mem_used / 1024).toFixed(1)} / {(g.mem_total / 1024).toFixed(1)} GB</span>
+                      </div>
+                      <div className="h-1.5 bg-surface-elevated rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            vramPct < 50 ? "bg-blue-400" : vramPct < 80 ? "bg-amber-400" : "bg-red-400"
+                          }`}
+                          style={{ width: `${vramPct}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -96,38 +140,36 @@ export default function HealthPanel({ health, queueDepths, lastUpdated }: Props)
       )}
 
       {typeof health.gpu_usage === "string" && (
-        <p className="text-xs text-muted-foreground">GPU info: {health.gpu_usage}</p>
+        <p className="text-xs text-foreground-muted">GPU info: {health.gpu_usage}</p>
       )}
 
       {/* Queue depths */}
       {queueDepths && (
         <div>
-          <h3 className="text-xs font-medium uppercase text-muted-foreground mb-3">Queue depths</h3>
-          <div className="grid grid-cols-3 gap-3">
-            {(
-              [
-                { label: "Segmentation", key: "gpu_seg" as const, color: "text-accent" },
-                { label: "ROAST", key: "roast" as const, color: "text-blue-400" },
-                { label: "SimNIBS", key: "simnibs" as const, color: "text-purple-400" },
-              ] as const
-            ).map(({ label, key, color }) => (
-              <Card key={key}>
-                <CardContent className="pt-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">{label}</span>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-foreground-muted mb-4">Queue Depths</h3>
+          <div className="grid grid-cols-3 gap-4">
+            {([
+              { label: "Segmentation", key: "gpu_seg" as const, color: "text-accent", bg: "bg-accent/10 border-accent/20", icon: "bg-accent/10" },
+              { label: "ROAST", key: "roast" as const, color: "text-blue-400", bg: "bg-blue-500/10 border-blue-500/20", icon: "bg-blue-500/10" },
+              { label: "SimNIBS", key: "simnibs" as const, color: "text-purple-400", bg: "bg-purple-500/10 border-purple-500/20", icon: "bg-purple-500/10" },
+            ] as const).map(({ label, key, color, bg, icon }) => (
+              <div key={key} className={`rounded-xl border p-5 shadow-medical-lg ${bg}`}>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className={`p-2 rounded-lg ${icon}`}>
+                    <Server className={`h-4 w-4 ${color}`} />
                   </div>
-                  <p className={`text-xl font-bold ${color}`}>{queueDepths[key]}</p>
-                  <p className="text-[11px] text-muted-foreground">queued</p>
-                </CardContent>
-              </Card>
+                  <span className="text-sm text-foreground-secondary">{label}</span>
+                </div>
+                <p className={`text-3xl font-bold ${color}`}>{queueDepths[key]}</p>
+                <p className="text-xs text-foreground-muted mt-1">in queue</p>
+              </div>
             ))}
           </div>
         </div>
       )}
 
       {lastUpdated && (
-        <p className="text-[11px] text-muted-foreground text-right">
+        <p className="text-[11px] text-foreground-muted text-right">
           Updated {lastUpdated.toLocaleTimeString()}
         </p>
       )}
