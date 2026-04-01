@@ -59,9 +59,49 @@ def _validate_model_name(model_name: str) -> str:
     return model_name
 
 
+_STALE_STATUSES = {b"queued", b"waiting_gpu", b"assigned", b"running"}
+
+
+def _cleanup_stale_jobs():
+    """On startup, mark any non-terminal job status entries as 'error'.
+
+    Redis keys persist across restarts, so jobs that were running/queued when
+    the server went down would otherwise appear active forever.
+    """
+    cleaned = 0
+    try:
+        # GPU seg: job_status:{session_id}  (hashes)
+        for key in redis_client.scan_iter("job_status:*"):
+            fields = redis_client.hgetall(key)
+            for model, status in fields.items():
+                if status in _STALE_STATUSES:
+                    redis_client.hset(key, model, "error")
+                    cleaned += 1
+
+        # ROAST: roast_job_status:*  (plain strings)
+        for key in redis_client.scan_iter("roast_job_status:*"):
+            if redis_client.get(key) in _STALE_STATUSES:
+                redis_client.set(key, "error")
+                cleaned += 1
+
+        # SimNIBS: simnibs_job_status:*  (plain strings)
+        for key in redis_client.scan_iter("simnibs_job_status:*"):
+            if redis_client.get(key) in _STALE_STATUSES:
+                redis_client.set(key, "error")
+                cleaned += 1
+
+        if cleaned:
+            print(f"[startup] Marked {cleaned} stale job(s) as error")
+        else:
+            print("[startup] No stale jobs found")
+    except Exception as exc:
+        print(f"[startup] Stale job cleanup failed: {exc}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP
+    _cleanup_stale_jobs()
     import threading
     t = threading.Thread(target=scheduler.scheduler_loop, daemon=True)
     t.start()
