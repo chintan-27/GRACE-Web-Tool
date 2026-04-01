@@ -20,29 +20,63 @@ PROGRESS_KEY = "progress"          # hash: session:model -> %
 EVENT_STREAM = "sse_events"        # list
 JOB_STATUS = "job_status"          # hash: session:model -> status
 
+# Single source of truth for live jobs shown in the admin dashboard.
+# Hash:  field = "{type}:{session_id}:{model}:{run_id}"
+#        value = JSON { type, session_id, model, run_id, status, progress, gpu }
+# Jobs are inserted on enqueue and DELETED when they reach a terminal state
+# (complete / error / cancelled), so this hash only ever contains active jobs.
+ACTIVE_JOBS_KEY = "active_jobs"
+_TERMINAL = {"complete", "error", "cancelled"}
+# TTL (seconds) applied to individual legacy status/progress keys
+_ACTIVE_TTL  = 86_400   # 24 h safety net for running keys
+_DONE_TTL    = 3_600    # 1 h after a terminal state they can auto-expire
+
+
+# -------------------------------------------------------------
+# Active-jobs registry helpers
+# -------------------------------------------------------------
+def _active_field(job_type: str, session_id: str, model: str, run_id: str = "") -> str:
+    return f"{job_type}:{session_id}:{model}:{run_id}" if run_id else f"{job_type}:{session_id}:{model}"
+
+
+def _upsert_job(job_type: str, session_id: str, model: str, run_id: str = "",
+                status: str | None = None, progress: float | None = None,
+                gpu: str | None = None) -> None:
+    """Insert or update a job in the active_jobs registry.
+
+    Automatically removes the entry when `status` is terminal.
+    """
+    field = _active_field(job_type, session_id, model, run_id)
+    if status in _TERMINAL:
+        redis_client.hdel(ACTIVE_JOBS_KEY, field)
+        return
+    raw = redis_client.hget(ACTIVE_JOBS_KEY, field)
+    data: dict = json.loads(raw) if raw else {
+        "type": job_type,
+        "session_id": session_id,
+        "model": model,
+        "run_id": run_id or None,
+        "status": "queued",
+        "progress": 0.0,
+        "gpu": None,
+    }
+    if status is not None:
+        data["status"] = status
+    if progress is not None:
+        data["progress"] = float(progress)
+    if gpu is not None:
+        data["gpu"] = str(gpu)
+    redis_client.hset(ACTIVE_JOBS_KEY, field, json.dumps(data))
+
 
 # -------------------------------------------------------------
 # Queue handling
 # -------------------------------------------------------------
 def enqueue_job(job_dict: dict):
-    """
-    Adds a job to the queue. job_dict must include:
-    {
-        "session_id": str,
-        "model": str,
-        "gpu": None (initial),
-        "input_path": str,
-        "space": str,
-        ...
-    }
-    """
     redis_client.rpush(JOB_QUEUE, json.dumps(job_dict))
 
 
 def pop_job():
-    """
-    Pops next job from queue.
-    """
     job = redis_client.lpop(JOB_QUEUE)
     if not job:
         return None
@@ -52,10 +86,8 @@ def pop_job():
 def get_queue_position(session_id: str) -> int:
     queue = redis_client.lrange(JOB_QUEUE, 0, -1)
     for idx, raw in enumerate(queue):
-        # raw is a str because decode_responses=True
         if raw == session_id:
             return idx
-        # backwards compatibility if older JSON jobs exist:
         try:
             job = json.loads(raw)
             if job.get("session_id") == session_id:
@@ -77,14 +109,13 @@ def get_session_status(session_id: str):
 
 
 # -------------------------------------------------------------
-# Job status
+# GPU seg job status  (also maintains active_jobs registry)
 # -------------------------------------------------------------
-def set_job_status(session_id: str, model: str, status: str):
-    """
-    per-model job state:
-      queued, assigned, running, complete, error
-    """
+def set_job_status(session_id: str, model: str, status: str, gpu: str | int | None = None):
+    """Set per-model GPU-seg job state and keep active_jobs in sync."""
     redis_client.hset(f"{JOB_STATUS}:{session_id}", model, status)
+    _upsert_job("gpu_seg", session_id, model, status=status,
+                gpu=str(gpu) if gpu is not None else None)
 
 
 def get_job_status(session_id: str, model: str):
@@ -95,40 +126,30 @@ def get_job_status(session_id: str, model: str):
 # GPU reservation pool
 # -------------------------------------------------------------
 def init_gpu_pool(gpu_count: int):
-    """
-    Initializes the GPU pool (free GPUs).
-    """
     redis_client.delete(GPU_POOL)
     for gpu in range(gpu_count):
         redis_client.sadd(GPU_POOL, gpu)
 
 
 def reserve_gpu() -> int | None:
-    """
-    Reserves and returns a GPU index, or None if none free.
-    """
     gpu = redis_client.spop(GPU_POOL)
     return int(gpu) if gpu is not None else None
 
 
 def free_gpu(gpu_index: int):
-    """
-    Marks a GPU as free.
-    """
     redis_client.sadd(GPU_POOL, gpu_index)
 
 
 # -------------------------------------------------------------
-# Progress handling
+# Progress handling  (also maintains active_jobs registry)
 # -------------------------------------------------------------
 def set_progress(session_id: str, model: str, progress: float):
-    key = f"{session_id}:{model}"
-    redis_client.hset(PROGRESS_KEY, key, progress)
+    redis_client.hset(PROGRESS_KEY, f"{session_id}:{model}", progress)
+    _upsert_job("gpu_seg", session_id, model, progress=progress)
 
 
 def get_progress(session_id: str, model: str) -> float:
-    key = f"{session_id}:{model}"
-    p = redis_client.hget(PROGRESS_KEY, key)
+    p = redis_client.hget(PROGRESS_KEY, f"{session_id}:{model}")
     return float(p) if p else 0.0
 
 
@@ -138,18 +159,22 @@ def get_progress(session_id: str, model: str) -> float:
 def push_sse_event(event: dict):
     redis_client.rpush(EVENT_STREAM, json.dumps(event))
 
+
 # -------------------------------------------------------------
 # ROAST queue
 # -------------------------------------------------------------
-ROAST_JOB_QUEUE = "roast_job_queue"
+ROAST_JOB_QUEUE       = "roast_job_queue"
 ROAST_JOB_DATA_PREFIX = "roast_job_data:"
 ROAST_JOB_STATUS_PREFIX = "roast_job_status:"
 ROAST_PROGRESS_PREFIX = "roast_progress:"
 
 
 def enqueue_roast_job(session_id: str, payload: dict):
-    redis_client.set(ROAST_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.set(ROAST_JOB_DATA_PREFIX + session_id, json.dumps(payload), ex=_ACTIVE_TTL)
     redis_client.rpush(ROAST_JOB_QUEUE, session_id)
+    model_name = payload.get("model_name", "")
+    run_id = payload.get("run_id", "")
+    _upsert_job("roast", session_id, model_name, run_id, status="queued")
 
 
 def pop_roast_job() -> str | None:
@@ -164,30 +189,30 @@ def get_roast_job_data(session_id: str) -> dict | None:
 def set_roast_status(session_id: str, status: str, model_name: str = "", run_id: str = ""):
     parts = [p for p in [session_id, model_name, run_id] if p]
     key = ROAST_JOB_STATUS_PREFIX + ":".join(parts)
-    redis_client.set(key, status)
+    ttl = _DONE_TTL if status in _TERMINAL else _ACTIVE_TTL
+    redis_client.set(key, status, ex=ttl)
+    _upsert_job("roast", session_id, model_name, run_id, status=status)
 
 
 def get_roast_status(session_id: str, model_name: str = "", run_id: str = "") -> str | None:
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = ROAST_JOB_STATUS_PREFIX + ":".join(parts)
-    return redis_client.get(key)
+    return redis_client.get(ROAST_JOB_STATUS_PREFIX + ":".join(parts))
 
 
 def set_roast_progress(session_id: str, progress: float, model_name: str = "", run_id: str = ""):
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = ROAST_PROGRESS_PREFIX + ":".join(parts)
-    redis_client.set(key, progress)
+    redis_client.set(ROAST_PROGRESS_PREFIX + ":".join(parts), progress, ex=_ACTIVE_TTL)
+    _upsert_job("roast", session_id, model_name, run_id, progress=progress)
 
 
 def get_roast_progress(session_id: str, model_name: str = "", run_id: str = "") -> float:
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = ROAST_PROGRESS_PREFIX + ":".join(parts)
-    p = redis_client.get(key)
+    p = redis_client.get(ROAST_PROGRESS_PREFIX + ":".join(parts))
     return float(p) if p else 0.0
 
 
 # -------------------------------------------------------------
-# SIMNIBS queue  (mirrors ROAST queue pattern)
+# SimNIBS queue
 # -------------------------------------------------------------
 SIMNIBS_JOB_QUEUE         = "simnibs_job_queue"
 SIMNIBS_JOB_DATA_PREFIX   = "simnibs_job_data:"
@@ -196,8 +221,11 @@ SIMNIBS_PROGRESS_PREFIX   = "simnibs_progress:"
 
 
 def enqueue_simnibs_job(session_id: str, payload: dict):
-    redis_client.set(SIMNIBS_JOB_DATA_PREFIX + session_id, json.dumps(payload))
+    redis_client.set(SIMNIBS_JOB_DATA_PREFIX + session_id, json.dumps(payload), ex=_ACTIVE_TTL)
     redis_client.rpush(SIMNIBS_JOB_QUEUE, session_id)
+    model_name = payload.get("model_name", "")
+    run_id = payload.get("run_id", "")
+    _upsert_job("simnibs", session_id, model_name, run_id, status="queued")
 
 
 def pop_simnibs_job() -> str | None:
@@ -212,44 +240,37 @@ def get_simnibs_job_data(session_id: str) -> dict | None:
 def set_simnibs_status(session_id: str, status: str, model_name: str = "", run_id: str = ""):
     parts = [p for p in [session_id, model_name, run_id] if p]
     key = SIMNIBS_JOB_STATUS_PREFIX + ":".join(parts)
-    redis_client.set(key, status)
+    ttl = _DONE_TTL if status in _TERMINAL else _ACTIVE_TTL
+    redis_client.set(key, status, ex=ttl)
+    _upsert_job("simnibs", session_id, model_name, run_id, status=status)
 
 
 def get_simnibs_status(session_id: str, model_name: str = "", run_id: str = "") -> str | None:
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = SIMNIBS_JOB_STATUS_PREFIX + ":".join(parts)
-    return redis_client.get(key)
+    return redis_client.get(SIMNIBS_JOB_STATUS_PREFIX + ":".join(parts))
 
 
 def set_simnibs_progress(session_id: str, progress: float, model_name: str = "", run_id: str = ""):
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = SIMNIBS_PROGRESS_PREFIX + ":".join(parts)
-    redis_client.set(key, progress)
+    redis_client.set(SIMNIBS_PROGRESS_PREFIX + ":".join(parts), progress, ex=_ACTIVE_TTL)
+    _upsert_job("simnibs", session_id, model_name, run_id, progress=progress)
 
 
 def get_simnibs_progress(session_id: str, model_name: str = "", run_id: str = "") -> float:
     parts = [p for p in [session_id, model_name, run_id] if p]
-    key = SIMNIBS_PROGRESS_PREFIX + ":".join(parts)
-    p = redis_client.get(key)
+    p = redis_client.get(SIMNIBS_PROGRESS_PREFIX + ":".join(parts))
     return float(p) if p else 0.0
 
 
 # -------------------------------------------------------------
-# SimNIBS charm base lock  (one-per-session build coordination)
+# SimNIBS charm base lock
 # -------------------------------------------------------------
 CHARM_BASE_LOCK_PREFIX  = "simnibs_charm_base_lock:"
 CHARM_BASE_READY_PREFIX = "simnibs_charm_base_ready:"
 
 
 def acquire_charm_base_lock(session_id: str, ttl: int = 7200) -> bool:
-    """
-    Try to acquire the build lock for the session's shared charm base.
-    Returns True if this caller won the lock (should build).
-    Returns False if another worker already holds it (should wait).
-    TTL is a safety expiry so the lock never hangs permanently.
-    """
-    key = CHARM_BASE_LOCK_PREFIX + session_id
-    return bool(redis_client.set(key, "1", nx=True, ex=ttl))
+    return bool(redis_client.set(CHARM_BASE_LOCK_PREFIX + session_id, "1", nx=True, ex=ttl))
 
 
 def release_charm_base_lock(session_id: str) -> None:
@@ -257,7 +278,6 @@ def release_charm_base_lock(session_id: str) -> None:
 
 
 def set_charm_base_ready(session_id: str) -> None:
-    """Mark the session's charm base as fully built and ready to copy."""
     redis_client.set(CHARM_BASE_READY_PREFIX + session_id, "1", ex=86400)
 
 
@@ -272,7 +292,6 @@ CANCEL_PREFIX = "cancel:"
 
 
 def cancel_session(session_id: str) -> None:
-    """Set a cancellation flag for a session. Workers check this and abort."""
     redis_client.set(CANCEL_PREFIX + session_id, "1", ex=3600)
 
 
@@ -280,16 +299,21 @@ def is_session_cancelled(session_id: str) -> bool:
     return bool(redis_client.get(CANCEL_PREFIX + session_id))
 
 
-# -------------------------------------------------------
+# -------------------------------------------------------------
 # CLEANUP
-# -------------------------------------------------------
+# -------------------------------------------------------------
 def cleanup_session(session_id: str):
-    """
-    Remove all redis keys associated with a session.
-    """
-    pattern = _key("session", session_id, "*")
-    for key in redis_client.scan_iter(match=pattern):
-        redis_client.delete(key)
-
-    # also clear SSE events
-    redis_client.delete(_key("sse", session_id, "events"))
+    """Remove Redis keys associated with a session."""
+    for prefix in (
+        f"{JOB_STATUS}:{session_id}",
+        f"{ROAST_JOB_DATA_PREFIX}{session_id}",
+        f"{SIMNIBS_JOB_DATA_PREFIX}{session_id}",
+        f"{CANCEL_PREFIX}{session_id}",
+        f"{CHARM_BASE_LOCK_PREFIX}{session_id}",
+        f"{CHARM_BASE_READY_PREFIX}{session_id}",
+    ):
+        redis_client.delete(prefix)
+    # Remove any active_jobs entries for this session
+    for field in list(redis_client.hgetall(ACTIVE_JOBS_KEY).keys()):
+        if session_id in field:
+            redis_client.hdel(ACTIVE_JOBS_KEY, field)

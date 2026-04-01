@@ -98,7 +98,7 @@ class GPUScheduler:
             if gpu_id is None:
                 time.sleep(0.2)
 
-        set_job_status(job_id, model_name, "running")
+        set_job_status(job_id, model_name, "running", gpu=gpu_id)
 
         try:
             runner = ModelRunner(model_name, job_id, gpu_id, input_space=input_space)

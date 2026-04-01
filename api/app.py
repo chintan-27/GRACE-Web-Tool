@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from starlette.responses import StreamingResponse
 
 import gzip
+import json
 import shutil
 import subprocess
 import sqlite3
@@ -59,43 +60,20 @@ def _validate_model_name(model_name: str) -> str:
     return model_name
 
 
-_STALE_STATUSES = {b"queued", b"waiting_gpu", b"assigned", b"running"}
-
 
 def _cleanup_stale_jobs():
-    """On startup, mark any non-terminal job status entries as 'error'.
+    """On startup, wipe the active_jobs registry.
 
-    Redis keys persist across restarts, so jobs that were running/queued when
-    the server went down would otherwise appear active forever.
+    The registry only contains jobs that were in-flight when the server last ran.
+    All of those are now dead (workers are gone), so we clear the hash entirely.
+    New jobs will be registered fresh as they are submitted.
     """
-    cleaned = 0
     try:
-        # GPU seg: job_status:{session_id}  (hashes)
-        for key in redis_client.scan_iter("job_status:*"):
-            fields = redis_client.hgetall(key)
-            for model, status in fields.items():
-                if status in _STALE_STATUSES:
-                    redis_client.hset(key, model, "error")
-                    cleaned += 1
-
-        # ROAST: roast_job_status:*  (plain strings)
-        for key in redis_client.scan_iter("roast_job_status:*"):
-            if redis_client.get(key) in _STALE_STATUSES:
-                redis_client.set(key, "error")
-                cleaned += 1
-
-        # SimNIBS: simnibs_job_status:*  (plain strings)
-        for key in redis_client.scan_iter("simnibs_job_status:*"):
-            if redis_client.get(key) in _STALE_STATUSES:
-                redis_client.set(key, "error")
-                cleaned += 1
-
-        if cleaned:
-            print(f"[startup] Marked {cleaned} stale job(s) as error")
-        else:
-            print("[startup] No stale jobs found")
+        count = redis_client.hlen("active_jobs")
+        redis_client.delete("active_jobs")
+        print(f"[startup] Cleared active_jobs registry ({count} stale entries removed)")
     except Exception as exc:
-        print(f"[startup] Stale job cleanup failed: {exc}")
+        print(f"[startup] active_jobs cleanup failed: {exc}")
 
 
 @asynccontextmanager
@@ -791,83 +769,18 @@ async def admin_login(body: dict = Body(...)):
 # ============================================================
 @app.get("/admin/jobs")
 def get_admin_jobs(_: str = Depends(require_jwt)):
-    ACTIVE_STATUSES = {"queued", "waiting_gpu", "assigned", "running"}
+    # Read the active_jobs registry — O(n active jobs), no scanning needed.
+    raw_jobs = redis_client.hgetall("active_jobs") or {}
     jobs = []
-
-    # GPU locks: HASH  gpu_id → "free" | "{session_id}:{model}"
-    gpu_lock_map = redis_client.hgetall("gpu_locks") or {}
-
-    # --- GPU segmentation jobs ---
-    # job_status:{session_id} is a HASH of model → status
-    for key in redis_client.scan_iter("job_status:*"):
-        session_id = key[len("job_status:"):]
-        model_statuses = redis_client.hgetall(key)
-        for model, status in model_statuses.items():
-            if status not in ACTIVE_STATUSES:
-                continue
-            progress_raw = redis_client.hget("progress", f"{session_id}:{model}")
-            progress = float(progress_raw) if progress_raw else 0.0
-            gpu = next(
-                (gid for gid, holder in gpu_lock_map.items() if holder == f"{session_id}:{model}"),
-                None,
-            )
-            jobs.append({
-                "type": "gpu_seg",
-                "session_id": session_id,
-                "model": model,
-                "run_id": None,
-                "status": status,
-                "progress": progress,
-                "gpu": gpu,
-            })
-
-    # --- ROAST jobs ---
-    for key in redis_client.scan_iter("roast_job_status:*"):
-        suffix = key[len("roast_job_status:"):]
-        parts = suffix.split(":", 2)
-        session_id = parts[0]
-        model = parts[1] if len(parts) > 1 else ""
-        run_id = parts[2] if len(parts) > 2 else ""
-        status = redis_client.get(key) or "unknown"
-        if status not in ACTIVE_STATUSES:
+    for value in raw_jobs.values():
+        try:
+            jobs.append(json.loads(value))
+        except Exception:
             continue
-        progress_raw = redis_client.get(f"roast_progress:{suffix}")
-        progress = float(progress_raw) if progress_raw else 0.0
-        jobs.append({
-            "type": "roast",
-            "session_id": session_id,
-            "model": model,
-            "run_id": run_id,
-            "status": status,
-            "progress": progress,
-            "gpu": None,
-        })
-
-    # --- SimNIBS jobs ---
-    for key in redis_client.scan_iter("simnibs_job_status:*"):
-        suffix = key[len("simnibs_job_status:"):]
-        parts = suffix.split(":", 2)
-        session_id = parts[0]
-        model = parts[1] if len(parts) > 1 else ""
-        run_id = parts[2] if len(parts) > 2 else ""
-        status = redis_client.get(key) or "unknown"
-        if status not in ACTIVE_STATUSES:
-            continue
-        progress_raw = redis_client.get(f"simnibs_progress:{suffix}")
-        progress = float(progress_raw) if progress_raw else 0.0
-        jobs.append({
-            "type": "simnibs",
-            "session_id": session_id,
-            "model": model,
-            "run_id": run_id,
-            "status": status,
-            "progress": progress,
-            "gpu": None,
-        })
 
     queue_depths = {
         "gpu_seg": redis_client.llen("job_queue"),
-        "roast": redis_client.llen("roast_job_queue"),
+        "roast":   redis_client.llen("roast_job_queue"),
         "simnibs": redis_client.llen("simnibs_job_queue"),
     }
 
