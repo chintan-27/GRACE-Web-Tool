@@ -87,8 +87,11 @@ export function connectSSE(
   onDisconnect?: () => void
 ): EventSource {
   const evtSource = new EventSource(`${API_BASE}/stream/${sessionId}`);
+  let errorCount = 0;
+  let done = false;
 
   evtSource.onmessage = (e) => {
+    errorCount = 0;
     try {
       const envelope = JSON.parse(e.data) as any;
 
@@ -97,7 +100,8 @@ export function connectSSE(
 
       // Map backend events -> UI events
       if (payload.event === "job_complete") {
-        evtSource.close(); // Close gracefully to prevent onerror firing
+        done = true;
+        evtSource.close();
         onEvent({ type: "complete" });
         return;
       }
@@ -127,8 +131,12 @@ export function connectSSE(
   };
 
   evtSource.onerror = () => {
-    evtSource.close();
-    onDisconnect?.();
+    if (done) return;
+    errorCount++;
+    if (errorCount > 5) {
+      evtSource.close();
+      onDisconnect?.();
+    }
   };
 
   return evtSource;
@@ -207,18 +215,23 @@ export function connectROASTSSE(
   onDisconnect?: () => void
 ): EventSource {
   const evtSource = new EventSource(`${API_BASE}/stream/roast/${sessionId}`);
+  let errorCount = 0;
+  let done = false;
 
   evtSource.onmessage = (e) => {
+    errorCount = 0;
     try {
       const envelope = JSON.parse(e.data) as any;
       const payload = envelope.event ?? envelope;
 
       if (payload.event === "roast_complete") {
+        done = true;
         evtSource.close();
         onEvent({ type: "complete", progress: 100 });
         return;
       }
       if (payload.event === "roast_error") {
+        done = true;
         evtSource.close();
         onEvent({ type: "error", detail: payload.detail || "Simulation failed" });
         return;
@@ -231,8 +244,12 @@ export function connectROASTSSE(
   };
 
   evtSource.onerror = () => {
-    evtSource.close();
-    onDisconnect?.();
+    if (done) return;
+    errorCount++;
+    if (errorCount > 5) {
+      evtSource.close();
+      onDisconnect?.();
+    }
   };
 
   return evtSource;
@@ -300,18 +317,23 @@ export function connectSimNIBSSSE(
   onDisconnect?: () => void
 ): EventSource {
   const evtSource = new EventSource(`${API_BASE}/stream/simnibs/${sessionId}`);
+  let errorCount = 0;
+  let done = false;
 
   evtSource.onmessage = (e) => {
+    errorCount = 0; // reset on successful message
     try {
       const envelope = JSON.parse(e.data) as any;
       const payload = envelope.event ?? envelope;
 
       if (payload.event === "simnibs_complete") {
+        done = true;
         evtSource.close();
         onEvent({ type: "complete", progress: 100 });
         return;
       }
       if (payload.event === "simnibs_error") {
+        done = true;
         evtSource.close();
         onEvent({ type: "error", detail: payload.detail || "SimNIBS simulation failed" });
         return;
@@ -324,8 +346,14 @@ export function connectSimNIBSSSE(
   };
 
   evtSource.onerror = () => {
-    evtSource.close();
-    onDisconnect?.();
+    if (done) return;
+    errorCount++;
+    // Allow EventSource to auto-reconnect up to 5 times before giving up
+    if (errorCount > 5) {
+      evtSource.close();
+      onDisconnect?.();
+    }
+    // Otherwise let the browser reconnect automatically
   };
 
   return evtSource;
