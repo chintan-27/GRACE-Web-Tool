@@ -31,7 +31,8 @@ class ROASTScheduler:
             log_error(session_id, "[ROAST] Missing job data in Redis")
             return
 
-        model_name = payload.get("model_name")
+        model_name = payload.get("model_name", "")
+        run_id = payload.get("run_id", "")
         session_log(session_id, f"[ROAST] Dequeued job for model={model_name}")
 
         push_event(session_id, {"event": "roast_start", "progress": 2})
@@ -41,7 +42,7 @@ class ROASTScheduler:
             runner.run()
         except Exception as e:
             log_error(session_id, f"[ROAST] Job failed: {e}")
-            set_roast_status(session_id, "error", model_name or "")
+            set_roast_status(session_id, "error", model_name, run_id)
 
     def scheduler_loop(self):
         log_info("SYSTEM", f"[ROAST] Scheduler started ({self.max_workers} workers)")
