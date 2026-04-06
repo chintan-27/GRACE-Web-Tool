@@ -83,7 +83,7 @@ interface JobContextType {
   getSelectedModelList: () => string[];
 
   // Actions
-  startJob: () => Promise<void>;
+  startJob: (opts?: { notifyEmail?: string; workspaceJwt?: string }) => Promise<void>;
   resetJob: () => void;
 
   // Setters
@@ -244,7 +244,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   // ------------------------------------------------------------
   // START A NEW JOB
   // ------------------------------------------------------------
-  const startJob = useCallback(async () => {
+  const startJob = useCallback(async (opts?: { notifyEmail?: string; workspaceJwt?: string }) => {
     if (!selectedFile || !isAnyModelSelected) return;
 
     setStatus("uploading");
@@ -260,7 +260,9 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
       selectedFile,
       modelList,
       selectedSpace,
-      shouldConvertToFs
+      shouldConvertToFs,
+      opts?.workspaceJwt,
+      opts?.notifyEmail,
     );
 
     setSessionId(resp.session_id);

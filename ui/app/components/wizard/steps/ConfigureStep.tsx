@@ -1,7 +1,9 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, Brain, Boxes, Sparkles, Check } from "lucide-react";
+import { useState } from "react";
+import { ArrowLeft, ArrowRight, Brain, Boxes, Sparkles, Check, Bell } from "lucide-react";
 import { useJob, Space, ModelSelection } from "@/context/JobContext";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -66,6 +68,9 @@ export default function ConfigureStep() {
     status,
   } = useJob();
 
+  const { user, isLoggedIn } = useWorkspace();
+  const [notifyEmail, setNotifyEmail] = useState("");
+
   const handleModelToggle = (modelId: keyof ModelSelection) => {
     setSelectedModels((prev) => ({
       ...prev,
@@ -79,7 +84,10 @@ export default function ConfigureStep() {
 
   const handleStart = async () => {
     if (isAnyModelSelected) {
-      await startJob();
+      await startJob({
+        notifyEmail: isLoggedIn ? (user?.email ?? "") : notifyEmail,
+        workspaceJwt: user?.token,
+      });
     }
   };
 
@@ -237,6 +245,37 @@ export default function ConfigureStep() {
             after your session ends.
           </p>
         </div>
+      </div>
+
+      {/* Notify email */}
+      <div className="rounded-2xl border border-border bg-surface p-5 shadow-medical">
+        <h2 className="mb-3 text-[10px] font-bold uppercase tracking-widest font-mono text-accent flex items-center gap-1.5">
+          <Bell className="h-3 w-3" />
+          // Notify on Completion
+        </h2>
+        {isLoggedIn && user ? (
+          <p className="text-sm text-foreground-secondary">
+            We'll email <strong className="text-foreground">{user.email}</strong> when your job finishes.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="notify-email" className="text-xs text-foreground-muted">
+              Email address <span className="text-foreground-muted">(optional)</span>
+            </label>
+            <input
+              id="notify-email"
+              type="email"
+              value={notifyEmail}
+              onChange={(e) => setNotifyEmail(e.target.value)}
+              placeholder="you@example.com"
+              className={cn(
+                "w-full max-w-xs rounded-lg border border-border bg-surface-elevated px-3 py-2 text-sm",
+                "text-foreground placeholder:text-foreground-muted",
+                "focus:outline-none focus:ring-2 focus:ring-ring"
+              )}
+            />
+          </div>
+        )}
       </div>
 
       {/* Navigation */}

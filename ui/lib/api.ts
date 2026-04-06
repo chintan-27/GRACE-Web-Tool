@@ -43,13 +43,31 @@ export interface SSEEvent {
 }
 
 // ---------------------------------------------------------------------
+// Tissue volume stats types
+// ---------------------------------------------------------------------
+export interface LabelStats {
+  name: string;
+  voxel_count: number;
+  volume_mm3: number;
+}
+
+export interface ModelStatsResponse {
+  session_id: string;
+  model_name: string;
+  voxel_volume_mm3: number;
+  labels: Record<string, LabelStats>;
+}
+
+// ---------------------------------------------------------------------
 // POST /predict
 // ---------------------------------------------------------------------
 export async function startPrediction(
   file: File,
   models: string[],
   space: string,
-  convertToFs: boolean = false
+  convertToFs: boolean = false,
+  workspaceJwt?: string,
+  notifyEmail?: string
 ): Promise<PredictResponse> {
   console.log(models);
   console.log(space);
@@ -57,12 +75,17 @@ export async function startPrediction(
   formData.append("file", file);
   formData.append("space", space);
   formData.append("convert_to_fs", convertToFs ? "true" : "false");
+  if (notifyEmail) formData.append("notify_email", notifyEmail);
 
   if (models.length === 6) formData.append("models", "all");
   else formData.append("models", models.join(","));
 
+  const headers: Record<string, string> = {};
+  if (workspaceJwt) headers["Authorization"] = `Bearer ${workspaceJwt}`;
+
   const res = await fetch(`${API_BASE}/predict`, {
     method: "POST",
+    headers,
     body: formData,
   });
 
@@ -419,6 +442,21 @@ export async function restoreSession(
     throw new Error(detail);
   }
   return await res.json();
+}
+
+// ---------------------------------------------------------------------
+// GET /results/{session_id}/{model_name}/stats
+// ---------------------------------------------------------------------
+export async function getModelStats(
+  sessionId: string,
+  modelName: string,
+): Promise<ModelStatsResponse> {
+  const res = await fetch(`${API_BASE}/results/${sessionId}/${modelName}/stats`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to fetch volume stats");
+  }
+  return res.json();
 }
 
 // ---------------------------------------------------------------------

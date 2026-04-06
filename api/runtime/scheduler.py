@@ -179,6 +179,8 @@ class GPUScheduler:
             push_event(job_id, {"event": "job_complete"})
             log_event(job_id, {"event": "job_complete"})
             session_log(job_id, "Job complete.")
+            from services.notify import maybe_send_completion_notification
+            maybe_send_completion_notification(job_id, "segmentation", payload.get("models", []))
 
     def scheduler_loop(self):
         log_info("SYSTEM", f"Scheduler started with {self.num_gpus} GPUs.")

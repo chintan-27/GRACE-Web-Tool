@@ -830,6 +830,8 @@ class SimNIBSRunner:
             set_simnibs_status(self.session_id, "complete", self.model_name, self.run_id)
             self._emit("simnibs_complete", 100)
             session_log(self.session_id, "[SimNIBS] Completed successfully")
+            from services.notify import maybe_send_completion_notification
+            maybe_send_completion_notification(self.session_id, "SimNIBS simulation", [self.model_name])
 
         except Exception as exc:
             log_error(self.session_id, f"[SimNIBS] Failed: {exc}")

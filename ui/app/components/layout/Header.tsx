@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState, useCallback, useSyncExternalStore } from "react";
-import { Moon, Sun, Brain } from "lucide-react";
+import { Moon, Sun, Brain, LogIn, LogOut, User } from "lucide-react";
+import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { useWorkspace } from "@/context/WorkspaceContext";
 
 // Theme store using useSyncExternalStore pattern
 const themeStore = {
@@ -30,6 +32,7 @@ const themeStore = {
 };
 
 export default function Header() {
+  const { user, isLoggedIn, logout } = useWorkspace();
   const theme = useSyncExternalStore(
     themeStore.subscribe,
     themeStore.getSnapshot,
@@ -89,27 +92,73 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Theme Toggle */}
-      {mounted ? (
-        <button
-          onClick={toggleTheme}
-          className={cn(
-            "relative flex h-9 w-9 items-center justify-center rounded-lg",
-            "border border-border bg-surface text-foreground-secondary",
-            "transition-all duration-200 hover:bg-surface-elevated hover:text-foreground",
-            "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
-          )}
-          aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-        >
-          {theme === "dark" ? (
-            <Sun className="h-4 w-4" />
+      {/* Right side: workspace + theme toggle */}
+      <div className="flex items-center gap-2">
+        {/* Workspace user pill or sign-in link */}
+        {mounted && (
+          isLoggedIn && user ? (
+            <div className="flex items-center gap-2">
+              <Link
+                href="/workspace"
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent-muted",
+                  "px-3 py-1.5 text-xs font-medium text-accent",
+                  "transition-colors hover:bg-accent/20"
+                )}
+              >
+                <User className="h-3 w-3" />
+                <span className="max-w-[140px] truncate">{user.email}</span>
+              </Link>
+              <button
+                onClick={logout}
+                className={cn(
+                  "flex h-9 w-9 items-center justify-center rounded-lg",
+                  "border border-border bg-surface text-foreground-secondary",
+                  "transition-all duration-200 hover:bg-surface-elevated hover:text-foreground"
+                )}
+                aria-label="Sign out of workspace"
+                title="Sign out"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           ) : (
-            <Moon className="h-4 w-4" />
-          )}
-        </button>
-      ) : (
-        <div className="h-9 w-9" />
-      )}
+            <Link
+              href="/workspace"
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg border border-border bg-surface",
+                "px-3 py-1.5 text-xs font-medium text-foreground-secondary",
+                "transition-colors hover:bg-surface-elevated hover:text-foreground"
+              )}
+            >
+              <LogIn className="h-3.5 w-3.5" />
+              <span>Sign in</span>
+            </Link>
+          )
+        )}
+
+        {/* Theme Toggle */}
+        {mounted ? (
+          <button
+            onClick={toggleTheme}
+            className={cn(
+              "relative flex h-9 w-9 items-center justify-center rounded-lg",
+              "border border-border bg-surface text-foreground-secondary",
+              "transition-all duration-200 hover:bg-surface-elevated hover:text-foreground",
+              "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background"
+            )}
+            aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {theme === "dark" ? (
+              <Sun className="h-4 w-4" />
+            ) : (
+              <Moon className="h-4 w-4" />
+            )}
+          </button>
+        ) : (
+          <div className="h-9 w-9" />
+        )}
+      </div>
     </>
   );
 
