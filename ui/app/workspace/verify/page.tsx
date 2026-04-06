@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useWorkspace } from "@/context/WorkspaceContext";
 import { verifyMagicToken } from "@/lib/workspaceApi";
 import { Loader2, CheckCircle, XCircle } from "lucide-react";
 import Link from "next/link";
 
-export default function WorkspaceVerifyPage() {
+function VerifyContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const { login } = useWorkspace();
@@ -66,5 +66,20 @@ export default function WorkspaceVerifyPage() {
         </>
       )}
     </div>
+  );
+}
+
+export default function WorkspaceVerifyPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="container mx-auto max-w-md px-4 py-24 flex flex-col items-center gap-4">
+          <Loader2 className="h-12 w-12 animate-spin text-accent" />
+          <p className="text-sm text-foreground-muted">Loading…</p>
+        </div>
+      }
+    >
+      <VerifyContent />
+    </Suspense>
   );
 }
