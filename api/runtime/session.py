@@ -147,14 +147,17 @@ def session_exists(session_id: str) -> bool:
 # -----------------------------------------------------------
 # CLEANUP
 # -----------------------------------------------------------
-def cleanup_old_sessions(max_age_hours: int = 24) -> int:
+def cleanup_old_sessions(default_max_age_hours: int = 24) -> int:
     """
-    Delete session directories older than max_age_hours.
+    Delete session directories past their retention period.
+    Workspace sessions use the user's configured retention_days.
+    Anonymous sessions use default_max_age_hours.
     Returns number of sessions deleted.
     """
-    cutoff = time.time() - (max_age_hours * 3600)
-    deleted = 0
+    from services.redis_client import redis_client
+    from services.workspace_db import get_user_retention_days
 
+    deleted = 0
     sessions_root = Path(SESSION_DIR)
     if not sessions_root.exists():
         return 0
@@ -162,10 +165,23 @@ def cleanup_old_sessions(max_age_hours: int = 24) -> int:
     for session_dir in sessions_root.iterdir():
         if not session_dir.is_dir():
             continue
+
+        owner = redis_client.get(f"session_owner:{session_dir.name}")
+        if owner:
+            if isinstance(owner, bytes):
+                owner = owner.decode()
+            try:
+                retention_days = get_user_retention_days(int(owner))
+            except Exception:
+                retention_days = 7
+            cutoff = time.time() - retention_days * 86400
+        else:
+            cutoff = time.time() - default_max_age_hours * 3600
+
         if session_dir.stat().st_mtime < cutoff:
             try:
                 shutil.rmtree(session_dir)
-                log_info("SYSTEM", f"Cleaned up old session: {session_dir.name} (>{max_age_days}d old)")
+                log_info("SYSTEM", f"Cleaned up old session: {session_dir.name}")
                 deleted += 1
             except Exception as e:
                 log_info("SYSTEM", f"Failed to delete session {session_dir.name}: {e}")

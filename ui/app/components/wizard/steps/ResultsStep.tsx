@@ -7,6 +7,7 @@ import { useJob } from "@/context/JobContext";
 import { Button } from "@/components/ui/button";
 import SplitViewer from "../../viewer/SplitViewer";
 import { API_BASE, deleteSession } from "@/lib/api";
+import { VolumeStatsPanel } from "../../results/VolumeStatsPanel";
 
 const ACTIVE_SIM_KEY = "grace_active_sim";
 type SavedSim = { sessionId: string; model: string; solver: "roast" | "simnibs"; startedAt: number };
@@ -222,15 +223,20 @@ export default function ResultsStep() {
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           {models.map(model => (
-            <div key={model} className="flex items-center justify-between rounded-xl border border-border bg-background p-4">
-              <div>
-                <h3 className="font-mono font-bold tracking-wide text-foreground">{getDisplayName(model)}</h3>
-                <span className="mt-1 inline-block rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
+            <div key={model} className="flex flex-col rounded-xl border border-border bg-background p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="font-mono font-bold tracking-wide text-foreground">{getDisplayName(model)}</h3>
+                  <span className="mt-1 inline-block rounded border border-border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-widest text-foreground-muted">{getSpaceLabel(model)}</span>
+                </div>
+                <Button variant="success" size="sm" onClick={() => handleDownload(model)} className="gap-1.5">
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </Button>
               </div>
-              <Button variant="success" size="sm" onClick={() => handleDownload(model)} className="gap-1.5">
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </Button>
+              {sessionId && (
+                <VolumeStatsPanel sessionId={sessionId} modelName={model} />
+              )}
             </div>
           ))}
         </div>

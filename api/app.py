@@ -26,8 +26,17 @@ from services.redis_client import (
     enqueue_roast_job, get_roast_status, get_roast_progress, set_roast_status,
     enqueue_simnibs_job, get_simnibs_status, get_simnibs_progress, set_simnibs_status,
 )
-from config import GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL, ALLOWED_ORIGINS, ADMIN_PASSWORD
-from services.auth import require_jwt, create_jwt
+from config import (
+    GPU_COUNT, SESSION_DIR, DB_PATH, NOTIFY_TOKEN_TTL, FRONTEND_URL, ALLOWED_ORIGINS,
+    ADMIN_PASSWORD, MAGIC_TOKEN_TTL_MINUTES, MAGIC_LINK_RATE_LIMIT_MAX, MAGIC_LINK_RATE_LIMIT_WINDOW,
+)
+from services.auth import require_jwt, require_admin_jwt, optional_user_jwt, create_jwt
+from services.workspace_db import (
+    init_workspace_db, get_or_create_user, check_rate_limit, record_magic_link_request,
+    create_magic_token, consume_magic_token, get_user_by_id, get_user_retention_days,
+    delete_user, prune_old_requests, prune_expired_tokens,
+)
+from services.volume_stats import get_or_compute_stats
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -79,6 +88,7 @@ def _cleanup_stale_jobs():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # STARTUP
+    init_workspace_db()
     _cleanup_stale_jobs()
     import threading
     t = threading.Thread(target=scheduler.scheduler_loop, daemon=True)
@@ -93,12 +103,15 @@ async def lifespan(app: FastAPI):
     t4.start()
     print("SimNIBS Scheduler started under lifespan()")
 
-    # Session cleanup loop (runs every hour, deletes sessions >24h old)
+    # Session cleanup loop (runs every hour, deletes sessions past retention)
     def cleanup_loop():
         while True:
-            deleted = cleanup_old_sessions(max_age_hours=24)
+            deleted = cleanup_old_sessions(default_max_age_hours=24)
             if deleted:
                 print(f"Session cleanup: removed {deleted} old session(s)")
+            # Prune workspace DB stale rows
+            prune_old_requests()
+            prune_expired_tokens()
             time.sleep(3600)
 
     t3 = threading.Thread(target=cleanup_loop, daemon=True)
@@ -175,6 +188,8 @@ async def predict(
     models: str = Body(...),
     space: str = Body(...),
     convert_to_fs: str = Body("false"),
+    notify_email: str = Body(""),
+    workspace_payload: dict | None = Depends(optional_user_jwt),
 ):
     # Validate input
     if not (file.filename.endswith(".nii") or file.filename.endswith(".nii.gz")):
@@ -234,6 +249,20 @@ async def predict(
             "plan": plan,
         }
     )
+
+    # Link session to workspace user if authenticated
+    if workspace_payload and workspace_payload.get("role") == "user":
+        user_id = workspace_payload["user_id"]
+        retention = get_user_retention_days(user_id)
+        redis_client.set(f"session_owner:{session_id}", str(user_id), ex=retention * 86400)
+        redis_client.sadd(f"user_sessions:{user_id}", session_id)
+
+    # Register notification email (workspace email takes priority over explicit field)
+    _notify = notify_email.strip() if notify_email else ""
+    if not _notify and workspace_payload and workspace_payload.get("role") == "user":
+        _notify = workspace_payload.get("email", "")
+    if _notify and "@" in _notify:
+        redis_client.setex(f"notify_email:{session_id}", NOTIFY_TOKEN_TTL, _notify)
 
     # Return queue position
     pos = get_queue_position(session_id)
@@ -564,9 +593,19 @@ async def stream_simnibs(session_id: str):
 # DELETE /session/{session_id}  — Immediately delete session data
 # ============================================================
 @app.delete("/session/{session_id}")
-async def delete_session(session_id: str, _: str = Depends(require_jwt)):
-    """Delete all data for a session immediately (directory + Redis keys). Requires JWT."""
+async def delete_session(session_id: str, token_payload: dict = Depends(require_jwt)):
+    """Delete all data for a session. Admin JWT always allowed; user JWT only if they own the session."""
     _validate_session_id(session_id)
+
+    # Ownership check for workspace users
+    if token_payload.get("role") == "user":
+        owner = redis_client.get(f"session_owner:{session_id}")
+        if isinstance(owner, bytes):
+            owner = owner.decode()
+        if owner != str(token_payload.get("user_id", "")):
+            raise HTTPException(status_code=403, detail="You do not own this session")
+        # Remove from user's session set
+        redis_client.srem(f"user_sessions:{token_payload['user_id']}", session_id)
 
     session_dir = SESSION_DIR / session_id
     deleted_dir = False
@@ -651,7 +690,7 @@ async def session_restore(token: str):
 # GET /logs  — Dev endpoint: list all sessions with logs (requires JWT)
 # ============================================================
 @app.get("/logs")
-def list_sessions(_: str = Depends(require_jwt)):
+def list_sessions(_: dict = Depends(require_admin_jwt)):
     sessions_path = Path(SESSION_DIR)
     if not sessions_path.exists():
         return {"sessions": []}
@@ -672,7 +711,7 @@ def list_sessions(_: str = Depends(require_jwt)):
 # GET /logs/{session_id}  — Dev endpoint (requires JWT)
 # ============================================================
 @app.get("/logs/{session_id}")
-def get_session_logs(session_id: str, _: str = Depends(require_jwt)):
+def get_session_logs(session_id: str, _: dict = Depends(require_admin_jwt)):
     lp = Path(SESSION_DIR) / session_id / "logs.jsonl"
     if not lp.exists():
         raise HTTPException(404, "No logs for session")
@@ -745,7 +784,7 @@ async def health():
 # GET /admin/logs/{session_id}
 # ============================================================
 @app.get("/admin/logs/{session_id}")
-def get_logs(session_id: str, _: str = Depends(require_jwt)):
+def get_logs(session_id: str, _: dict = Depends(require_admin_jwt)):
     lp = Path(SESSION_DIR) / session_id / "logs.jsonl"
     if not lp.exists():
         raise HTTPException(404, "No logs for session")
@@ -768,7 +807,7 @@ async def admin_login(body: dict = Body(...)):
 # GET /admin/jobs  — aggregate live jobs across all schedulers
 # ============================================================
 @app.get("/admin/jobs")
-def get_admin_jobs(_: str = Depends(require_jwt)):
+def get_admin_jobs(_: dict = Depends(require_admin_jwt)):
     # Read the active_jobs registry — O(n active jobs), no scanning needed.
     raw_jobs = redis_client.hgetall("active_jobs") or {}
     jobs = []
@@ -792,7 +831,7 @@ def get_admin_jobs(_: str = Depends(require_jwt)):
 # ============================================================
 @app.get("/admin/audit")
 def get_audit(
-    _: str = Depends(require_jwt),
+    _: dict = Depends(require_admin_jwt),
     offset: int = 0,
     limit: int = 100,
 ):
@@ -819,6 +858,149 @@ async def cancel_job(session_id: str):
     cancel_session(session_id)
     push_event(session_id, {"event": "job_cancelled"})
     return {"status": "cancellation_requested"}
+
+
+# ============================================================
+# GET /results/{session_id}/{model_name}/stats  — tissue volume stats
+# ============================================================
+@app.get("/results/{session_id}/{model_name}/stats")
+async def get_model_stats(session_id: str, model_name: str):
+    """Return per-label tissue volume statistics (mm³) for a segmentation output."""
+    _validate_session_id(session_id)
+    _validate_model_name(model_name)
+    out_path = model_output_path(session_id, model_name)
+    if not out_path.exists():
+        raise HTTPException(status_code=404, detail="Model output not found")
+
+    cache_path = out_path.parent / "stats.json"
+    result = get_or_compute_stats(out_path, cache_path)
+    return {"session_id": session_id, "model_name": model_name, **result}
+
+
+# ============================================================
+# WORKSPACE endpoints
+# ============================================================
+import re as _email_re
+
+_EMAIL_RE = _email_re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_email(email: str) -> str:
+    if not email or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Valid email address required")
+    return email.strip().lower()
+
+
+@app.post("/workspace/request-magic-link")
+async def workspace_request_magic_link(body: dict = Body(...)):
+    """Send a magic sign-in link. Always returns {"status": "sent"} (no email enumeration)."""
+    email = _validate_email(body.get("email", "").strip())
+
+    if not check_rate_limit(email, MAGIC_LINK_RATE_LIMIT_MAX, MAGIC_LINK_RATE_LIMIT_WINDOW):
+        raise HTTPException(
+            status_code=429,
+            detail=f"Too many requests. Try again in {MAGIC_LINK_RATE_LIMIT_WINDOW} minutes.",
+        )
+
+    record_magic_link_request(email)
+    user_id, _ = get_or_create_user(email)
+    token = create_magic_token(user_id, ttl_minutes=MAGIC_TOKEN_TTL_MINUTES)
+
+    magic_url = f"{FRONTEND_URL}/workspace/verify?token={token}"
+
+    from services.email import send_magic_link_email
+    threading.Thread(target=send_magic_link_email, args=(email, magic_url), daemon=True).start()
+
+    from services.audit import audit_event
+    audit_event("SYSTEM", "", "magic_link_request", f"email={email}")
+
+    return {"status": "sent"}
+
+
+@app.get("/workspace/verify/{token}")
+async def workspace_verify(token: str):
+    """Consume a magic token and return a workspace JWT."""
+    user_id = consume_magic_token(token)
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid or expired sign-in link")
+
+    user = get_user_by_id(user_id)
+    if not user:
+        raise HTTPException(status_code=500, detail="User not found after token validation")
+
+    jwt_token = create_jwt(
+        {"role": "user", "user_id": user["id"], "email": user["email"]},
+        expires_minutes=480,
+    )
+
+    from services.audit import audit_event
+    audit_event("SYSTEM", "", "workspace_login", f"user_id={user_id} email={user['email']}")
+
+    return {
+        "token": jwt_token,
+        "email": user["email"],
+        "retention_days": user["retention_days"],
+    }
+
+
+@app.get("/workspace/me")
+async def workspace_me(payload: dict = Depends(require_jwt)):
+    if payload.get("role") != "user":
+        raise HTTPException(status_code=403, detail="Workspace user account required")
+    user = get_user_by_id(payload["user_id"])
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@app.get("/workspace/sessions")
+async def workspace_sessions(payload: dict = Depends(require_jwt)):
+    if payload.get("role") != "user":
+        raise HTTPException(status_code=403, detail="Workspace user account required")
+    user_id = payload["user_id"]
+    raw = redis_client.smembers(f"user_sessions:{user_id}") or set()
+    sessions = []
+    for sid in raw:
+        if isinstance(sid, bytes):
+            sid = sid.decode()
+        if (SESSION_DIR / sid).exists():
+            sessions.append(sid)
+        else:
+            # Clean up stale entry
+            redis_client.srem(f"user_sessions:{user_id}", sid)
+    return {"sessions": sessions}
+
+
+@app.delete("/workspace/account")
+async def workspace_delete_account(payload: dict = Depends(require_jwt)):
+    if payload.get("role") != "user":
+        raise HTTPException(status_code=403, detail="Workspace user account required")
+    user_id = payload["user_id"]
+
+    # Collect and delete all owned sessions
+    raw = redis_client.smembers(f"user_sessions:{user_id}") or set()
+    sessions_removed = 0
+    for sid in raw:
+        if isinstance(sid, bytes):
+            sid = sid.decode()
+        session_dir = SESSION_DIR / sid
+        if session_dir.exists():
+            shutil.rmtree(str(session_dir), ignore_errors=True)
+            sessions_removed += 1
+        # Clean up Redis keys for this session
+        try:
+            for key in redis_client.scan_iter(f"*{sid}*"):
+                redis_client.delete(key)
+        except Exception:
+            pass
+
+    redis_client.delete(f"user_sessions:{user_id}")
+    delete_user(user_id)
+
+    from services.audit import audit_event
+    audit_event("SYSTEM", "", "workspace_deleted", f"user_id={user_id} sessions_removed={sessions_removed}")
+
+    return {"deleted": True, "sessions_removed": sessions_removed}
 
 
 # ============================================================

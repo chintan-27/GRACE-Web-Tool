@@ -1,10 +1,12 @@
 "use client";
 
 import { JobProvider } from "../context/JobContext";
+import { WorkspaceProvider } from "../context/WorkspaceContext";
 import Header from "./components/layout/Header";
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   return (
+    <WorkspaceProvider>
     <JobProvider>
       <div className="flex min-h-screen flex-col">
         <Header />
@@ -27,5 +29,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         </footer>
       </div>
     </JobProvider>
+    </WorkspaceProvider>
   );
 }

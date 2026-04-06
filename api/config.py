@@ -98,6 +98,17 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 NOTIFY_TOKEN_TTL = int(os.getenv("NOTIFY_TOKEN_TTL", str(6 * 3600)))
 
 # -------------------------------------------------------
+# WORKSPACE CONFIG
+# -------------------------------------------------------
+# Default session retention for workspace users (days)
+WORKSPACE_DEFAULT_RETENTION_DAYS = int(os.getenv("WORKSPACE_DEFAULT_RETENTION_DAYS", "7"))
+# Magic link token TTL (minutes)
+MAGIC_TOKEN_TTL_MINUTES = int(os.getenv("MAGIC_TOKEN_TTL_MINUTES", "15"))
+# Rate limiting: max magic link requests per email per window
+MAGIC_LINK_RATE_LIMIT_MAX = int(os.getenv("MAGIC_LINK_RATE_LIMIT_MAX", "3"))
+MAGIC_LINK_RATE_LIMIT_WINDOW = int(os.getenv("MAGIC_LINK_RATE_LIMIT_WINDOW", "10"))  # minutes
+
+# -------------------------------------------------------
 # FREESURFER
 # -------------------------------------------------------
 # Path to FreeSurfer tools inside Docker
