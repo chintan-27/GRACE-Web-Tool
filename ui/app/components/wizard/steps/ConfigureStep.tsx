@@ -245,10 +245,9 @@ export default function ConfigureStep() {
             after your session ends.
           </p>
         </div>
-      </div>
 
-      {/* Notify email */}
-      <div className="rounded-2xl border border-border bg-surface p-5 shadow-medical">
+        {/* Notify email */}
+        <div className="rounded-2xl border border-border bg-surface p-5 shadow-medical">
         <h2 className="mb-3 text-[10px] font-bold uppercase tracking-widest font-mono text-accent flex items-center gap-1.5">
           <Bell className="h-3 w-3" />
           // Notify on Completion
@@ -276,6 +275,7 @@ export default function ConfigureStep() {
             />
           </div>
         )}
+        </div>
       </div>
 
       {/* Navigation */}
