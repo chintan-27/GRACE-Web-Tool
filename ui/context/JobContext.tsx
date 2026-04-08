@@ -17,9 +17,9 @@ import {
   PredictResponse,
 } from "../lib/api";
 
-// ── Persist completed session so TES page survives page reload / deployment ──
+// ── Persist session so TES page and in-progress jobs survive page reload ──
 const SEG_SESSION_KEY = "grace_seg_session";
-type PersistedSession = { sessionId: string; models: string[]; space: string };
+type PersistedSession = { sessionId: string; models: string[]; space: string; status?: string };
 function saveSegSession(s: PersistedSession) {
   try { localStorage.setItem(SEG_SESSION_KEY, JSON.stringify(s)); } catch {}
 }
@@ -85,6 +85,7 @@ interface JobContextType {
   // Actions
   startJob: (opts?: { notifyEmail?: string; workspaceJwt?: string }) => Promise<void>;
   resetJob: () => void;
+  restoreJobFromSession: (sessionId: string, models: string[], space?: string) => void;
 
   // Setters
   setError: (m: string | null) => void;
@@ -181,12 +182,32 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     }
   }, [status, viewerReady, currentStep]);
 
-  // Persist session to localStorage when complete so TES page survives reload
+  // Persist session state (queued/running/complete) so reload can reconnect
   useEffect(() => {
-    if (status === "complete" && sessionId && models.length > 0) {
-      saveSegSession({ sessionId, models, space });
+    if (sessionId && models.length > 0 && (status === "queued" || status === "running" || status === "complete")) {
+      saveSegSession({ sessionId, models, space, status });
     }
   }, [status, sessionId, models, space]);
+
+  // On mount: restore in-progress or completed session from localStorage
+  useEffect(() => {
+    const saved = loadSegSession();
+    if (!saved) return;
+    const { sessionId: sid, models: savedModels, space: savedSpace, status: savedStatus } = saved;
+    if (!sid || !savedModels?.length) return;
+
+    if (savedStatus === "queued" || savedStatus === "running") {
+      // Reconnect SSE for in-progress job
+      setSessionId(sid);
+      setModels(savedModels);
+      setSpace(savedSpace ?? "native");
+      setStatus(savedStatus as "queued" | "running");
+      setCurrentStep(3);
+      subscribeToSSE(sid, 0);
+    }
+    // complete case handled by TES page / WizardShell restore flow
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ------------------------------------------------------------
   // SSE SUBSCRIBE
@@ -284,6 +305,19 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
   }, [selectedFile, isAnyModelSelected, getSelectedModelList, selectedSpace, convertToFs, subscribeToSSE]);
 
   // ------------------------------------------------------------
+  // RESTORE SESSION (from email link or localStorage)
+  // ------------------------------------------------------------
+  const restoreJobFromSession = useCallback((sid: string, savedModels: string[], savedSpace = "native") => {
+    setSessionId(sid);
+    setModels(savedModels);
+    setSpace(savedSpace);
+    setStatus("complete");
+    setViewerReady(true);
+    setCurrentStep(4);
+    saveSegSession({ sessionId: sid, models: savedModels, space: savedSpace, status: "complete" });
+  }, []);
+
+  // ------------------------------------------------------------
   // RESET JOB COMPLETELY
   // ------------------------------------------------------------
   const resetJob = useCallback(() => {
@@ -371,6 +405,7 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
         // Actions
         startJob,
         resetJob,
+        restoreJobFromSession,
         setError,
         setSseDisconnected,
       }}
