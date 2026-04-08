@@ -1,12 +1,23 @@
 "use client";
 
+import { useState } from "react";
+import { X, Loader2 } from "lucide-react";
 import { useJob } from "@/context/JobContext";
+import { cancelJob } from "@/lib/api";
 import OverallProgress from "../../progress/OverallProgress";
 import ModelProgressCard from "../../progress/ModelProgressCard";
 import GPUStatus from "../../GPUStatus";
 
 export default function ProcessingStep() {
-  const { models, progress, modelGpus, status, sessionId, queuePosition, selectedFile } = useJob();
+  const { models, progress, modelGpus, status, sessionId, queuePosition, selectedFile, resetJob } = useJob();
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancel = async () => {
+    if (!sessionId || cancelling) return;
+    setCancelling(true);
+    await cancelJob(sessionId).catch(() => {});
+    resetJob();
+  };
 
   // Calculate overall progress
   const totalProgress = models.length > 0
@@ -65,6 +76,22 @@ export default function ProcessingStep() {
                 {sessionId.slice(0, 8)}...
               </p>
             </div>
+          )}
+
+          {/* Cancel button — only while job is active */}
+          {(status === "queued" || status === "running") && (
+            <button
+              onClick={handleCancel}
+              disabled={cancelling}
+              className="mt-4 w-full flex items-center justify-center gap-1.5 rounded-lg border border-red-500/40 px-3 py-2 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+            >
+              {cancelling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <X className="h-3.5 w-3.5" />
+              )}
+              {cancelling ? "Cancelling…" : "Cancel job"}
+            </button>
           )}
         </div>
 

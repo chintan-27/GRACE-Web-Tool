@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useJob, WizardStep } from "@/context/JobContext";
+import { restoreSession } from "@/lib/api";
 import Stepper from "./Stepper";
 import UploadStep from "./steps/UploadStep";
 import ConfigureStep from "./steps/ConfigureStep";
@@ -25,7 +27,29 @@ export default function WizardShell() {
     setError,
     sseDisconnected,
     setSseDisconnected,
+    restoreJobFromSession,
   } = useJob();
+
+  const [restoreError, setRestoreError] = useState<string | null>(null);
+
+  // Detect ?restore=token on mount and load the session
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("restore");
+    if (!token) return;
+
+    // Clean the URL immediately
+    window.history.replaceState({}, "", "/");
+
+    restoreSession(token)
+      .then(({ session_id, models }) => {
+        restoreJobFromSession(session_id, models);
+      })
+      .catch((err: unknown) => {
+        setRestoreError(err instanceof Error ? err.message : "Restore link is invalid or has expired.");
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Navigation handlers
   const canNavigateTo = (step: WizardStep): boolean => {
@@ -61,6 +85,14 @@ export default function WizardShell() {
     <>
       {/* Skip Link for keyboard navigation */}
       <SkipLink />
+
+      {/* Restore error banner */}
+      {restoreError && (
+        <div className="border-b border-red-500/30 bg-red-500/10 px-4 py-2 text-center text-xs text-red-400 flex items-center justify-center gap-2">
+          <span>{restoreError}</span>
+          <button onClick={() => setRestoreError(null)} className="underline underline-offset-2 hover:text-red-300">Dismiss</button>
+        </div>
+      )}
 
       {/* Error Modal */}
       <ErrorModal
