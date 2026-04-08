@@ -58,6 +58,7 @@ def roast_output_path(session_id: str, output_type: str, model_name: str = "", s
         "voltage": f"T1_{simulation_tag}_v.nii",
         "efield":  f"T1_{simulation_tag}_e.nii",
         "emag":    f"T1_{simulation_tag}_emag.nii",
+        "jbrain":  f"T1_{simulation_tag}_Jbrain.nii",
     }
     if output_type not in filenames:
         raise ValueError(f"Unknown ROAST output type: {output_type}")
