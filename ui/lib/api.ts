@@ -285,7 +285,7 @@ export async function getSimulationResult(
   sessionId: string,
   modelName: string,
   runId: string,
-  outputType: "voltage" | "efield" | "emag" | "mask_elec" | "mask_gel"
+  outputType: "voltage" | "efield" | "emag" | "mask_elec" | "mask_gel" | "jbrain"
 ): Promise<Blob> {
   const path = runId
     ? `${API_BASE}/simulate/results/${sessionId}/${modelName}/${runId}/${outputType}`

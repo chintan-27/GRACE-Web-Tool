@@ -699,7 +699,7 @@ class ROASTRunner:
     # ------------------------------------------------------------------
     def collect_outputs(self):
         """Verify expected output NIfTI files exist."""
-        expected = ["voltage", "efield", "emag"]
+        expected = ["voltage", "efield", "emag", "jbrain"]
         missing = []
         for output_type in expected:
             path = roast_output_path(self.session_id, output_type, self.model_name, self.sim_tag, self.run_id)

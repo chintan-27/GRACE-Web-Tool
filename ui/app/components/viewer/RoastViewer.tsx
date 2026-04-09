@@ -19,6 +19,14 @@ const ROAST_PANELS = [
     note: null,
   },
   {
+    type: "jbrain",
+    label: "Current Density (Brain)",
+    unit: "A/m²",
+    description: "Current density magnitude restricted to brain tissue",
+    recommended: false,
+    note: "J-map for brain tissue only — comparable to SimNIBS magnJ. Shows how much current reaches cortical and subcortical regions.",
+  },
+  {
     type: "voltage",
     label: "Voltage",
     unit: "mV",
@@ -47,7 +55,7 @@ const SIMNIBS_PANELS = [
   },
 ] as const;
 
-type OutputType = "emag" | "voltage";
+type OutputType = "emag" | "voltage" | "jbrain";
 
 const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 
@@ -107,6 +115,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
   // Map ROAST panel types to equivalent SimNIBS output types
   const SIMNIBS_TYPE_MAP: Record<OutputType, SimNIBSOutputType> = {
     emag:    "magnJ",
+    jbrain:  "magnJ",
     voltage: "wm_gm_magnJ",
   };
 
