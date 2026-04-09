@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useId, useMemo } from "react";
 import { Niivue, cmapper } from "@niivue/niivue";
-import { AlertTriangle, Eye, Palette, Info, ZoomIn, MapPin } from "lucide-react";
+import { AlertTriangle, Eye, Palette, Info, ZoomIn, MapPin, Layers, Box } from "lucide-react";
 import { getSimulationResult, getSimNIBSResult, type SimNIBSOutputType } from "@/lib/api";
 import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
@@ -69,8 +69,9 @@ interface RoastViewerProps {
 
 export default function RoastViewer({ inputUrl, sessionId, modelName, runId, solver = "roast" }: RoastViewerProps) {
   const PANELS = solver === "simnibs" ? SIMNIBS_PANELS : ROAST_PANELS;
-  const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
-  const nvRefs = useRef<(Niivue | null)[]>([null, null]);
+  // 3 panels for ROAST (emag, jbrain, voltage), 2 for SimNIBS
+  const canvasRefs = [useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null), useRef<HTMLCanvasElement>(null)];
+  const nvRefs = useRef<(Niivue | null)[]>([null, null, null]);
 
   const [initialized, setInitialized]       = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0.7);
@@ -83,11 +84,13 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
   // When true, voltage colormap is clipped to the 5–99th percentile to reveal brain-tissue variation
   const [voltageZoomed, setVoltageZoomed]   = useState(false);
 
-  // Electrode placement panels (ROAST only) — two separate viewers
-  const canvasElecRef   = useRef<HTMLCanvasElement>(null);
-  const canvasGelRef    = useRef<HTMLCanvasElement>(null);
-  const nvElecRef       = useRef<Niivue | null>(null);
-  const nvGelRef        = useRef<Niivue | null>(null);
+  // Electrode placement panels (ROAST only) — combined + two separate viewers
+  const canvasElecRef      = useRef<HTMLCanvasElement>(null);
+  const canvasGelRef       = useRef<HTMLCanvasElement>(null);
+  const canvasCombinedRef  = useRef<HTMLCanvasElement>(null);
+  const nvElecRef          = useRef<Niivue | null>(null);
+  const nvGelRef           = useRef<Niivue | null>(null);
+  const nvCombinedRef      = useRef<Niivue | null>(null);
   const [elecReady, setElecReady]           = useState(false);
   const [elecHasElec, setElecHasElec]       = useState(false);
   const [elecHasGel, setElecHasGel]         = useState(false);
@@ -96,6 +99,9 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
   // Isolation: dim T1 to reveal only the mask
   const [elecIsolated, setElecIsolated]     = useState(false);
   const [gelIsolated, setGelIsolated]       = useState(false);
+  // View mode for electrode panels
+  const [elecViewMode, setElecViewMode]     = useState<"2d" | "3d">("2d");
+  const [elecSlice, setElecSlice]           = useState<"multiplanar" | "axial" | "coronal" | "sagittal">("multiplanar");
   const MASK_BG_DIM = 0.08;
 
   const colormapDropRef = useRef<HTMLDivElement>(null);
@@ -235,7 +241,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
   useEffect(() => {
     if (!initialized || solver === "simnibs") return;
     if (nvElecRef.current || nvGelRef.current) return;
-    if (!canvasElecRef.current || !canvasGelRef.current) return;
+    if (!canvasElecRef.current || !canvasGelRef.current || !canvasCombinedRef.current) return;
     let mounted = true;
 
     const nvOpts = {
@@ -248,22 +254,27 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
     const initElec = async () => {
       const nvE = new Niivue(nvOpts);
       const nvG = new Niivue(nvOpts);
+      const nvC = new Niivue(nvOpts);
       nvE.attachToCanvas(canvasElecRef.current!);
       nvG.attachToCanvas(canvasGelRef.current!);
-      nvElecRef.current = nvE;
-      nvGelRef.current  = nvG;
+      nvC.attachToCanvas(canvasCombinedRef.current!);
+      nvElecRef.current    = nvE;
+      nvGelRef.current     = nvG;
+      nvCombinedRef.current = nvC;
 
-      // Load T1 into both
+      // Load T1 into all three
       const resp = await fetch(inputUrl);
       if (!resp.ok || !mounted) return;
       const inputBuf = await resp.arrayBuffer();
       await nvE.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
       await nvG.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
+      await nvC.loadFromArrayBuffer(inputBuf.slice(0), "input.nii.gz");
       nvE.setOpacity(0, 1.0); nvE.setSliceType(nvE.sliceTypeMultiplanar);
       nvG.setOpacity(0, 1.0); nvG.setSliceType(nvG.sliceTypeMultiplanar);
+      nvC.setOpacity(0, 1.0); nvC.setSliceType(nvC.sliceTypeMultiplanar);
 
-      // Sync all four viewers together
-      const all = [...nvRefs.current.filter(Boolean) as Niivue[], nvE, nvG];
+      // Sync all viewers (electrode + gel + combined + main field viewers)
+      const all = [...nvRefs.current.filter(Boolean) as Niivue[], nvE, nvG, nvC];
       all.forEach(a => a.broadcastTo(all.filter(b => b !== a), { "2d": true, "3d": false }));
 
       // Fetch masks
@@ -280,6 +291,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
 
       if (!elecBuf && !gelBuf) { setElecError(true); return; }
 
+      // Load into individual viewers + combined
       if (elecBuf) {
         await nvE.loadFromArrayBuffer(elecBuf.slice(0), "mask_elec.nii");
         if (nvE.volumes.length >= 2) {
@@ -289,6 +301,16 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
           vol.cal_min = 0.5; vol.cal_max = 1.0;
           nvE.setColormap(vol.id, "hot");
           nvE.setOpacity(1, elecOpacity);
+        }
+        // Combined: electrode at index 1
+        await nvC.loadFromArrayBuffer(elecBuf.slice(0), "mask_elec.nii");
+        if (nvC.volumes.length >= 2) {
+          const vol = nvC.volumes[1];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (vol as any).colormapType = 1;
+          vol.cal_min = 0.5; vol.cal_max = 1.0;
+          nvC.setColormap(vol.id, "hot");
+          nvC.setOpacity(1, elecOpacity);
         }
         setElecHasElec(true);
       }
@@ -303,10 +325,21 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
           nvG.setColormap(vol.id, "winter");
           nvG.setOpacity(1, elecOpacity);
         }
+        // Combined: gel at index 2 (after electrode) or 1 (if no electrode)
+        await nvC.loadFromArrayBuffer(gelBuf.slice(0), "mask_gel.nii");
+        const gelIdx = nvC.volumes.length - 1;
+        if (gelIdx >= 1) {
+          const vol = nvC.volumes[gelIdx];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (vol as any).colormapType = 1;
+          vol.cal_min = 0.5; vol.cal_max = 1.0;
+          nvC.setColormap(vol.id, "winter");
+          nvC.setOpacity(gelIdx, elecOpacity);
+        }
         setElecHasGel(true);
       }
 
-      nvE.drawScene(); nvG.drawScene();
+      nvE.drawScene(); nvG.drawScene(); nvC.drawScene();
       if (mounted) setElecReady(true);
     };
 
@@ -315,7 +348,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialized, inputUrl, sessionId, modelName, runId, solver]);
 
-  // Sync electrode mask opacity
+  // Sync electrode mask opacity across all electrode viewers
   useEffect(() => {
     if (!elecReady) return;
     [nvElecRef, nvGelRef].forEach(ref => {
@@ -324,7 +357,35 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
         ref.current.drawScene();
       }
     });
+    // Combined viewer: sync all overlay volumes
+    const nvC = nvCombinedRef.current;
+    if (nvC) {
+      for (let i = 1; i < nvC.volumes.length; i++) {
+        nvC.setOpacity(i, elecOpacity);
+      }
+      nvC.drawScene();
+    }
   }, [elecOpacity, elecReady]);
+
+  // Sync view mode (2D/3D) and slice plane for electrode panels
+  useEffect(() => {
+    if (!elecReady) return;
+    [nvElecRef, nvGelRef, nvCombinedRef].forEach(ref => {
+      const nv = ref.current;
+      if (!nv) return;
+      let st: number;
+      if (elecViewMode === "3d") {
+        st = nv.sliceTypeRender;
+      } else {
+        st = elecSlice === "axial"    ? nv.sliceTypeAxial
+           : elecSlice === "coronal"  ? nv.sliceTypeCoronal
+           : elecSlice === "sagittal" ? nv.sliceTypeSagittal
+           : nv.sliceTypeMultiplanar;
+      }
+      nv.setSliceType(st);
+      nv.drawScene();
+    });
+  }, [elecViewMode, elecSlice, elecReady]);
 
   // Sync T1 dim when isolating electrode or gel
   useEffect(() => {
@@ -361,8 +422,8 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
     });
   }, [colormap, initialized]);
 
-  // Apply / remove brain-range zoom on the voltage panel (index 1 = voltage)
-  const voltageNv = nvRefs.current[1];
+  // Apply / remove brain-range zoom on the voltage panel (find its index in PANELS)
+  const voltageNv = nvRefs.current[PANELS.findIndex(p => p.type === "voltage")];
   useEffect(() => {
     if (!initialized || !voltageNv || voltageNv.volumes.length < 2) return;
     const vol = voltageNv.volumes[1];
@@ -612,7 +673,54 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
               <MapPin className="h-4 w-4 text-foreground-muted" aria-hidden="true" />
               <span className="text-sm font-semibold text-foreground">Electrode Placement</span>
             </div>
-            <div className="flex items-center gap-2 ml-4">
+
+            {/* 2D / 3D toggle */}
+            <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+              <button
+                onClick={() => setElecViewMode("2d")}
+                aria-pressed={elecViewMode === "2d"}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                  elecViewMode === "2d" ? "bg-accent text-accent-foreground" : "text-foreground-secondary hover:text-foreground"
+                )}
+              >
+                <Layers className="h-3 w-3" aria-hidden="true" />
+                2D
+              </button>
+              <button
+                onClick={() => setElecViewMode("3d")}
+                aria-pressed={elecViewMode === "3d"}
+                className={cn(
+                  "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                  elecViewMode === "3d" ? "bg-accent text-accent-foreground" : "text-foreground-secondary hover:text-foreground"
+                )}
+              >
+                <Box className="h-3 w-3" aria-hidden="true" />
+                3D
+              </button>
+            </div>
+
+            {/* Slice plane selector (2D only) */}
+            {elecViewMode === "2d" && (
+              <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
+                {(["multiplanar", "axial", "coronal", "sagittal"] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setElecSlice(s)}
+                    aria-pressed={elecSlice === s}
+                    className={cn(
+                      "rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors focus:outline-none focus:ring-2 focus:ring-ring",
+                      elecSlice === s ? "bg-accent text-accent-foreground" : "text-foreground-secondary hover:text-foreground"
+                    )}
+                  >
+                    {s === "multiplanar" ? "All" : s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Overlay opacity */}
+            <div className="flex items-center gap-2">
               <Eye className="h-4 w-4 text-foreground-muted" />
               <span className="text-sm text-foreground-muted">Overlay:</span>
               <div className="flex items-center gap-1 rounded-lg border border-border bg-surface p-1">
@@ -633,6 +741,7 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
                 ))}
               </div>
             </div>
+
             {!elecReady && !elecError && (
               <div className="ml-auto flex items-center gap-2 text-sm text-foreground-muted">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-accent border-t-transparent" />
@@ -647,24 +756,27 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
               <p className="text-sm">Electrode mask files not found — run the simulation to generate placement data.</p>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
-              {/* Electrode rubber panel */}
+            <div className="flex flex-col gap-4">
+              {/* Combined view — full-width primary panel showing both masks simultaneously */}
               <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
                 <header className="border-b border-border px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#ff6000]" aria-hidden="true" />
-                    <h3 className="text-sm font-semibold text-foreground">Electrode Pad</h3>
-                    <p className="text-xs text-foreground-muted">Rubber contact mask</p>
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#ff6000]" aria-hidden="true" />
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#0080ff]" aria-hidden="true" />
+                    </div>
+                    <h3 className="text-sm font-semibold text-foreground">Combined Placement</h3>
+                    <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">Recommended</span>
+                    <p className="text-xs text-foreground-muted hidden sm:block">Both electrode pad and gel layer overlaid on anatomy</p>
                   </div>
-                  <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_elec</span>
                 </header>
-                <div className="relative bg-black" style={{ height: "500px" }}>
+                <div className="relative bg-black" style={{ height: elecViewMode === "3d" ? "600px" : "560px" }}>
                   <canvas
-                    ref={canvasElecRef}
+                    ref={canvasCombinedRef}
                     width={512}
                     height={512}
                     style={{ width: "100%", height: "100%" }}
-                    aria-label="Electrode rubber placement viewer"
+                    aria-label="Combined electrode and gel placement viewer"
                   />
                   {!elecReady && (
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -674,107 +786,156 @@ export default function RoastViewer({ inputUrl, sessionId, modelName, runId, sol
                       </div>
                     </div>
                   )}
-                  {elecReady && !elecHasElec && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                      <p className="text-sm text-foreground-muted">No electrode mask available</p>
-                    </div>
+                </div>
+                {/* Color legend */}
+                <div className="border-t border-border px-4 py-3 flex items-center gap-6">
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Legend</span>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-3 w-5 rounded-[3px] bg-[#ff6000]" aria-hidden="true" />
+                    <span className="text-xs text-foreground-secondary">Electrode Pad</span>
+                    <span className="text-xs font-mono text-foreground-muted bg-border/50 px-1.5 py-0.5 rounded">mask_elec</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="inline-block h-3 w-5 rounded-[3px] bg-[#0080ff]" aria-hidden="true" />
+                    <span className="text-xs text-foreground-secondary">Gel Layer</span>
+                    <span className="text-xs font-mono text-foreground-muted bg-border/50 px-1.5 py-0.5 rounded">mask_gel</span>
+                  </div>
+                  {elecViewMode === "3d" && (
+                    <span className="ml-auto text-[11px] text-foreground-muted">Click + drag to rotate · Scroll to zoom</span>
                   )}
                 </div>
-                {elecReady && elecHasElec && (
-                  <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
-                    <button
-                      type="button"
-                      onClick={() => setElecIsolated(false)}
-                      title="Show T1 anatomy"
-                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
-                      style={{ opacity: elecIsolated ? 0.3 : 1 }}
-                    >
-                      <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !elecIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
-                      <span className={cn("whitespace-nowrap", !elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setElecIsolated(true)}
-                      title="Isolate electrode mask"
-                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
-                      style={{ opacity: !elecIsolated ? 0.5 : 1 }}
-                    >
-                      <span className="inline-block h-3 w-3 rounded-[3px] bg-[#ff6000] ring-1 ring-white/10" style={{ transform: elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: elecIsolated ? "0 0 0 2px white, 0 0 0 3px #ff6000" : undefined }} />
-                      <span className={cn("whitespace-nowrap", elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Electrode Only</span>
-                    </button>
-                    {elecIsolated && (
-                      <button type="button" onClick={() => setElecIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
-                        Show all
-                      </button>
-                    )}
-                  </div>
-                )}
               </article>
 
-              {/* Gel layer panel */}
-              <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
-                <header className="border-b border-border px-4 py-3 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#0080ff]" aria-hidden="true" />
-                    <h3 className="text-sm font-semibold text-foreground">Gel Layer</h3>
-                    <p className="text-xs text-foreground-muted">Conductive gel mask</p>
-                  </div>
-                  <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_gel</span>
-                </header>
-                <div className="relative bg-black" style={{ height: "500px" }}>
-                  <canvas
-                    ref={canvasGelRef}
-                    width={512}
-                    height={512}
-                    style={{ width: "100%", height: "100%" }}
-                    aria-label="Gel layer placement viewer"
-                  />
-                  {!elecReady && (
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="flex flex-col items-center gap-2">
-                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-                        <span className="text-sm text-foreground-muted">Initializing viewer…</span>
+              {/* Individual panels — side by side */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* Electrode rubber panel */}
+                <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+                  <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#ff6000]" aria-hidden="true" />
+                      <h3 className="text-sm font-semibold text-foreground">Electrode Pad</h3>
+                      <p className="text-xs text-foreground-muted">Rubber contact mask</p>
+                    </div>
+                    <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_elec</span>
+                  </header>
+                  <div className="relative bg-black" style={{ height: elecViewMode === "3d" ? "500px" : "460px" }}>
+                    <canvas
+                      ref={canvasElecRef}
+                      width={512}
+                      height={512}
+                      style={{ width: "100%", height: "100%" }}
+                      aria-label="Electrode rubber placement viewer"
+                    />
+                    {!elecReady && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                          <span className="text-sm text-foreground-muted">Initializing viewer…</span>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                  {elecReady && !elecHasGel && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                      <p className="text-sm text-foreground-muted">No gel mask available</p>
-                    </div>
-                  )}
-                </div>
-                {elecReady && elecHasGel && (
-                  <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
-                    <button
-                      type="button"
-                      onClick={() => setGelIsolated(false)}
-                      title="Show T1 anatomy"
-                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
-                      style={{ opacity: gelIsolated ? 0.3 : 1 }}
-                    >
-                      <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !gelIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
-                      <span className={cn("whitespace-nowrap", !gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGelIsolated(true)}
-                      title="Isolate gel mask"
-                      className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
-                      style={{ opacity: !gelIsolated ? 0.5 : 1 }}
-                    >
-                      <span className="inline-block h-3 w-3 rounded-[3px] bg-[#0080ff] ring-1 ring-white/10" style={{ transform: gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: gelIsolated ? "0 0 0 2px white, 0 0 0 3px #0080ff" : undefined }} />
-                      <span className={cn("whitespace-nowrap", gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Gel Only</span>
-                    </button>
-                    {gelIsolated && (
-                      <button type="button" onClick={() => setGelIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
-                        Show all
-                      </button>
+                    )}
+                    {elecReady && !elecHasElec && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                        <p className="text-sm text-foreground-muted">No electrode mask available</p>
+                      </div>
                     )}
                   </div>
-                )}
-              </article>
+                  {elecReady && elecHasElec && (
+                    <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
+                      <button
+                        type="button"
+                        onClick={() => setElecIsolated(false)}
+                        title="Show T1 anatomy"
+                        className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                        style={{ opacity: elecIsolated ? 0.3 : 1 }}
+                      >
+                        <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !elecIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
+                        <span className={cn("whitespace-nowrap", !elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setElecIsolated(true)}
+                        title="Isolate electrode mask"
+                        className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                        style={{ opacity: !elecIsolated ? 0.5 : 1 }}
+                      >
+                        <span className="inline-block h-3 w-3 rounded-[3px] bg-[#ff6000] ring-1 ring-white/10" style={{ transform: elecIsolated ? "scale(1.4)" : "scale(1)", boxShadow: elecIsolated ? "0 0 0 2px white, 0 0 0 3px #ff6000" : undefined }} />
+                        <span className={cn("whitespace-nowrap", elecIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Electrode Only</span>
+                      </button>
+                      {elecIsolated && (
+                        <button type="button" onClick={() => setElecIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
+                          Show all
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+
+                {/* Gel layer panel */}
+                <article className="flex flex-col rounded-xl border border-border bg-surface overflow-hidden">
+                  <header className="border-b border-border px-4 py-3 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-block h-2.5 w-2.5 rounded-sm bg-[#0080ff]" aria-hidden="true" />
+                      <h3 className="text-sm font-semibold text-foreground">Gel Layer</h3>
+                      <p className="text-xs text-foreground-muted">Conductive gel mask</p>
+                    </div>
+                    <span className="text-xs font-mono text-foreground-muted bg-border/50 px-2 py-0.5 rounded">mask_gel</span>
+                  </header>
+                  <div className="relative bg-black" style={{ height: elecViewMode === "3d" ? "500px" : "460px" }}>
+                    <canvas
+                      ref={canvasGelRef}
+                      width={512}
+                      height={512}
+                      style={{ width: "100%", height: "100%" }}
+                      aria-label="Gel layer placement viewer"
+                    />
+                    {!elecReady && (
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
+                          <span className="text-sm text-foreground-muted">Initializing viewer…</span>
+                        </div>
+                      </div>
+                    )}
+                    {elecReady && !elecHasGel && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                        <p className="text-sm text-foreground-muted">No gel mask available</p>
+                      </div>
+                    )}
+                  </div>
+                  {elecReady && elecHasGel && (
+                    <div className="border-t border-border px-4 py-2.5 flex items-center gap-4">
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-foreground-muted">Isolate</span>
+                      <button
+                        type="button"
+                        onClick={() => setGelIsolated(false)}
+                        title="Show T1 anatomy"
+                        className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                        style={{ opacity: gelIsolated ? 0.3 : 1 }}
+                      >
+                        <span className="inline-block h-3 w-3 rounded-[3px] bg-foreground-muted/40 ring-1 ring-white/10" style={{ transform: !gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: !gelIsolated ? "0 0 0 2px white, 0 0 0 3px gray" : undefined }} />
+                        <span className={cn("whitespace-nowrap", !gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>T1 Anatomy</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGelIsolated(true)}
+                        title="Isolate gel mask"
+                        className="flex items-center gap-1.5 text-xs transition-opacity focus:outline-none"
+                        style={{ opacity: !gelIsolated ? 0.5 : 1 }}
+                      >
+                        <span className="inline-block h-3 w-3 rounded-[3px] bg-[#0080ff] ring-1 ring-white/10" style={{ transform: gelIsolated ? "scale(1.4)" : "scale(1)", boxShadow: gelIsolated ? "0 0 0 2px white, 0 0 0 3px #0080ff" : undefined }} />
+                        <span className={cn("whitespace-nowrap", gelIsolated ? "font-semibold text-foreground" : "text-foreground-secondary")}>Gel Only</span>
+                      </button>
+                      {gelIsolated && (
+                        <button type="button" onClick={() => setGelIsolated(false)} className="ml-auto text-[10px] text-foreground-muted hover:text-foreground underline underline-offset-2">
+                          Show all
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              </div>
             </div>
           )}
         </>
