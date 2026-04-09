@@ -8,15 +8,17 @@ import { COLORMAPS } from "./ViewerControls";
 import type { ColormapId } from "./ViewerControls";
 import { cn } from "@/lib/utils";
 
-// Four panels: ROAST emag | SimNIBS magnJ | ROAST voltage | SimNIBS WM+GM magnJ
+// Six panels: ROAST emag | SimNIBS magnJ | ROAST jbrain | SimNIBS WM+GM magnJ | ROAST voltage | SimNIBS gm_magnJ
 const PANELS = [
-  { solver: "roast",   type: "emag",       label: "ROAST — E-field Magnitude",     unit: "V/m",  col: 0 },
-  { solver: "simnibs", type: "magnJ",      label: "SimNIBS — Current Density |J|", unit: "A/m²", col: 1 },
-  { solver: "roast",   type: "voltage",    label: "ROAST — Voltage",               unit: "mV",   col: 0 },
-  { solver: "simnibs", type: "wm_gm_magnJ", label: "SimNIBS — WM+GM |J|",          unit: "A/m²", col: 1 },
+  { solver: "roast",   type: "emag",        label: "ROAST — E-field Magnitude",       unit: "V/m",  col: 0 },
+  { solver: "simnibs", type: "magnJ",       label: "SimNIBS — Current Density |J|",   unit: "A/m²", col: 1 },
+  { solver: "roast",   type: "jbrain",      label: "ROAST — J-map (Brain)",           unit: "A/m²", col: 0 },
+  { solver: "simnibs", type: "wm_gm_magnJ", label: "SimNIBS — WM+GM |J|",             unit: "A/m²", col: 1 },
+  { solver: "roast",   type: "voltage",     label: "ROAST — Voltage",                 unit: "mV",   col: 0 },
+  { solver: "simnibs", type: "gm_magnJ",    label: "SimNIBS — GM |J|",                unit: "A/m²", col: 1 },
 ] as const;
 
-type PanelIdx = 0 | 1 | 2 | 3;
+type PanelIdx = 0 | 1 | 2 | 3 | 4 | 5;
 
 const OPACITY_PRESETS = [0, 0.25, 0.5, 0.75, 1] as const;
 
@@ -29,14 +31,16 @@ interface TESComparisonViewerProps {
 }
 
 export default function TESComparisonViewer({ inputUrl, sessionId, modelName, roastRunId = "", simnibsRunId = "" }: TESComparisonViewerProps) {
-  // One canvas per panel — 4 total
+  // One canvas per panel — 6 total
   const canvasRefs = [
     useRef<HTMLCanvasElement>(null),
     useRef<HTMLCanvasElement>(null),
     useRef<HTMLCanvasElement>(null),
     useRef<HTMLCanvasElement>(null),
+    useRef<HTMLCanvasElement>(null),
+    useRef<HTMLCanvasElement>(null),
   ];
-  const nvRefs = useRef<(Niivue | null)[]>([null, null, null, null]);
+  const nvRefs = useRef<(Niivue | null)[]>([null, null, null, null, null, null]);
 
   const [initialized, setInitialized]       = useState(false);
   const [overlayOpacity, setOverlayOpacity] = useState(0.7);
@@ -59,7 +63,7 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName, ro
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  type RoastOutputType = "emag" | "voltage";
+  type RoastOutputType = "emag" | "voltage" | "jbrain";
   type AnyOutputType = RoastOutputType | SimNIBSOutputType;
 
   const fetchOutput = useCallback(async (solver: "roast" | "simnibs", type: AnyOutputType): Promise<ArrayBuffer | null> => {
@@ -295,8 +299,8 @@ export default function TESComparisonViewer({ inputUrl, sessionId, modelName, ro
         </div>
       </div>
 
-      {/* 2×2 panel grid */}
-      {([0, 1] as const).map(row => (
+      {/* 3×2 panel grid */}
+      {([0, 1, 2] as const).map(row => (
         <div key={row} className="grid grid-cols-2 gap-4">
           {([0, 1] as const).map(col => {
             const panelIdx = (row * 2 + col) as PanelIdx;
