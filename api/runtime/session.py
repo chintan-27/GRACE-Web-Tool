@@ -48,21 +48,20 @@ def roast_working_dir(session_id: str, model_name: str = "", run_id: str = "") -
 
 def roast_output_path(session_id: str, output_type: str, model_name: str = "", simulation_tag: str = "tDCSLAB", run_id: str = "") -> Path:
     work_dir = roast_working_dir(session_id, model_name, run_id)
-    if output_type == "mask_elec":
-        matches = sorted(work_dir.glob("T1_sim_*_mask_elec.nii"), key=lambda p: p.stat().st_mtime, reverse=True)
-        return matches[0] if matches else work_dir / "_missing_mask_elec.nii"
-    if output_type == "mask_gel":
-        matches = sorted(work_dir.glob("T1_sim_*_mask_gel.nii"), key=lambda p: p.stat().st_mtime, reverse=True)
-        return matches[0] if matches else work_dir / "_missing_mask_gel.nii"
-    filenames = {
-        "voltage": f"T1_{simulation_tag}_v.nii",
-        "efield":  f"T1_{simulation_tag}_e.nii",
-        "emag":    f"T1_{simulation_tag}_emag.nii",
-        "jbrain":  f"T1_{simulation_tag}_Jbrain.nii",
+    # Glob-based lookup: ROAST embeds its own hash in the simulation tag, so we
+    # match by suffix rather than constructing the exact filename from config.
+    glob_patterns = {
+        "mask_elec": "T1_*_mask_elec.nii",
+        "mask_gel":  "T1_*_mask_gel.nii",
+        "voltage":   "T1_*_v.nii",
+        "efield":    "T1_*_e.nii",
+        "emag":      "T1_*_emag.nii",
+        "jbrain":    "T1_*_Jbrain.nii",
     }
-    if output_type not in filenames:
+    if output_type not in glob_patterns:
         raise ValueError(f"Unknown ROAST output type: {output_type}")
-    return work_dir / filenames[output_type]
+    matches = sorted(work_dir.glob(glob_patterns[output_type]), key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0] if matches else work_dir / f"_missing_{output_type}.nii"
 
 
 # -----------------------------------------------------------
