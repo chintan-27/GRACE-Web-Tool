@@ -614,8 +614,9 @@ async def session_notify(body: dict = Body(...)):
     email      = body.get("email", "").strip()
     filename   = body.get("filename")
 
-    if not session_id or not email or "@" not in email:
+    if not session_id:
         raise HTTPException(status_code=400, detail="session_id and a valid email are required")
+    email = _validate_email(email)
 
     session_dir = SESSION_DIR / session_id
     if not session_dir.exists():
