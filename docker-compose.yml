@@ -65,6 +65,13 @@ services:
       - SIMNIBS_N_THREADS=${SIMNIBS_N_THREADS:-8}
       - SIMNIBS_MAX_WORKERS=${SIMNIBS_MAX_WORKERS:-1}
       - SIMNIBS_TIMEOUT_SECONDS=${SIMNIBS_TIMEOUT_SECONDS:-10800}
+      # Email / notifications
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-}
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       redis:
         condition: service_healthy
