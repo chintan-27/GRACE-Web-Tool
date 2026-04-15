@@ -571,27 +571,44 @@ async def stream_simnibs(session_id: str):
 # DELETE /session/{session_id}  — Immediately delete session data
 # ============================================================
 @app.delete("/session/{session_id}")
-async def delete_session(session_id: str, token_payload: dict = Depends(require_jwt)):
-    """Delete all data for a session. Admin JWT always allowed; user JWT only if they own the session."""
+async def delete_session(session_id: str, token_payload: dict | None = Depends(optional_user_jwt)):
+    """
+    Delete all data for a session.
+    - Anonymous callers (no JWT): allowed if the session directory exists (possession = capability).
+    - Workspace users (user JWT): allowed only if they own the session.
+    - Admins (admin JWT): always allowed.
+    Also cancels any in-progress segmentation / simulation jobs.
+    """
     _validate_session_id(session_id)
 
-    # Ownership check for workspace users
-    if token_payload.get("role") == "user":
+    # Ownership check for workspace users only
+    if token_payload and token_payload.get("role") == "user":
         owner = redis_client.get(f"session_owner:{session_id}")
         if isinstance(owner, bytes):
             owner = owner.decode()
         if owner != str(token_payload.get("user_id", "")):
             raise HTTPException(status_code=403, detail="You do not own this session")
-        # Remove from user's session set
         redis_client.srem(f"user_sessions:{token_payload['user_id']}", session_id)
 
     session_dir = SESSION_DIR / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # Cancel any running jobs first (best-effort)
+    try:
+        from services.redis_client import cancel_session
+        cancel_session(session_id)
+    except Exception:
+        pass
+
     deleted_dir = False
-    if session_dir.exists():
+    try:
         shutil.rmtree(str(session_dir), ignore_errors=True)
         deleted_dir = True
+    except Exception:
+        pass
 
-    # Best-effort Redis cleanup (don't fail if keys are already gone)
+    # Best-effort Redis cleanup
     try:
         for key in redis_client.scan_iter(f"*{session_id}*"):
             redis_client.delete(key)
