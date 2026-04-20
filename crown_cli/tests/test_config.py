@@ -9,7 +9,6 @@ def test_defaults():
     with patch.dict(os.environ, {}, clear=True):
         with patch("crown_cli.core.config.CONFIG_PATH", Path("/nonexistent/config.toml")):
             cfg = load_config()
-    assert cfg.hf_repo == "smile-lab/crown-models"
     assert cfg.model_cache == Path.home() / ".crown" / "models"
     assert cfg.freesurfer_home == Path("/usr/local/freesurfer")
 
@@ -23,10 +22,10 @@ def test_env_var_override():
 
 
 def test_toml_override(tmp_path):
-    toml_content = b'[paths]\nhf_repo = "my-org/my-models"\n'
+    toml_content = b'[paths]\nhf_token = "hf_test_token"\n'
     toml_file = tmp_path / "config.toml"
     toml_file.write_bytes(toml_content)
     with patch("crown_cli.core.config.CONFIG_PATH", toml_file):
         with patch.dict(os.environ, {}, clear=True):
             cfg = load_config()
-    assert cfg.hf_repo == "my-org/my-models"
+    assert cfg.hf_token == "hf_test_token"

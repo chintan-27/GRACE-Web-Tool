@@ -12,9 +12,11 @@ def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
     filename = config["hf_filename"]
     token = cfg.hf_token or None
 
+    repo_id = config["hf_repo"]
+
     try:
         path = hf_hub_download(
-            repo_id=cfg.hf_repo,
+            repo_id=repo_id,
             filename=filename,
             cache_dir=cfg.model_cache,
             local_files_only=cfg.offline,

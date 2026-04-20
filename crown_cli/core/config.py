@@ -14,7 +14,6 @@ CONFIG_PATH = CROWN_DIR / "config.toml"
 
 @dataclass
 class CrownConfig:
-    hf_repo: str = "smile-lab/crown-models"
     hf_token: str = ""
     model_cache: Path = field(default_factory=lambda: CROWN_DIR / "models")
     jobs_db: Path = field(default_factory=lambda: CROWN_DIR / "jobs.duckdb")
@@ -34,8 +33,6 @@ def load_config() -> CrownConfig:
         with open(CONFIG_PATH, "rb") as f:
             data = tomllib.load(f)
         paths = data.get("paths", {})
-        if "hf_repo" in paths:
-            cfg.hf_repo = paths["hf_repo"]
         if "hf_token" in paths:
             cfg.hf_token = paths["hf_token"]
         if "freesurfer_home" in paths:

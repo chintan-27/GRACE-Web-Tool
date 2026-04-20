@@ -6,7 +6,6 @@ from crown_cli.core.hub import get_checkpoint, download_all
 
 def test_get_checkpoint_calls_hf_download(tmp_path):
     mock_cfg = MagicMock()
-    mock_cfg.hf_repo = "smile-lab/crown-models"
     mock_cfg.hf_token = ""
     mock_cfg.model_cache = tmp_path
     mock_cfg.offline = False
@@ -15,7 +14,7 @@ def test_get_checkpoint_calls_hf_download(tmp_path):
         result = get_checkpoint("grace-native", mock_cfg)
 
     mock_dl.assert_called_once_with(
-        repo_id="smile-lab/crown-models",
+        repo_id="smilelab/GRACE",
         filename="grace_native.pth",
         cache_dir=tmp_path,
         local_files_only=False,
@@ -26,7 +25,6 @@ def test_get_checkpoint_calls_hf_download(tmp_path):
 
 def test_get_checkpoint_offline_mode(tmp_path):
     mock_cfg = MagicMock()
-    mock_cfg.hf_repo = "smile-lab/crown-models"
     mock_cfg.hf_token = ""
     mock_cfg.model_cache = tmp_path
     mock_cfg.offline = True
