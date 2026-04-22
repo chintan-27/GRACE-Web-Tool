@@ -10,8 +10,6 @@ def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
     """Download (or load from cache) the checkpoint for a model."""
     config = get_model_config(model_name)   # raises ValueError if unknown
     filename = config["hf_filename"]
-    token = cfg.hf_token or None
-
     repo_id = config["hf_repo"]
 
     try:
@@ -20,7 +18,6 @@ def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
             filename=filename,
             cache_dir=cfg.model_cache,
             local_files_only=cfg.offline,
-            token=token,
         )
     except LocalEntryNotFoundError:
         raise RuntimeError(

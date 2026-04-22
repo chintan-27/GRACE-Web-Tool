@@ -1,3 +1,4 @@
+import json
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -12,6 +13,7 @@ class JobStatus:
     DONE = "done"
     FAILED = "failed"
     PARTIAL = "partial"   # batch: some succeeded, some failed
+    CANCELLED = "cancelled"
 
 
 class JobStore:
@@ -36,9 +38,15 @@ class JobStore:
                     gpu         INTEGER,
                     pid         INTEGER,
                     created_at  TIMESTAMP,
-                    updated_at  TIMESTAMP
+                    updated_at  TIMESTAMP,
+                    meta        VARCHAR
                 )
             """)
+            # Upgrade existing DBs that predate the meta column
+            try:
+                con.execute("ALTER TABLE jobs ADD COLUMN meta VARCHAR")
+            except Exception:
+                pass  # column already exists
             con.execute("""
                 CREATE TABLE IF NOT EXISTS batches (
                     id          VARCHAR PRIMARY KEY,
@@ -61,8 +69,8 @@ class JobStore:
         now = datetime.utcnow()
         with self._connect() as con:
             con.execute(
-                "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?)",
-                [job_id, job_type, JobStatus.QUEUED, input_paths, out_dir, models, gpu, None, now, now],
+                "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                [job_id, job_type, JobStatus.QUEUED, input_paths, out_dir, models, gpu, None, now, now, None],
             )
         return job_id
 
@@ -74,12 +82,27 @@ class JobStore:
                 [status, pid, now, job_id],
             )
 
+    def update_meta(self, job_id: str, meta: dict) -> None:
+        now = datetime.utcnow()
+        with self._connect() as con:
+            con.execute(
+                "UPDATE jobs SET meta=?, updated_at=? WHERE id=?",
+                [json.dumps(meta), now, job_id],
+            )
+
+    def get_meta(self, job_id: str) -> dict:
+        with self._connect() as con:
+            row = con.execute("SELECT meta FROM jobs WHERE id=?", [job_id]).fetchone()
+        if row is None or row[0] is None:
+            return {}
+        return json.loads(row[0])
+
     def get_job(self, job_id: str) -> dict:
         with self._connect() as con:
             row = con.execute("SELECT * FROM jobs WHERE id=?", [job_id]).fetchone()
         if row is None:
             raise KeyError(f"Job not found: {job_id}")
-        cols = ["id", "type", "status", "input_paths", "out_dir", "models", "gpu", "pid", "created_at", "updated_at"]
+        cols = ["id", "type", "status", "input_paths", "out_dir", "models", "gpu", "pid", "created_at", "updated_at", "meta"]
         return dict(zip(cols, row))
 
     def list_jobs(self, limit: int = 20) -> list[dict]:
@@ -87,7 +110,7 @@ class JobStore:
             rows = con.execute(
                 "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", [limit]
             ).fetchall()
-        cols = ["id", "type", "status", "input_paths", "out_dir", "models", "gpu", "pid", "created_at", "updated_at"]
+        cols = ["id", "type", "status", "input_paths", "out_dir", "models", "gpu", "pid", "created_at", "updated_at", "meta"]
         return [dict(zip(cols, r)) for r in rows]
 
     def create_batch(self, job_ids: list[str]) -> str:

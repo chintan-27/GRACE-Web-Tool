@@ -8,7 +8,6 @@ from crown_cli.core.runner import CLIModelRunner
 def mock_cfg(tmp_path):
     cfg = MagicMock()
     cfg.model_cache = tmp_path
-    cfg.hf_token = ""
     cfg.offline = False
     return cfg
 

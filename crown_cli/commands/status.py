@@ -17,6 +17,7 @@ STATUS_COLORS = {
     JobStatus.DONE: "green",
     JobStatus.FAILED: "red",
     JobStatus.PARTIAL: "magenta",
+    JobStatus.CANCELLED: "yellow",
 }
 
 
@@ -107,6 +108,14 @@ def _show_job(store: JobStore, job_id: str, cfg, follow: bool) -> None:
         console.print("\n[dim]Following progress (Ctrl+C to stop)...[/dim]\n")
         try:
             for event in reader.tail():
+                if event is None:
+                    # heartbeat — check if job finished
+                    current = store.get_job(job_id)
+                    if current["status"] != JobStatus.RUNNING:
+                        c = STATUS_COLORS.get(current["status"], "white")
+                        console.print(f"\nJob finished: [{c}]{current['status']}[/{c}]")
+                        break
+                    continue
                 if event.get("event") == "log":
                     continue
                 model = event.get("model", "")

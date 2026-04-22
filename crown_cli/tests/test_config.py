@@ -22,10 +22,10 @@ def test_env_var_override():
 
 
 def test_toml_override(tmp_path):
-    toml_content = b'[paths]\nhf_token = "hf_test_token"\n'
+    toml_content = b'[paths]\nfreesurfer_home = "/opt/freesurfer"\n'
     toml_file = tmp_path / "config.toml"
     toml_file.write_bytes(toml_content)
     with patch("crown_cli.core.config.CONFIG_PATH", toml_file):
         with patch.dict(os.environ, {}, clear=True):
             cfg = load_config()
-    assert cfg.hf_token == "hf_test_token"
+    assert cfg.freesurfer_home == Path("/opt/freesurfer")

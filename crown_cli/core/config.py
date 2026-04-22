@@ -14,12 +14,14 @@ CONFIG_PATH = CROWN_DIR / "config.toml"
 
 @dataclass
 class CrownConfig:
-    hf_token: str = ""
     model_cache: Path = field(default_factory=lambda: CROWN_DIR / "models")
     jobs_db: Path = field(default_factory=lambda: CROWN_DIR / "jobs.duckdb")
     jobs_dir: Path = field(default_factory=lambda: CROWN_DIR / "jobs")
     freesurfer_home: Path = field(default_factory=lambda: Path("/usr/local/freesurfer"))
     roast_build_dir: Path = field(default_factory=lambda: Path("/opt/roast/build"))
+    matlab_runtime: Path = field(default_factory=lambda: Path("/opt/mcr/R2025b"))
+    roast_timeout: int = 7200
+    roast_max_workers: int = 2
     simnibs_home: Path = field(default_factory=lambda: Path("/opt/simnibs"))
     offline: bool = False
 
@@ -33,8 +35,6 @@ def load_config() -> CrownConfig:
         with open(CONFIG_PATH, "rb") as f:
             data = tomllib.load(f)
         paths = data.get("paths", {})
-        if "hf_token" in paths:
-            cfg.hf_token = paths["hf_token"]
         if "freesurfer_home" in paths:
             cfg.freesurfer_home = Path(paths["freesurfer_home"])
         if "roast_build_dir" in paths:
@@ -45,14 +45,18 @@ def load_config() -> CrownConfig:
     # Env vars take precedence over TOML
     if v := os.getenv("CROWN_MODEL_CACHE"):
         cfg.model_cache = Path(v)
-    if v := os.getenv("HF_TOKEN"):
-        cfg.hf_token = v
     if v := os.getenv("CROWN_OFFLINE"):
         cfg.offline = v.strip() == "1"
     if v := os.getenv("FREESURFER_HOME"):
         cfg.freesurfer_home = Path(v)
     if v := os.getenv("ROAST_BUILD_DIR"):
         cfg.roast_build_dir = Path(v)
+    if v := os.getenv("MATLAB_RUNTIME"):
+        cfg.matlab_runtime = Path(v)
+    if v := os.getenv("ROAST_TIMEOUT_SECONDS"):
+        cfg.roast_timeout = int(v)
+    if v := os.getenv("ROAST_MAX_WORKERS"):
+        cfg.roast_max_workers = int(v)
     if v := os.getenv("SIMNIBS_HOME"):
         cfg.simnibs_home = Path(v)
 

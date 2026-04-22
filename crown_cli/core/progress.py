@@ -38,7 +38,10 @@ class ProgressReader:
         return events
 
     def tail(self, poll_interval: float = 0.5):
-        """Generator that yields new events as they arrive (for crown status live view)."""
+        """Generator that yields new events as they arrive (for crown status live view).
+
+        Yields None as a heartbeat after each poll so consumers can check stop conditions.
+        """
         offset = 0
         while True:
             if self.path.exists():
@@ -53,3 +56,4 @@ class ProgressReader:
                                 pass
                     offset = f.tell()
             time.sleep(poll_interval)
+            yield None  # heartbeat: let consumer check job status

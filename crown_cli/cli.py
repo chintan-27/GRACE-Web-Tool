@@ -1,4 +1,5 @@
 import click
+from crown_cli.commands.cancel import cancel
 from crown_cli.commands.run import run
 from crown_cli.commands.segment import segment
 from crown_cli.commands.simulate import simulate
@@ -12,6 +13,7 @@ def main():
     """CROWN CLI — whole-head MRI segmentation and TES simulation."""
 
 
+main.add_command(cancel)
 main.add_command(run)
 main.add_command(segment)
 main.add_command(simulate)

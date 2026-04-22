@@ -55,17 +55,70 @@ def run_pipeline_job(job_id: str, store, cfg) -> None:
     job = store.get_job(job_id)
     job_dir = Path(cfg.jobs_dir) / job_id
 
-    # Run segmentation phase
     run_segment_job(job_id, store, cfg)
 
-    # Check segment succeeded before simulating
     job = store.get_job(job_id)
     if job["status"] != JobStatus.DONE:
         return
 
-    # Simulate if requested (simulate_type stored in out_dir field with prefix "sim:")
-    # Convention: simulate_type passed as extra metadata in progress.jsonl
-    # TODO: extend schema to store simulate_type if needed — for now, skip
+    meta = store.get_meta(job_id)
+    simulate = meta.get("simulate")
+
+    if simulate == "roast":
+        from crown_cli.core.roast_runner import CLIRoastRunner
+        store.update_status(job_id, JobStatus.RUNNING, pid=os.getpid())
+        try:
+            input_path = Path(job["input_paths"][0])
+            # session_dir mirrors how run_segment_job computes file_out_dir
+            session_dir = Path(job["out_dir"]) / input_path.stem.replace(".nii", "")
+            model_name = job["models"][0]
+            runner = CLIRoastRunner(
+                job_dir=job_dir,
+                session_dir=session_dir,
+                t1_path=input_path,
+                model_name=model_name,
+                payload=meta,
+                cfg=cfg,
+            )
+            runner.run()
+            store.update_status(job_id, JobStatus.DONE)
+        except Exception as e:
+            store.update_status(job_id, JobStatus.FAILED)
+            ProgressWriter(job_dir).emit("worker_error", message=str(e))
+            raise
+
+
+def run_roast_job(job_id: str, store, cfg) -> None:
+    from crown_cli.core.roast_runner import CLIRoastRunner
+
+    job = store.get_job(job_id)
+    job_dir = Path(cfg.jobs_dir) / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    store.update_status(job_id, JobStatus.RUNNING, pid=os.getpid())
+
+    try:
+        meta = store.get_meta(job_id)
+        t1_path = Path(job["input_paths"][0])
+        session_dir = Path(job["out_dir"])
+        model_name = job["models"][0]
+        gpu = job["gpu"] or 0
+
+        runner = CLIRoastRunner(
+            job_dir=job_dir,
+            session_dir=session_dir,
+            t1_path=t1_path,
+            model_name=model_name,
+            payload=meta,
+            cfg=cfg,
+        )
+        runner.run()
+        store.update_status(job_id, JobStatus.DONE)
+
+    except Exception as e:
+        store.update_status(job_id, JobStatus.FAILED)
+        ProgressWriter(job_dir).emit("worker_error", message=str(e))
+        raise
 
 
 def main():
@@ -74,7 +127,7 @@ def main():
         sys.exit(1)
 
     job_id = sys.argv[1]
-    job_type = sys.argv[2]   # "segment" | "pipeline"
+    job_type = sys.argv[2]   # "segment" | "pipeline" | "roast"
 
     cfg = load_config()
     store = JobStore(cfg.jobs_db)
@@ -83,6 +136,8 @@ def main():
         run_segment_job(job_id, store, cfg)
     elif job_type == "pipeline":
         run_pipeline_job(job_id, store, cfg)
+    elif job_type == "roast":
+        run_roast_job(job_id, store, cfg)
     else:
         print(f"Unknown job type: {job_type}")
         sys.exit(1)
