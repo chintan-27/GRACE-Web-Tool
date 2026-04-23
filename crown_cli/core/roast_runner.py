@@ -109,9 +109,9 @@ class CLIRoastRunner:
         payload: dict,
         cfg: CrownConfig,
     ):
-        self.job_dir = job_dir
-        self.session_dir = session_dir
-        self.t1_path = t1_path
+        self.job_dir = job_dir.resolve()
+        self.session_dir = session_dir.resolve()
+        self.t1_path = t1_path.resolve()
         self.model_name = model_name
         self.payload = payload
         self.cfg = cfg
@@ -122,7 +122,7 @@ class CLIRoastRunner:
             cfg.roast_build_dir = Path(payload["roast_build_dir"])
         if "matlab_runtime" in payload:
             cfg.matlab_runtime = Path(payload["matlab_runtime"])
-        self.work_dir = session_dir / "roast" / model_name / self.run_id
+        self.work_dir = (session_dir / "roast" / model_name / self.run_id).resolve()
         self.sim_tag: str = ""
         self._writer = ProgressWriter(job_dir)
         self._cancel_sentinel = job_dir / "cancel"
