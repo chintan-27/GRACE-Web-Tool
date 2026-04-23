@@ -104,7 +104,22 @@ def _show_job(store: JobStore, job_id: str, cfg, follow: bool) -> None:
     job_dir = Path(cfg.jobs_dir) / job_id
     reader = ProgressReader(job_dir)
 
-    if follow and job["status"] == JobStatus.RUNNING:
+    if follow and job["status"] in (JobStatus.QUEUED, JobStatus.RUNNING):
+        if job["status"] == JobStatus.QUEUED:
+            console.print("\n[dim]Waiting for job to start... (Ctrl+C to stop)[/dim]")
+            try:
+                while True:
+                    time.sleep(1)
+                    current = store.get_job(job_id)
+                    if current["status"] == JobStatus.RUNNING:
+                        console.print("[dim]Job started — following progress...[/dim]\n")
+                        break
+                    if current["status"] not in (JobStatus.QUEUED, JobStatus.RUNNING):
+                        c = STATUS_COLORS.get(current["status"], "white")
+                        console.print(f"\nJob ended: [{c}]{current['status']}[/{c}]")
+                        return
+            except KeyboardInterrupt:
+                return
         console.print("\n[dim]Following progress (Ctrl+C to stop)...[/dim]\n")
         try:
             for event in reader.tail():
@@ -117,6 +132,7 @@ def _show_job(store: JobStore, job_id: str, cfg, follow: bool) -> None:
                         break
                     continue
                 if event.get("event") == "log":
+                    console.print(f"  [dim]{event.get('message', '')}[/dim]")
                     continue
                 model = event.get("model", "")
                 prog = event.get("progress", "")

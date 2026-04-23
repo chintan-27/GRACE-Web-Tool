@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 import signal
 
 import click
@@ -24,12 +25,12 @@ def cancel(job_id, force):
         console.print(f"[red]Job not found:[/red] {job_id}")
         raise SystemExit(1)
 
-    if job["status"] != JobStatus.RUNNING:
-        console.print(f"Job {job_id} not running (status: {job['status']})")
+    if job["status"] not in (JobStatus.RUNNING, JobStatus.QUEUED):
+        console.print(f"Job {job_id} not cancellable (status: {job['status']})")
         raise SystemExit(1)
 
-    pid = job["pid"]
-    if pid:
+    pid = job.get("pid")
+    if pid and job["status"] == JobStatus.RUNNING:
         sig = signal.SIGKILL if force else signal.SIGTERM
         try:
             os.kill(pid, sig)
@@ -39,8 +40,8 @@ def cancel(job_id, force):
         except PermissionError:
             console.print(f"[red]No permission to kill PID {pid}[/red]")
             raise SystemExit(1)
-    else:
-        console.print("[yellow]No PID recorded for this job[/yellow]")
+    elif job["status"] == JobStatus.QUEUED:
+        console.print("[dim]Job queued — sentinel written, worker will abort on start[/dim]")
 
     store.update_status(job_id, JobStatus.CANCELLED)
 

@@ -48,10 +48,25 @@ def _parse_recipe(recipe_str: str) -> list:
 @click.option("--electrode-type", default=None, help="Space-separated types per electrode (pad/ring/disc).")
 @click.option("--quality", default="standard", show_default=True,
               type=click.Choice(["fast", "standard"]), help="Mesh quality preset.")
-@click.option("--gpu", "-g", default=0, show_default=True)
-def simulate_roast(session_dir, t1, model, recipe, electrode_type, quality, gpu):
-    """Run ROAST TES simulation on an existing segmentation."""
+@click.option("--roast-build-dir", default=None, type=click.Path(),
+              help="Path to ROAST build dir containing run_roast_run.sh. Overrides config/env.")
+@click.option("--matlab-runtime", default=None, type=click.Path(),
+              help="Path to MATLAB Compiler Runtime (MCR) root. Overrides config/env.")
+def simulate_roast(session_dir, t1, model, recipe, electrode_type, quality,
+                   roast_build_dir, matlab_runtime):
+    """Run ROAST TES simulation on an existing segmentation.
+
+    SESSION_DIR is the directory containing MODEL/output.nii.gz, i.e. the
+    folder produced by 'crown segment' (named after the T1 stem).
+    """
     cfg = load_config()
+
+    # CLI flags override config/env so users on arbitrary HPC don't need config.toml
+    if roast_build_dir:
+        cfg.roast_build_dir = Path(roast_build_dir)
+    if matlab_runtime:
+        cfg.matlab_runtime = Path(matlab_runtime)
+
     caps = check_capabilities(cfg)
     caps.require_roast()
 
@@ -78,15 +93,19 @@ def simulate_roast(session_dir, t1, model, recipe, electrode_type, quality, gpu)
         "quality": quality,
         "run_id": run_id,
         "seg_source": "nn",
+        # Persist path overrides so worker subprocess can apply them after load_config()
+        "roast_build_dir": str(cfg.roast_build_dir),
+        "matlab_runtime": str(cfg.matlab_runtime),
     }
 
     store = JobStore(cfg.jobs_db)
-    job_id = store.create_job("roast", [str(t1)], str(session_dir), [model], gpu)
+    job_id = store.create_job("roast", [str(t1)], str(session_dir), [model], gpu=0)
     store.update_meta(job_id, meta)
     spawn_job(job_id, "roast")
 
     console.print(f"Job [cyan]{job_id}[/cyan] queued")
     console.print(f"Output: {session_dir}/roast/{model}/{run_id}/")
+    console.print(f"Logs:   {cfg.jobs_dir}/{job_id}/worker.log")
     console.print(f"Monitor: crown status {job_id} --follow")
 
 

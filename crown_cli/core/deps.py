@@ -56,7 +56,7 @@ def check_capabilities(cfg: CrownConfig) -> Capabilities:
     cuda = torch.cuda.is_available()
     mri_convert = cfg.freesurfer_home / "bin" / "mri_convert"
     freesurfer = mri_convert.exists() and mri_convert.is_file()
-    roast_bin = cfg.roast_build_dir / "run_roast.sh"
+    roast_bin = cfg.roast_build_dir / "run_roast_run.sh"
     roast = roast_bin.exists() and roast_bin.is_file()
     charm_bin = cfg.simnibs_home / "bin" / "charm"
     simnibs = charm_bin.exists() and charm_bin.is_file()

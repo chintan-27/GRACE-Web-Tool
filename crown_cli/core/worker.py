@@ -95,6 +95,11 @@ def run_roast_job(job_id: str, store, cfg) -> None:
     job_dir = Path(cfg.jobs_dir) / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    # Check if cancelled before we even started (e.g. cancel while QUEUED)
+    if (job_dir / "cancel").exists():
+        store.update_status(job_id, JobStatus.CANCELLED)
+        return
+
     store.update_status(job_id, JobStatus.RUNNING, pid=os.getpid())
 
     try:

@@ -28,15 +28,23 @@ def discover_inputs(paths: list[str]) -> list[Path]:
 
 def spawn_job(job_id: str, job_type: str) -> int:
     """Spawn a detached worker subprocess. Returns the PID."""
+    from crown_cli.core.config import load_config
+    cfg = load_config()
+    job_dir = Path(cfg.jobs_dir) / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    log_path = job_dir / "worker.log"
+
     flags = (
         {"start_new_session": True}
         if sys.platform != "win32"
         else {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
     )
+    log_fh = open(log_path, "wb")
     proc = subprocess.Popen(
         [sys.executable, "-m", "crown_cli.core.worker", job_id, job_type],
         **flags,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=log_fh,
+        stderr=subprocess.STDOUT,
     )
+    log_fh.close()
     return proc.pid
