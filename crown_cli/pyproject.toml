@@ -8,7 +8,6 @@ version = "0.1.0"
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1",
-    "duckdb>=0.10",
     "huggingface_hub>=0.22",
     "monai>=1.3",
     "nibabel>=5.2",

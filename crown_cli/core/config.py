@@ -15,7 +15,7 @@ CONFIG_PATH = CROWN_DIR / "config.toml"
 @dataclass
 class CrownConfig:
     model_cache: Path = field(default_factory=lambda: CROWN_DIR / "models")
-    jobs_db: Path = field(default_factory=lambda: CROWN_DIR / "jobs.duckdb")
+    jobs_db: Path = field(default_factory=lambda: CROWN_DIR / "jobs.db")
     jobs_dir: Path = field(default_factory=lambda: CROWN_DIR / "jobs")
     freesurfer_home: Path = field(default_factory=lambda: Path("/usr/local/freesurfer"))
     roast_build_dir: Path = field(default_factory=lambda: Path("/opt/roast/build"))
@@ -43,6 +43,8 @@ def load_config() -> CrownConfig:
             cfg.simnibs_home = Path(paths["simnibs_home"])
 
     # Env vars take precedence over TOML
+    if v := os.getenv("CROWN_JOBS_DB"):
+        cfg.jobs_db = Path(v)
     if v := os.getenv("CROWN_MODEL_CACHE"):
         cfg.model_cache = Path(v)
     if v := os.getenv("CROWN_OFFLINE"):
