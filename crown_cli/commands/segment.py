@@ -14,13 +14,15 @@ console = Console()
 @click.argument("inputs", nargs=-1, required=True)
 @click.option("--models", "-m", multiple=True, default=["grace-native"],
               help="Models to run. Use multiple --models flags.")
-@click.option("--out", "-o", required=True, help="Output directory.")
+@click.option("--out", "-o", default=None, help="Output directory (default: current working directory).")
 @click.option("--gpu", "-g", default=0, show_default=True, help="GPU index.")
 @click.option("--space", type=click.Choice(["native", "freesurfer"]),
               default="native", show_default=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
 def segment(inputs, models, out, gpu, space, yes):
     """Run MRI segmentation only."""
+    import os
+    out = out or os.getcwd()
     cfg = load_config()
     caps = check_capabilities(cfg)
     caps.warn()

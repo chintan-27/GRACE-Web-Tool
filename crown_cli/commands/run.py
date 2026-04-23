@@ -39,7 +39,7 @@ def _parse_recipe(recipe_str: str) -> list:
 @click.command()
 @click.argument("inputs", nargs=-1, required=True)
 @click.option("--models", "-m", multiple=True, default=["grace-native"])
-@click.option("--out", "-o", required=True, help="Output directory.")
+@click.option("--out", "-o", default=None, help="Output directory (default: current working directory).")
 @click.option("--gpu", "-g", default=0, show_default=True)
 @click.option("--space", type=click.Choice(["native", "freesurfer"]),
               default="native", show_default=True)
@@ -57,6 +57,8 @@ def _parse_recipe(recipe_str: str) -> list:
 def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quality,
         roast_build_dir, matlab_runtime, yes):
     """Run the full CROWN pipeline (segmentation + optional simulation)."""
+    import os
+    out = out or os.getcwd()
     cfg = load_config()
 
     if roast_build_dir:

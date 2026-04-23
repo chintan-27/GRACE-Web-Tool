@@ -51,7 +51,9 @@ Jobs DB and progress logs are stored under `~/.crown/`:
 ### `crown segment` — MRI segmentation only
 
 ```bash
-crown segment T1.nii.gz --models grace-native --out /output --gpu 0
+crown segment T1.nii.gz --models grace-native --gpu 0
+# or specify output dir explicitly:
+crown segment T1.nii.gz --models grace-native --out /my/output --gpu 0
 ```
 
 Input can be a file or directory (all `.nii`/`.nii.gz` files discovered).
