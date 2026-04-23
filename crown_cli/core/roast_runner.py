@@ -509,7 +509,7 @@ class CLIRoastRunner:
 
     # ------------------------------------------------------------------
     def collect_outputs(self):
-        suffix_map = {"voltage": "v", "efield": "e", "emag": "emag", "jbrain": "jbrain"}
+        suffix_map = {"voltage": "v", "efield": "e", "emag": "emag", "jbrain": "Jbrain"}
         missing = []
         for output_type, suffix in suffix_map.items():
             path = self.work_dir / f"T1_{self.sim_tag}_{suffix}.nii"
