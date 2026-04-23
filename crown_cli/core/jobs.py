@@ -25,6 +25,9 @@ class JobStore:
     def _connect(self):
         return duckdb.connect(self._path)
 
+    def _connect_ro(self):
+        return duckdb.connect(self._path, read_only=True)
+
     def _init_schema(self):
         with self._connect() as con:
             con.execute("""
@@ -91,14 +94,14 @@ class JobStore:
             )
 
     def get_meta(self, job_id: str) -> dict:
-        with self._connect() as con:
+        with self._connect_ro() as con:
             row = con.execute("SELECT meta FROM jobs WHERE id=?", [job_id]).fetchone()
         if row is None or row[0] is None:
             return {}
         return json.loads(row[0])
 
     def get_job(self, job_id: str) -> dict:
-        with self._connect() as con:
+        with self._connect_ro() as con:
             row = con.execute("SELECT * FROM jobs WHERE id=?", [job_id]).fetchone()
         if row is None:
             raise KeyError(f"Job not found: {job_id}")
@@ -106,7 +109,7 @@ class JobStore:
         return dict(zip(cols, row))
 
     def list_jobs(self, limit: int = 20) -> list[dict]:
-        with self._connect() as con:
+        with self._connect_ro() as con:
             rows = con.execute(
                 "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", [limit]
             ).fetchall()
@@ -124,7 +127,7 @@ class JobStore:
         return batch_id
 
     def get_batch(self, batch_id: str) -> dict:
-        with self._connect() as con:
+        with self._connect_ro() as con:
             row = con.execute("SELECT * FROM batches WHERE id=?", [batch_id]).fetchone()
         if row is None:
             raise KeyError(f"Batch not found: {batch_id}")
