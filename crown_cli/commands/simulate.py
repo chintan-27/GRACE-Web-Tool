@@ -107,17 +107,3 @@ def simulate_roast(session_dir, t1, model, recipe, electrode_type, quality,
     console.print(f"Output: {session_dir}/roast/{model}/{run_id}/")
     console.print(f"Logs:   {cfg.jobs_dir}/{job_id}/worker.log")
     console.print(f"Monitor: crown status {job_id} --follow")
-
-
-@simulate.command("simnibs")
-@click.argument("session_dir", type=click.Path(exists=True, file_okay=False))
-@click.option("--gpu", "-g", default=0, show_default=True)
-def simulate_simnibs(session_dir, gpu):
-    """Run SimNIBS TES simulation."""
-    cfg = load_config()
-    caps = check_capabilities(cfg)
-    caps.require_simnibs()
-
-    console.print(f"Launching SimNIBS simulation on [cyan]{session_dir}[/cyan]...")
-    console.print("[yellow]Note:[/yellow] SimNIBS integration is a stub — wire up CLISimNIBSRunner in a follow-up task.")
-    raise SystemExit(0)

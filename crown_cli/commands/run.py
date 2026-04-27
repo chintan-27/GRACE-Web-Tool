@@ -43,7 +43,7 @@ def _parse_recipe(recipe_str: str) -> list:
 @click.option("--gpu", "-g", default=0, show_default=True)
 @click.option("--space", type=click.Choice(["native", "freesurfer"]),
               default="native", show_default=True)
-@click.option("--simulate", type=click.Choice(["roast", "simnibs"]),
+@click.option("--simulate", type=click.Choice(["roast"]),
               default=None, help="Run TES simulation after segmentation.")
 @click.option("--recipe", default=None, help="ROAST electrode/current pairs, e.g. 'P3 -2 P4 2'.")
 @click.option("--electrode-type", default=None, help="Space-separated types per electrode (pad/ring/disc).")
@@ -73,8 +73,6 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
         caps.require_roast()
         if not recipe:
             raise click.UsageError("--recipe is required when --simulate roast is set.")
-    elif simulate == "simnibs":
-        caps.require_simnibs()
 
     available = caps.available_models()
     for m in models:

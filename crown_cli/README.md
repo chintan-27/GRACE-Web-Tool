@@ -19,7 +19,6 @@ Optional config file at `~/.crown/config.toml`:
 [paths]
 roast_build_dir = "/opt/roast/build"     # dir containing run_roast_run.sh
 freesurfer_home = "/usr/local/freesurfer"
-simnibs_home    = "/opt/simnibs"
 ```
 
 All paths can also be set via environment variables:
@@ -188,10 +187,6 @@ crown models list
 | `dominopp-fs` | DOMINO++ UNETR | FreeSurfer conformed |
 
 Models are downloaded on first use from HuggingFace (`smilelab/` org).
-
-## SimNIBS
-
-*(Coming soon)*
 
 ## Tissue Labels (segmentation output)
 

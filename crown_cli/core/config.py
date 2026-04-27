@@ -22,7 +22,6 @@ class CrownConfig:
     matlab_runtime: Path = field(default_factory=lambda: Path("/opt/mcr/R2025b"))
     roast_timeout: int = 7200
     roast_max_workers: int = 2
-    simnibs_home: Path = field(default_factory=lambda: Path("/opt/simnibs"))
     offline: bool = False
 
 
@@ -39,8 +38,6 @@ def load_config() -> CrownConfig:
             cfg.freesurfer_home = Path(paths["freesurfer_home"])
         if "roast_build_dir" in paths:
             cfg.roast_build_dir = Path(paths["roast_build_dir"])
-        if "simnibs_home" in paths:
-            cfg.simnibs_home = Path(paths["simnibs_home"])
 
     # Env vars take precedence over TOML
     if v := os.getenv("CROWN_JOBS_DB"):
@@ -59,7 +56,5 @@ def load_config() -> CrownConfig:
         cfg.roast_timeout = int(v)
     if v := os.getenv("ROAST_MAX_WORKERS"):
         cfg.roast_max_workers = int(v)
-    if v := os.getenv("SIMNIBS_HOME"):
-        cfg.simnibs_home = Path(v)
 
     return cfg

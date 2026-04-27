@@ -160,14 +160,3 @@ class CLIRoastRunner:
     def run(self, session_dir: Path, electrodes: str) -> None:
         self._emit("roast_start", progress=0)
         self._emit("roast_complete", progress=100)
-
-class CLISimNIBSRunner:
-    """Stub for SimNIBS TES simulation runner."""
-    def __init__(self, job_dir: Path, gpu_id: int, cfg: CrownConfig):
-        self.job_dir = job_dir
-        self.gpu_id = gpu_id
-        self.cfg = cfg
-
-    def run(self, session_dir: Path) -> None:
-        self._emit("simnibs_start", progress=0)
-        self._emit("simnibs_complete", progress=100)
