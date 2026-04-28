@@ -33,7 +33,7 @@ def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
 def resolve_roast_build_dir(cfg: CrownConfig) -> Path | None:
     """Return path to ROAST build dir containing run_roast_run.sh, or None."""
     for candidate in [cfg.roast_build_dir, cfg.roast_cache]:
-        if (candidate / "run_roast_run.sh").is_file():
+        if (candidate / "bin" / "run_roast_run.sh").is_file():
             return candidate
     return None
 
