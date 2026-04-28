@@ -37,7 +37,7 @@ dependencies = [
     "rich>=13.0",
     "tomli>=2.0; python_version < '3.11'",
     "einops",
-    "scipy>=1.11",
+    "scipy>=1.7",
 ]
 
 # PyTorch is NOT listed here — install manually with the correct CUDA variant:
