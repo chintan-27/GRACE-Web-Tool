@@ -1,6 +1,6 @@
 # CROWN CLI
 
-Command-line interface for whole-head MRI segmentation (UNETR, 12 tissue classes) and Transcranial Electrical Stimulation (TES) simulation via ROAST.
+Command-line interface for whole-head MRI segmentation (UNETR, 11 tissue classes) and Transcranial Electrical Stimulation (TES) simulation via ROAST.
 
 ## Installation
 
@@ -258,20 +258,20 @@ ROAST is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists ther
 
 ## Tissue Labels (segmentation output)
 
-| Label | Tissue |
-|-------|--------|
-| 1 | White matter |
-| 2 | Gray matter |
-| 3 | CSF |
-| 4 | Bone (compact) |
-| 5 | Bone (spongy) |
-| 6 | Blood |
-| 7 | Muscle |
-| 8 | Bone marrow |
-| 9 | Skin |
-| 10 | Eye |
-| 11 | Air |
-| 12 | Fat |
+| Label | Tissue          |
+|-------|-----------------|
+| 0     | Background      |
+| 1     | WM              |
+| 2     | GM              |
+| 3     | Eyes            |
+| 4     | CSF             |
+| 5     | Air             |
+| 6     | Blood           |
+| 7     | Cancellous Bone |
+| 8     | Cortical Bone   |
+| 9     | Skin            |
+| 10    | Fat             |
+| 11    | Muscle          |
 
 ## Job Lifecycle
 
