@@ -19,7 +19,7 @@ cd crown_cli
 pip install -e ".[dev]"
 ```
 
-Requires Python ≥ 3.10.
+Requires Python ≥ 3.8.
 
 ### 3. Request HuggingFace access
 

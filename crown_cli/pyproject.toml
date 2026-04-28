@@ -7,10 +7,10 @@ name = "crown-cli"
 dynamic = ["version"]
 description = "Command-line interface for whole-head MRI segmentation and TES simulation"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.8"
 license = { text = "MIT" }
 authors = [
-    { name = "SMILE Lab", email = "devrpatel26@gmail.com" },
+    { name = "SMILE Lab", email = "pateld3@ufl.edu" },
 ]
 keywords = ["mri", "segmentation", "tcs", "tDCS", "deep-learning", "neuroscience", "unetr"]
 classifiers = [
@@ -20,6 +20,8 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -31,7 +33,7 @@ dependencies = [
     "huggingface_hub>=0.22",
     "monai>=1.3",
     "nibabel>=5.2",
-    "numpy>=1.26",
+    "numpy>=1.20",
     "rich>=13.0",
     "tomli>=2.0; python_version < '3.11'",
     "einops",
