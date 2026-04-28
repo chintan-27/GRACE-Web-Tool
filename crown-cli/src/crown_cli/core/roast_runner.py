@@ -309,7 +309,7 @@ class CLIRoastRunner:
                 "ROAST build not found. Run 'crown roast download' or set "
                 "roast_build_dir in ~/.crown/config.toml"
             )
-        launcher = build_dir / "run_roast_run.sh"
+        launcher = build_dir / "bin" / "run_roast_run.sh"
         mcr = _resolve_mcr(self.cfg.matlab_runtime)
         self._log(f"[ROAST] Using MCR at: {mcr}")
         return [str(launcher), str(mcr), str(config_path)]
