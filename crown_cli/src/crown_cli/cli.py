@@ -5,6 +5,7 @@ from crown_cli.commands.segment import segment
 from crown_cli.commands.simulate import simulate
 from crown_cli.commands.status import status
 from crown_cli.commands.models import models
+from crown_cli.commands.roast import roast
 
 
 @click.group()
@@ -19,3 +20,4 @@ main.add_command(segment)
 main.add_command(simulate)
 main.add_command(status)
 main.add_command(models)
+main.add_command(roast)

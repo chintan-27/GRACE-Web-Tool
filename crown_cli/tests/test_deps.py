@@ -7,6 +7,7 @@ def test_all_present():
     mock_cfg = MagicMock()
     mock_cfg.freesurfer_home = Path("/fs")
     mock_cfg.roast_build_dir = Path("/roast")
+    mock_cfg.roast_cache = Path("/roast-cache")
 
     with patch("crown_cli.core.deps.torch") as mock_torch, \
          patch("crown_cli.core.deps.Path.exists", return_value=True), \
@@ -23,6 +24,7 @@ def test_missing_freesurfer():
     mock_cfg = MagicMock()
     mock_cfg.freesurfer_home = Path("/nonexistent")
     mock_cfg.roast_build_dir = Path("/nonexistent")
+    mock_cfg.roast_cache = Path("/nonexistent")
 
     with patch("crown_cli.core.deps.torch") as mock_torch, \
          patch("crown_cli.core.deps.Path.exists", return_value=False), \
@@ -47,3 +49,17 @@ def test_available_models_includes_fs_with_freesurfer():
     available = caps.available_models()
     assert "grace-fs" in available
     assert "domino-fs" in available
+
+
+def test_check_capabilities_roast_via_cache(tmp_path):
+    (tmp_path / "run_roast_run.sh").touch()
+    mock_cfg = MagicMock()
+    mock_cfg.freesurfer_home = Path("/nonexistent")
+    mock_cfg.roast_build_dir = Path("/nonexistent")
+    mock_cfg.roast_cache = tmp_path
+
+    with patch("crown_cli.core.deps.torch") as mock_torch:
+        mock_torch.cuda.is_available.return_value = False
+        caps = check_capabilities(mock_cfg)
+
+    assert caps.roast is True

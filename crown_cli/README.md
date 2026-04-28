@@ -4,12 +4,67 @@ Command-line interface for whole-head MRI segmentation (UNETR, 12 tissue classes
 
 ## Installation
 
+### 1. Install PyTorch with CUDA
+
+Install PyTorch matching your CUDA version before installing CROWN CLI. See https://pytorch.org/get-started/locally/ for the right command. Example for CUDA 12.1:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+```
+
+### 2. Install CROWN CLI
+
 ```bash
 cd crown_cli
 pip install -e ".[dev]"
 ```
 
-Requires Python ≥ 3.10. GPU inference requires CUDA.
+Requires Python ≥ 3.10.
+
+### 3. Request HuggingFace access
+
+Model checkpoints and the ROAST build are hosted on private HuggingFace repositories. Visit each repo and request access:
+
+- `smilelab/GRACE` — GRACE UNETR model
+- `smilelab/DOMINO` — DOMINO UNETR model
+- `smilelab/DOMINOpp` — DOMINO++ UNETR model
+- `smilelab/roast-11tissue-build` — compiled ROAST TES simulation build
+
+Access is granted automatically.
+
+### 4. Authenticate with HuggingFace
+
+```bash
+huggingface-cli login --token hf_...
+
+OR
+
+hf auth login --token hf_...
+```
+
+Your token must have read access to the repositories above.
+
+### 5. Download model checkpoints
+
+```bash
+crown models download --all
+```
+
+Individual models:
+
+```bash
+crown models download grace-native grace-fs
+```
+
+### 6. Download ROAST build
+
+```bash
+crown roast download
+```
+
+Downloads the compiled ROAST build to `~/.crown/roast-build/`. Requires MATLAB Runtime (MCR) R2025b installed separately.
+
+> **Custom ROAST build:** If you have a manually compiled ROAST build, point CROWN to it via `roast_build_dir` in config or `ROAST_BUILD_DIR` env var. The build directory must contain a file named `run_roast_run.sh` — this is the launcher script CROWN invokes as `run_roast_run.sh <MCR_PATH> <config.json>`.
 
 ## Configuration
 
@@ -17,7 +72,8 @@ Optional config file at `~/.crown/config.toml`:
 
 ```toml
 [paths]
-roast_build_dir = "/opt/roast/build"     # dir containing run_roast_run.sh
+roast_build_dir = "/opt/roast/build"     # manual install (overrides auto-download)
+roast_cache     = "~/.crown/roast-build" # auto-download destination
 freesurfer_home = "/usr/local/freesurfer"
 ```
 
@@ -25,11 +81,13 @@ All paths can also be set via environment variables:
 
 | Env var           | Default              | Purpose                        |
 |-------------------|----------------------|--------------------------------|
-| `ROAST_BUILD_DIR` | `/opt/roast/build`   | ROAST build directory          |
+| `ROAST_BUILD_DIR` | `/opt/roast/build`   | ROAST build directory (manual install) |
+| `ROAST_CACHE`     | `~/.crown/roast-build` | ROAST auto-download cache    |
 | `MATLAB_RUNTIME`  | `/opt/mcr/R2025b`    | MATLAB Compiler Runtime root   |
 | `FREESURFER_HOME` | `/usr/local/freesurfer` | FreeSurfer installation     |
 | `ROAST_TIMEOUT_SECONDS` | `7200`         | Max wall time for ROAST job    |
 | `ROAST_MAX_WORKERS`     | `2`            | Concurrent ROAST jobs          |
+| `CROWN_JOBS_DB`         | `~/.crown/jobs.db` | Override SQLite jobs database path |
 
 CLI flags (`--roast-build-dir`, `--matlab-runtime`) override both config file and env vars per invocation.
 
@@ -38,7 +96,7 @@ Jobs DB and progress logs are stored under `~/.crown/`:
 ```
 ~/.crown/
   config.toml          # optional user config
-  jobs.duckdb          # job metadata store
+  jobs.db              # SQLite job metadata store (WAL mode)
   jobs/<job_id>/
     worker.log         # full worker stdout/stderr
     progress.jsonl     # structured progress events
@@ -81,9 +139,7 @@ Requires an existing segmentation (`crown segment` first, or `crown run`).
 crown simulate roast /output/T1 \
   --t1 T1.nii.gz \
   --model grace-native \
-  --recipe "P3 -2 P4 2" \
-  --roast-build-dir /opt/roast/build \
-  --matlab-runtime /opt/mcr/R2025b
+  --recipe "P3 -2 P4 2"
 ```
 
 `SESSION_DIR` is the directory that contains `MODEL/output.nii.gz` — the `T1/` folder produced by `crown segment`.
@@ -111,8 +167,6 @@ crown simulate roast /output/T1 \
 | `--recipe` | — | Electrode/current pairs (required) |
 | `--electrode-type` | `pad pad` | Space-separated type per electrode |
 | `--quality` | `standard` | Mesh preset: `fast` or `standard` |
-| `--roast-build-dir` | from config | Path to ROAST build dir |
-| `--matlab-runtime` | from config | Path to MCR root |
 
 Output location:
 
@@ -134,9 +188,7 @@ crown run T1.nii.gz \
   --out /output \
   --gpu 0 \
   --simulate roast \
-  --recipe "P3 -2 P4 2" \
-  --roast-build-dir /opt/roast/build \
-  --matlab-runtime /opt/mcr/R2025b
+  --recipe "P3 -2 P4 2"
 ```
 
 Multiple inputs launch a batch:
@@ -188,6 +240,22 @@ crown models list
 
 Models are downloaded on first use from HuggingFace (`smilelab/` org).
 
+### `crown roast` — manage ROAST build
+
+Download the ROAST build from HuggingFace to `~/.crown/roast-build/`:
+
+```bash
+crown roast download
+```
+
+Check which build is active:
+
+```bash
+crown roast info
+```
+
+ROAST is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists there) → `roast_cache` (auto-downloaded). On HPC clusters without internet, run `crown roast download` on a head node first, then set `ROAST_CACHE` to the shared path.
+
 ## Tissue Labels (segmentation output)
 
 | Label | Tissue |
@@ -213,4 +281,4 @@ QUEUED → RUNNING → DONE
        → CANCELLED
 ```
 
-Jobs run as detached subprocess (`start_new_session=True`). Parent CLI exits immediately. All state persists in `~/.crown/jobs.duckdb`. Progress streams to `~/.crown/jobs/<job_id>/progress.jsonl`.
+Jobs run as detached subprocess (`start_new_session=True`). Parent CLI exits immediately. All state persists in `~/.crown/jobs.db` (SQLite, WAL mode). Progress streams to `~/.crown/jobs/<job_id>/progress.jsonl`.

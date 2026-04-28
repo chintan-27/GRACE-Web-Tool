@@ -1,6 +1,5 @@
 import uuid
 import click
-from pathlib import Path
 from rich.console import Console
 
 from crown_cli.core.config import load_config
@@ -49,23 +48,12 @@ def _parse_recipe(recipe_str: str) -> list:
 @click.option("--electrode-type", default=None, help="Space-separated types per electrode (pad/ring/disc).")
 @click.option("--quality", default="standard", show_default=True,
               type=click.Choice(["fast", "standard"]), help="ROAST mesh quality preset.")
-@click.option("--roast-build-dir", default=None, type=click.Path(),
-              help="Path to ROAST build dir containing run_roast_run.sh.")
-@click.option("--matlab-runtime", default=None, type=click.Path(),
-              help="Path to MATLAB Compiler Runtime (MCR) root.")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quality,
-        roast_build_dir, matlab_runtime, yes):
+def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quality, yes):
     """Run the full CROWN pipeline (segmentation + optional simulation)."""
     import os
     out = out or os.getcwd()
     cfg = load_config()
-
-    if roast_build_dir:
-        cfg.roast_build_dir = Path(roast_build_dir)
-    if matlab_runtime:
-        cfg.matlab_runtime = Path(matlab_runtime)
-
     caps = check_capabilities(cfg)
     caps.warn()
 
@@ -94,8 +82,6 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
             "run_id": uuid.uuid4().hex[:12],
             "seg_source": "nn",
             "simulate": simulate,
-            "roast_build_dir": str(cfg.roast_build_dir),
-            "matlab_runtime": str(cfg.matlab_runtime),
         }
 
     input_files = discover_inputs(list(inputs))

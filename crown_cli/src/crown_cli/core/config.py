@@ -19,6 +19,7 @@ class CrownConfig:
     jobs_dir: Path = field(default_factory=lambda: CROWN_DIR / "jobs")
     freesurfer_home: Path = field(default_factory=lambda: Path("/usr/local/freesurfer"))
     roast_build_dir: Path = field(default_factory=lambda: Path("/opt/roast/build"))
+    roast_cache: Path = field(default_factory=lambda: CROWN_DIR / "roast-build")
     matlab_runtime: Path = field(default_factory=lambda: Path("/opt/mcr/R2025b"))
     roast_timeout: int = 7200
     roast_max_workers: int = 2
@@ -38,6 +39,8 @@ def load_config() -> CrownConfig:
             cfg.freesurfer_home = Path(paths["freesurfer_home"])
         if "roast_build_dir" in paths:
             cfg.roast_build_dir = Path(paths["roast_build_dir"])
+        if "roast_cache" in paths:
+            cfg.roast_cache = Path(paths["roast_cache"])
 
     # Env vars take precedence over TOML
     if v := os.getenv("CROWN_JOBS_DB"):
@@ -50,6 +53,8 @@ def load_config() -> CrownConfig:
         cfg.freesurfer_home = Path(v)
     if v := os.getenv("ROAST_BUILD_DIR"):
         cfg.roast_build_dir = Path(v)
+    if v := os.getenv("ROAST_CACHE"):
+        cfg.roast_cache = Path(v)
     if v := os.getenv("MATLAB_RUNTIME"):
         cfg.matlab_runtime = Path(v)
     if v := os.getenv("ROAST_TIMEOUT_SECONDS"):

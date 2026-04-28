@@ -6,6 +6,7 @@ from typing import List
 import torch
 
 from crown_cli.core.config import CrownConfig
+from crown_cli.core.hub import resolve_roast_build_dir
 
 ALL_MODELS = [
     "grace-native", "grace-fs",
@@ -37,7 +38,7 @@ class Capabilities:
             from rich.console import Console
             Console(stderr=True).print(
                 "[red]Error:[/red] ROAST not found. "
-                "Install ROAST and set roast_build_dir in ~/.crown/config.toml"
+                "Run 'crown roast download' or set roast_build_dir in ~/.crown/config.toml"
             )
             raise SystemExit(1)
 
@@ -46,6 +47,5 @@ def check_capabilities(cfg: CrownConfig) -> Capabilities:
     cuda = torch.cuda.is_available()
     mri_convert = cfg.freesurfer_home / "bin" / "mri_convert"
     freesurfer = mri_convert.exists() and mri_convert.is_file()
-    roast_bin = cfg.roast_build_dir / "run_roast_run.sh"
-    roast = roast_bin.exists() and roast_bin.is_file()
+    roast = resolve_roast_build_dir(cfg) is not None
     return Capabilities(cuda=cuda, freesurfer=freesurfer, roast=roast)

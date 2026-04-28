@@ -1,9 +1,11 @@
 from pathlib import Path
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, snapshot_download
 from huggingface_hub.utils import LocalEntryNotFoundError
 
 from crown_cli.core.config import CrownConfig
 from crown_cli.inference.registry import get_model_config
+
+ROAST_HF_REPO = "smilelab/roast-11tissue-build"
 
 
 def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
@@ -26,6 +28,30 @@ def get_checkpoint(model_name: str, cfg: CrownConfig) -> Path:
         )
 
     return Path(path)
+
+
+def resolve_roast_build_dir(cfg: CrownConfig) -> Path | None:
+    """Return path to ROAST build dir containing run_roast_run.sh, or None."""
+    for candidate in [cfg.roast_build_dir, cfg.roast_cache]:
+        if (candidate / "run_roast_run.sh").is_file():
+            return candidate
+    return None
+
+
+def download_roast_build(cfg: CrownConfig) -> Path:
+    """Download ROAST build from HuggingFace to roast_cache."""
+    try:
+        local_dir = snapshot_download(
+            repo_id=ROAST_HF_REPO,
+            local_dir=str(cfg.roast_cache),
+            local_files_only=cfg.offline,
+        )
+    except LocalEntryNotFoundError:
+        raise RuntimeError(
+            f"ROAST build not in cache ({cfg.roast_cache}). "
+            "Run 'crown roast download' on a node with internet access first."
+        )
+    return Path(local_dir)
 
 
 def download_all(cfg: CrownConfig, models: list[str] | None = None) -> dict[str, Path]:

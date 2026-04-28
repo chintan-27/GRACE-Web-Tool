@@ -26,6 +26,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from crown_cli.core.config import CrownConfig
+from crown_cli.core.hub import resolve_roast_build_dir
 from crown_cli.core.progress import ProgressWriter
 from crown_cli.core.roast_config import build_roast_config, DEFAULT_MESH_OPTIONS
 
@@ -117,11 +118,6 @@ class CLIRoastRunner:
         self.cfg = cfg
         self.run_id = payload.get("run_id", "default")
 
-        # Apply path overrides stored in meta (set by simulate CLI flags)
-        if "roast_build_dir" in payload:
-            cfg.roast_build_dir = Path(payload["roast_build_dir"])
-        if "matlab_runtime" in payload:
-            cfg.matlab_runtime = Path(payload["matlab_runtime"])
         self.work_dir = (session_dir / "roast" / model_name / self.run_id).resolve()
         self.sim_tag: str = ""
         self._writer = ProgressWriter(job_dir)
@@ -307,12 +303,13 @@ class CLIRoastRunner:
 
     # ------------------------------------------------------------------
     def build_command(self, config_path: Path) -> list[str]:
-        launcher = self.cfg.roast_build_dir / "run_roast_run.sh"
-        if not launcher.exists():
+        build_dir = resolve_roast_build_dir(self.cfg)
+        if build_dir is None:
             raise FileNotFoundError(
-                f"ROAST launcher not found: {launcher}. "
-                "Ensure roast build dir is correct in config."
+                "ROAST build not found. Run 'crown roast download' or set "
+                "roast_build_dir in ~/.crown/config.toml"
             )
+        launcher = build_dir / "run_roast_run.sh"
         mcr = _resolve_mcr(self.cfg.matlab_runtime)
         self._log(f"[ROAST] Using MCR at: {mcr}")
         return [str(launcher), str(mcr), str(config_path)]
