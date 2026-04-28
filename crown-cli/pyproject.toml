@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crown-cli"
+dynamic = ["version"]
+description = "Command-line interface for whole-head MRI segmentation and TES simulation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "SMILE Lab", email = "pateld3@ufl.edu" },
+]
+keywords = ["mri", "segmentation", "tcs", "tDCS", "deep-learning", "neuroscience", "unetr"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "click>=8.1",
+    "huggingface_hub>=0.22",
+    "monai>=1.3",
+    "nibabel>=5.2",
+    "numpy>=1.26",
+    "rich>=13.0",
+    "tomli>=2.0; python_version < '3.11'",
+    "einops",
+    "scipy>=1.12",
+]
+
+# PyTorch is NOT listed here — install manually with the correct CUDA variant:
+# pip install torch --index-url https://download.pytorch.org/whl/cu121
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-mock>=3.12"]
+
+[project.urls]
+Homepage = "https://github.com/smile-lab/crown"
+Repository = "https://github.com/smile-lab/crown"
+"Bug Tracker" = "https://github.com/smile-lab/crown/issues"
+
+[project.scripts]
+crown = "crown_cli.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "crown_cli.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+exclude = ["tests*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
