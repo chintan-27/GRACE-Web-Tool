@@ -41,6 +41,16 @@ def load_config() -> CrownConfig:
             cfg.roast_build_dir = Path(paths["roast_build_dir"])
         if "roast_cache" in paths:
             cfg.roast_cache = Path(paths["roast_cache"])
+        if "matlab_runtime" in paths:
+            cfg.matlab_runtime = Path(paths["matlab_runtime"])
+        if "model_cache" in paths:
+            cfg.model_cache = Path(paths["model_cache"])
+
+        roast = data.get("roast", {})
+        if "timeout" in roast:
+            cfg.roast_timeout = int(roast["timeout"])
+        if "max_workers" in roast:
+            cfg.roast_max_workers = int(roast["max_workers"])
 
     # Env vars take precedence over TOML
     if v := os.getenv("CROWN_JOBS_DB"):

@@ -64,6 +64,13 @@ crown roast download
 
 Downloads the compiled ROAST build to `~/.crown/roast-build/`. Requires MATLAB Runtime (MCR) R2025b installed separately.
 
+> **After downloading**, make the launcher and compiled binary executable:
+> ```bash
+> chmod +x ~/.crown/roast-build/bin/run_roast_run.sh
+> chmod +x ~/.crown/roast-build/bin/roast_run
+> ```
+> If you installed ROAST to a custom location, replace `~/.crown/roast-build` with your build directory.
+
 > **Custom ROAST build:** If you have a manually compiled ROAST build, point CROWN to it via `roast_build_dir` in config or `ROAST_BUILD_DIR` env var. The build directory must contain a file named `run_roast_run.sh` — this is the launcher script CROWN invokes as `run_roast_run.sh <MCR_PATH> <config.json>`.
 
 ## Configuration
@@ -75,6 +82,12 @@ Optional config file at `~/.crown/config.toml`:
 roast_build_dir = "/opt/roast/build"     # manual install (overrides auto-download)
 roast_cache     = "~/.crown/roast-build" # auto-download destination
 freesurfer_home = "/usr/local/freesurfer"
+matlab_runtime  = "/opt/mcr/R2025b"      # MATLAB Compiler Runtime root
+model_cache     = "~/.crown/models"      # model checkpoint cache
+
+[roast]
+timeout     = 7200  # max wall time per job (seconds)
+max_workers = 2     # concurrent ROAST jobs
 ```
 
 All paths can also be set via environment variables:
@@ -85,9 +98,11 @@ All paths can also be set via environment variables:
 | `ROAST_CACHE`     | `~/.crown/roast-build` | ROAST auto-download cache    |
 | `MATLAB_RUNTIME`  | `/opt/mcr/R2025b`    | MATLAB Compiler Runtime root   |
 | `FREESURFER_HOME` | `/usr/local/freesurfer` | FreeSurfer installation     |
+| `CROWN_MODEL_CACHE` | `~/.crown/models`  | Model checkpoint cache         |
 | `ROAST_TIMEOUT_SECONDS` | `7200`         | Max wall time for ROAST job    |
 | `ROAST_MAX_WORKERS`     | `2`            | Concurrent ROAST jobs          |
-| `CROWN_JOBS_DB`         | `~/.crown/jobs.db` | Override SQLite jobs database path |
+| `CROWN_JOBS_DB`         | `~/.crown/jobs.db` | SQLite jobs database path  |
+| `CROWN_OFFLINE`         | —              | Set to `1` to disable HuggingFace downloads |
 
 CLI flags (`--roast-build-dir`, `--matlab-runtime`) override both config file and env vars per invocation.
 
