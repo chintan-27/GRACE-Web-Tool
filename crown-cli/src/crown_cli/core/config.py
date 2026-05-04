@@ -45,6 +45,8 @@ def load_config() -> CrownConfig:
             cfg.matlab_runtime = Path(paths["matlab_runtime"])
         if "model_cache" in paths:
             cfg.model_cache = Path(paths["model_cache"])
+        if "jobs_dir" in paths:
+            cfg.jobs_dir = Path(paths["jobs_dir"])
 
         roast = data.get("roast", {})
         if "timeout" in roast:
@@ -55,6 +57,8 @@ def load_config() -> CrownConfig:
     # Env vars take precedence over TOML
     if v := os.getenv("CROWN_JOBS_DB"):
         cfg.jobs_db = Path(v)
+    if v := os.getenv("CROWN_JOBS_DIR"):
+        cfg.jobs_dir = Path(v)
     if v := os.getenv("CROWN_MODEL_CACHE"):
         cfg.model_cache = Path(v)
     if v := os.getenv("CROWN_OFFLINE"):

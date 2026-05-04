@@ -506,14 +506,19 @@ class CLIRoastRunner:
 
     # ------------------------------------------------------------------
     def collect_outputs(self):
-        suffix_map = {"voltage": "v", "efield": "e", "emag": "emag", "jbrain": "Jbrain"}
+        mandatory = {"voltage": "v", "efield": "e", "emag": "emag"}
+        optional = {"jbrain": "Jbrain"}
         missing = []
-        for output_type, suffix in suffix_map.items():
+        for output_type, suffix in mandatory.items():
             path = self.work_dir / f"T1_{self.sim_tag}_{suffix}.nii"
             if not path.exists():
                 missing.append(str(path))
         if missing:
             raise FileNotFoundError(f"ROAST finished but output files are missing: {missing}")
+        for output_type, suffix in optional.items():
+            path = self.work_dir / f"T1_{self.sim_tag}_{suffix}.nii"
+            if not path.exists():
+                self._log(f"[ROAST] Optional output absent (normal for some scans): {path.name}")
         self._log("[ROAST] All output files verified")
 
     # ------------------------------------------------------------------
@@ -542,6 +547,8 @@ class CLIRoastRunner:
                     continue
 
                 if error:
+                    if attempt > 0:
+                        self._log(f"[ROAST] Retry also failed: {error}")
                     raise RuntimeError(error)
                 break
 

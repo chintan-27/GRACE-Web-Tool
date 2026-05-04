@@ -86,7 +86,8 @@ def simulate_roast(session_dir, t1, model, recipe, electrode_type, quality):
     store = JobStore(cfg.jobs_db)
     job_id = store.create_job("roast", [str(t1)], str(session_dir), [model], gpu=0)
     store.update_meta(job_id, meta)
-    spawn_job(job_id, "roast")
+    pid = spawn_job(job_id, "roast")
+    store.update_status(job_id, "queued", pid=pid)
 
     console.print(f"Job [cyan]{job_id}[/cyan] queued")
     console.print(f"Output: {session_dir}/roast/{model}/{run_id}/")

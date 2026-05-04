@@ -1,4 +1,5 @@
 import json
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -9,12 +10,14 @@ class ProgressWriter:
 
     def __init__(self, job_dir: Path):
         self.path = job_dir / "progress.jsonl"
+        self._lock = threading.Lock()
         job_dir.mkdir(parents=True, exist_ok=True)
 
     def emit(self, event: str, **kwargs: Any) -> None:
         record = {"event": event, "ts": time.time(), **kwargs}
-        with open(self.path, "a") as f:
-            f.write(json.dumps(record) + "\n")
+        with self._lock:
+            with open(self.path, "a") as f:
+                f.write(json.dumps(record) + "\n")
 
 
 class ProgressReader:

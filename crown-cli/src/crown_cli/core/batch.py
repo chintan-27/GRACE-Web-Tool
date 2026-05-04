@@ -40,11 +40,13 @@ def spawn_job(job_id: str, job_type: str) -> int:
         else {"creationflags": subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP}
     )
     log_fh = open(log_path, "wb")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "crown_cli.core.worker", job_id, job_type],
-        **flags,
-        stdout=log_fh,
-        stderr=subprocess.STDOUT,
-    )
-    log_fh.close()
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "crown_cli.core.worker", job_id, job_type],
+            **flags,
+            stdout=log_fh,
+            stderr=subprocess.STDOUT,
+        )
+    finally:
+        log_fh.close()
     return proc.pid
