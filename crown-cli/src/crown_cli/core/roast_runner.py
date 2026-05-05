@@ -199,30 +199,22 @@ class CLIRoastRunner:
         del mask_ras_img
 
         # Sagittal skin closing — prevents fitCap2individual stall
-        # On cap_fit retry use more aggressive parameters: wider range + more iterations
-        cap_fit_retry = self.payload.get("cap_fit_retry", False)
-        sagittal_iters = 80 if cap_fit_retry else 40
-        sagittal_half = 50 if cap_fit_retry else 25
         skin = data == 9
         struct2d = ndi.generate_binary_structure(2, 1)
         cx = data.shape[0] // 2
-        for xi in range(max(0, cx - sagittal_half), min(data.shape[0], cx + sagittal_half)):
+        for xi in range(max(0, cx - 25), min(data.shape[0], cx + 25)):
             if not skin[xi].any():
                 continue
-            skin_closed = ndi.binary_closing(skin[xi], structure=struct2d, iterations=sagittal_iters)
+            skin_closed = ndi.binary_closing(skin[xi], structure=struct2d, iterations=40)
             new_skin = skin_closed & ~skin[xi] & (data[xi] == 0)
             data[xi, new_skin] = 9
             skin[xi] |= new_skin
-        if cap_fit_retry:
-            self._log(f"[ROAST] Skin label pre-closed at central sagittal slices (aggressive: {sagittal_iters} iters, ±{sagittal_half} slices)")
-        else:
-            self._log("[ROAST] Skin label pre-closed at central sagittal slices")
+        self._log("[ROAST] Skin label pre-closed at central sagittal slices")
 
         # Full 3D scalp closing
         skin = data == 9
         struct3d = ndi.generate_binary_structure(3, 1)
-        closing_iters_3d = 10 if cap_fit_retry else 5
-        skin_closed_3d = ndi.binary_closing(skin, structure=struct3d, iterations=closing_iters_3d)
+        skin_closed_3d = ndi.binary_closing(skin, structure=struct3d, iterations=5)
         new_skin_3d = skin_closed_3d & ~skin & (data == 0)
         data[new_skin_3d] = 9
         self._log("[ROAST] Skin label fully closed in 3D")
