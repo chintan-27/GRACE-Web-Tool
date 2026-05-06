@@ -67,3 +67,11 @@ abstracts/
 # Legacy archived folders (local only)
 api_archive/
 ui_archive/
+
+# Local Dev files
+Dockerfile.cli
+crown-docker
+docs/
+*.egg-info/
+__pycache__/
+.pytest_cache/
