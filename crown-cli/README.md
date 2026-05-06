@@ -136,6 +136,16 @@ crown segment T1.nii.gz --model grace-native --model domino-native --out /output
 crown segment T1.nii.gz --model all --out /output
 ```
 
+**Options:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--model` | `-m` | `grace-native` | Model(s) to run. Repeat for multiple or pass `all`. |
+| `--out` | `-o` | cwd | Output directory. |
+| `--gpu` | `-g` | `0` | GPU index. |
+| `--space` | — | `native` | Space of the input T1: `native` or `freesurfer`. See [The `--space` Flag](#the---space-flag). |
+| `--yes` | `-y` | — | Skip confirmation prompt. |
+
 Output structure:
 
 ```
@@ -177,22 +187,34 @@ crown simulate roast /output/T1 \
 
 **Options:**
 
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--model` | — | Segmentation model to use |
-| `--recipe` | — | Electrode/current pairs (required) |
-| `--electrode-type` | `pad pad` | Space-separated type per electrode |
-| `--quality` | `standard` | Mesh preset: `fast` or `standard` |
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--t1` | yes | — | Original T1 NIfTI used for segmentation. |
+| `--model` | yes | — | Segmentation model whose output to use (e.g. `grace-native`). |
+| `--recipe` | yes | — | Electrode/current pairs (e.g. `"P3 -2 P4 2"`). |
+| `--electrode-type` | — | `pad pad` | Space-separated type per electrode (`pad`/`ring`/`disc`). |
+| `--quality` | — | `standard` | Mesh quality preset: `fast` or `standard`. |
 
 Output location:
 
 ```
 SESSION_DIR/roast/MODEL/RUN_ID/
-  T1_<tag>_v.nii       # voltage field
-  T1_<tag>_e.nii       # E-field
+  T1_<tag>_v.nii       # electric potential (voltage) field
+  T1_<tag>_e.nii       # E-field (vector, 3 components)
   T1_<tag>_emag.nii    # E-field magnitude
-  T1_<tag>_jbrain.nii  # current density in brain
+  T1_<tag>_jbrain.nii  # current density restricted to brain tissue
 ```
+
+**Output file descriptions:**
+
+| File | Unit | Description |
+|------|------|-------------|
+| `*_v.nii` | V | Electric potential (voltage) at each voxel. Scalar field. |
+| `*_e.nii` | V/m | Electric field vector. 4D volume — 3 components (x, y, z) per voxel. |
+| `*_emag.nii` | V/m | Electric field magnitude (`‖E‖`). Scalar, most commonly used for TES analysis. |
+| `*_jbrain.nii` | A/m² | Current density in brain voxels only; non-brain voxels are zero. |
+
+`<tag>` encodes the electrode montage (e.g. `P3P4` for a P3–P4 pair). `RUN_ID` is a 12-character hex unique per simulation run.
 
 ### `crown run` — full pipeline (segment + simulate)
 
@@ -213,6 +235,22 @@ Multiple inputs launch a batch:
 crown run /data/*.nii.gz --model grace-native --out /output --yes
 ```
 
+**Options:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--model` | `-m` | `grace-native` | Model(s) to run. Repeat for multiple or pass `all`. |
+| `--out` | `-o` | cwd | Output directory. |
+| `--gpu` | `-g` | `0` | GPU index. |
+| `--space` | — | `native` | Space of the input T1: `native` or `freesurfer`. See [The `--space` Flag](#the---space-flag). |
+| `--simulate` | — | — | Run simulation after segmentation. Only `roast` supported. |
+| `--recipe` | — | — | ROAST electrode/current pairs. Required if `--simulate roast`. |
+| `--electrode-type` | — | `pad pad` | Space-separated type per electrode (`pad`/`ring`/`disc`). |
+| `--quality` | — | `standard` | ROAST mesh quality: `fast` or `standard`. |
+| `--yes` | `-y` | — | Skip confirmation prompt. |
+
+> **Note (ROAST + multiple models):** When `--simulate roast` is combined with multiple models, ROAST uses the **first model in the list** for its segmentation input. All models still run for segmentation, but only one feeds into ROAST. With `--model all` the first model is always `grace-native`.
+
 ### `crown status` — job monitoring
 
 ```bash
@@ -222,7 +260,15 @@ crown status --list               # last 20 jobs
 crown status --list --last 50
 ```
 
-`--follow` prints all ROAST progress events and log lines as they arrive. Blocks until job finishes or Ctrl+C.
+**Options:**
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--list` | — | — | List recent jobs instead of showing a single job. |
+| `--last` | — | `20` | Number of jobs shown with `--list`. |
+| `--follow` | `-f` | — | Live-tail progress events; blocks until job finishes or Ctrl+C. |
+
+`--follow` prints all ROAST progress events and log lines as they arrive. Works from `QUEUED` state — polls until running then streams.
 
 Worker crash logs:
 
@@ -237,13 +283,34 @@ crown cancel <job_id>          # SIGTERM
 crown cancel <job_id> --force  # SIGKILL
 ```
 
+**Options:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--force` | `-f` | Send SIGKILL instead of SIGTERM. |
+
 Works on both `queued` and `running` jobs. For queued jobs, writes a sentinel file; worker checks it before starting ROAST.
 
 ### `crown models` — list available models
 
 ```bash
-crown models --list
+crown models          # show model table (default)
+crown models --list   # same
+crown models download grace-native grace-fs
+crown models download --all
 ```
+
+**`crown models` options:**
+
+| Flag | Description |
+|------|-------------|
+| `--list` | Print model table (default when no subcommand given). |
+
+**`crown models download` options:**
+
+| Flag | Description |
+|------|-------------|
+| `--all` | Download all models. |
 
 | Model | Architecture | Space |
 |-------|-------------|-------|
@@ -258,19 +325,31 @@ Models are downloaded on first use from HuggingFace (`smilelab/` org).
 
 ### `crown roast` — manage ROAST build
 
-Download the ROAST build from HuggingFace to `~/.crown/roast-build/`:
-
 ```bash
-crown roast download
+crown roast download   # download ROAST build from HuggingFace
+crown roast info       # show active build path + FreeSurfer status
 ```
 
-Check which build is active and verify FreeSurfer:
+**Subcommands:** `download`, `info` — no additional options.
 
-```bash
-crown roast info
-```
+ROAST build is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists there) → `roast_cache` (auto-downloaded). On HPC clusters without internet, run `crown roast download` on a head node first, then set `ROAST_CACHE` to the shared path.
 
-Shows ROAST build path and whether `mri_convert` is found (required for `-fs` models). ROAST is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists there) → `roast_cache` (auto-downloaded). On HPC clusters without internet, run `crown roast download` on a head node first, then set `ROAST_CACHE` to the shared path.
+## The `--space` Flag
+
+`--space` tells CROWN what space **the input T1** is in — it does **not** control the output space.
+
+**Output space always matches input space.** The pipeline does a transparent round-trip for `-fs` models:
+
+| Input space (`--space`) | Model type | What happens | Output space |
+|------------------------|------------|--------------|--------------|
+| `native` (default) | `-native` (e.g. `grace-native`) | Spatial resampling to 1mm isotropic RAS; resize to model grid | native |
+| `native` (default) | `-fs` (e.g. `grace-fs`) | `mri_convert --conform` → model inference → `mri_vol2vol` back | native |
+| `freesurfer` | `-fs` | Skip `mri_convert` (already conformed); model inference; no back-conversion | FreeSurfer conformed (256³ 1mm) |
+| `freesurfer` | `-native` | No conversion; spatial resampling applied to conformed input | FreeSurfer conformed |
+
+**`--space freesurfer` use case:** you already ran `mri_convert --conform` yourself and have a 256³ 1mm isotropic T1. Passing `--space freesurfer` skips the redundant `mri_convert` call.
+
+> **Warning:** Passing `--space freesurfer` on a native-space T1 will feed the wrong geometry to `-fs` models (no `mri_convert` is run). The output will appear in the native T1's voxel grid but the model inference will be incorrect. Always match `--space` to the actual space of your input file.
 
 ## Tissue Labels (segmentation output)
 
