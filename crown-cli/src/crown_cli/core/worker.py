@@ -15,19 +15,30 @@ from crown_cli.core.runner import CLIModelRunner
 from crown_cli.core.progress import ProgressWriter
 
 
-def _resolve_t1_for_model(model_name: str, native_path: Path, job_dir: Path, cfg) -> tuple[Path, str]:
-    """Return (t1_path, input_space) for the given model, conforming to FS space if needed."""
+def _resolve_t1_for_model(
+    model_name: str,
+    input_path: Path,
+    job_dir: Path,
+    cfg,
+    input_space: str = "native",
+) -> tuple[Path, str]:
+    """Return (t1_path, input_space) for the given model."""
     from crown_cli.inference.registry import get_model_config
     from crown_cli.inference.freesurfer import convert_to_fs
+
     if get_model_config(model_name).get("space") == "freesurfer":
+        if input_space == "freesurfer":
+            return input_path, "freesurfer"
+
         fs_path = job_dir / "input_fs.nii"
         if not fs_path.exists():
             mri_convert = cfg.freesurfer_home / "bin" / "mri_convert"
-            ok = convert_to_fs(native_path, fs_path, mri_convert)
+            ok = convert_to_fs(input_path, fs_path, mri_convert, freesurfer_home=cfg.freesurfer_home)
             if not ok:
-                raise RuntimeError(f"mri_convert --conform failed for {native_path}")
-        return fs_path, "freesurfer"
-    return native_path, "native"
+                raise RuntimeError(f"mri_convert --conform failed for {input_path}")
+        return fs_path, "native"
+
+    return input_path, input_space
 
 
 def run_segment_job(job_id: str, store, cfg) -> None:
@@ -43,18 +54,23 @@ def run_segment_job(job_id: str, store, cfg) -> None:
         input_paths = job["input_paths"]
         models = job["models"]
         gpu = job["gpu"] or 0
+        meta = store.get_meta(job_id)
+        input_space = meta.get("space", "native")
 
         for input_path in input_paths:
             input_path = Path(input_path)
             file_out_dir = out_dir / input_path.stem.replace(".nii", "")
             for model_name in models:
-                model_input, input_space = _resolve_t1_for_model(model_name, input_path, job_dir, cfg)
+                model_input, model_input_space = _resolve_t1_for_model(
+                    model_name, input_path, job_dir, cfg, input_space=input_space
+                )
                 runner = CLIModelRunner(
                     model_name=model_name,
                     job_dir=job_dir,
                     gpu_id=gpu,
                     cfg=cfg,
-                    input_space=input_space,
+                    input_space=model_input_space,
+                    native_reference_path=input_path if model_input_space != "freesurfer" else None,
                 )
                 runner.run(model_input, file_out_dir)
 
@@ -88,7 +104,8 @@ def run_pipeline_job(job_id: str, store, cfg) -> None:
             input_path = Path(job["input_paths"][0])
             session_dir = Path(job["out_dir"]) / input_path.stem.replace(".nii", "")
             model_name = job["models"][0]
-            t1_path, _ = _resolve_t1_for_model(model_name, input_path, job_dir, cfg)
+            input_space = meta.get("space", "native")
+            t1_path, _ = _resolve_t1_for_model(model_name, input_path, job_dir, cfg, input_space=input_space)
             runner = CLIRoastRunner(
                 job_dir=job_dir,
                 session_dir=session_dir,
@@ -124,7 +141,8 @@ def run_roast_job(job_id: str, store, cfg) -> None:
         native_path = Path(job["input_paths"][0])
         session_dir = Path(job["out_dir"])
         model_name = job["models"][0]
-        t1_path, _ = _resolve_t1_for_model(model_name, native_path, job_dir, cfg)
+        input_space = meta.get("space", "native")
+        t1_path, _ = _resolve_t1_for_model(model_name, native_path, job_dir, cfg, input_space=input_space)
 
         runner = CLIRoastRunner(
             job_dir=job_dir,

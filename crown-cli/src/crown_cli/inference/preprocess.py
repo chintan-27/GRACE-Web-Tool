@@ -65,6 +65,7 @@ def preprocess_image(
 
     # Wrap in MetaTensor with channel dimension (matching v1 exactly)
     meta_tensor = MetaTensor(image_data[np.newaxis, ...], affine=input_img.affine)
+    log_fn(f"Shape after channel dim: {tuple(meta_tensor.shape)}")
 
     if skip_spatial_transforms:
         # For FreeSurfer conformed input: skip spatial transforms
@@ -87,11 +88,12 @@ def preprocess_image(
 
         log_fn(f"Applying spatial transforms (mode={interpolation_mode}, resize={resize_size})...")
         transformed = transforms({"image": meta_tensor})
+        log_fn(f"Shape after spatial transforms: {tuple(transformed['image'].shape)}")
 
         # Add batch dimension: (1, 1, D, H, W) - matching v1 exactly
         image_tensor = transformed["image"].unsqueeze(0)
 
-    log_fn(f"Finished preprocessing - final shape {image_tensor.shape}")
+    log_fn(f"Shape after batch dim (final): {tuple(image_tensor.shape)}")
 
     # Return tensor and the original nibabel image (for affine/header)
     return image_tensor, input_img

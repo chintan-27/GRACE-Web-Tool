@@ -12,14 +12,14 @@ console = Console()
 
 @click.command()
 @click.argument("inputs", nargs=-1, required=True)
-@click.option("--models", "-m", multiple=True, default=["grace-native"],
-              help="Models to run. Use multiple --models flags.")
+@click.option("--model", "-m", multiple=True, default=["grace-native"],
+              help="Models to run. Repeat or use 'all'. E.g. --model grace-native --model grace-fs")
 @click.option("--out", "-o", default=None, help="Output directory (default: current working directory).")
 @click.option("--gpu", "-g", default=0, show_default=True, help="GPU index.")
 @click.option("--space", type=click.Choice(["native", "freesurfer"]),
               default="native", show_default=True)
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def segment(inputs, models, out, gpu, space, yes):
+def segment(inputs, model, out, gpu, space, yes):
     """Run MRI segmentation only."""
     import os
     out = out or os.getcwd()
@@ -28,9 +28,10 @@ def segment(inputs, models, out, gpu, space, yes):
     caps.warn()
 
     available = caps.available_models()
+    models = available if (len(model) == 1 and model[0] == "all") else list(model)
     for m in models:
         if m not in available:
-            console.print(f"[red]Error:[/red] Model '{m}' not available. Run 'crown models list'.")
+            console.print(f"[red]Error:[/red] Model '{m}' not available. Run 'crown models --list'.")
             raise SystemExit(1)
 
     input_files = discover_inputs(list(inputs))
@@ -44,6 +45,7 @@ def segment(inputs, models, out, gpu, space, yes):
 
     if n == 1:
         job_id = store.create_job("segment", [str(input_files[0])], out, list(models), gpu)
+        store.update_meta(job_id, {"space": space})
         pid = spawn_job(job_id, "segment")
         store.update_status(job_id, "queued", pid=pid)
         console.print(f"Job [cyan]{job_id}[/cyan] started.")
@@ -53,6 +55,7 @@ def segment(inputs, models, out, gpu, space, yes):
         for f in input_files:
             file_out = str(f.stem.replace(".nii", ""))
             child_id = store.create_job("segment", [str(f)], f"{out}/{file_out}", list(models), gpu)
+            store.update_meta(child_id, {"space": space})
             pid = spawn_job(child_id, "segment")
             store.update_status(child_id, "queued", pid=pid)
             child_ids.append(child_id)

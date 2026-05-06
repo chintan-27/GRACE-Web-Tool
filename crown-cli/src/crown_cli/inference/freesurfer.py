@@ -2,12 +2,23 @@ import subprocess
 from pathlib import Path
 from typing import Callable
 
+import nibabel as nib
+
+
+def _log_nifti_shape(path: Path, label: str, log_fn: Callable[[str], None]) -> None:
+    try:
+        img = nib.load(str(path))
+        log_fn(f"{label} shape: {img.shape}, voxel size: {tuple(round(v, 3) for v in img.header.get_zooms())}")
+    except Exception:
+        pass
+
 
 def convert_to_fs(
     input_path: Path,
     output_path: Path,
     mri_convert: Path,
     log_fn: Callable[[str], None] = print,
+    freesurfer_home: Path | None = None,
 ) -> bool:
     """
     Convert native-space NIfTI → FreeSurfer-conformed space.
@@ -23,6 +34,7 @@ def convert_to_fs(
         bool: True if successful
     """
     log_fn(f"Running FreeSurfer conversion: {input_path} → {output_path}")
+    _log_nifti_shape(input_path, "FS convert input", log_fn)
 
     if not mri_convert.exists():
         log_fn("ERROR: mri_convert not found")
@@ -35,8 +47,13 @@ def convert_to_fs(
         "--conform"
     ]
 
+    import os
+    env = os.environ.copy()
+    if freesurfer_home is not None:
+        env["FREESURFER_HOME"] = str(freesurfer_home)
+
     try:
-        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     except subprocess.CalledProcessError as e:
         log_fn(f"ERROR: FreeSurfer conversion failed: {e.stderr.decode('utf-8')}")
         return False
@@ -46,6 +63,7 @@ def convert_to_fs(
         log_fn("ERROR: FreeSurfer output missing after conversion")
         return False
 
+    _log_nifti_shape(output_path, "FS convert output", log_fn)
     log_fn(f"FreeSurfer conversion complete: {output_path}")
     return True
 
@@ -73,6 +91,8 @@ def convert_to_native(
         bool: True if successful
     """
     log_fn(f"Converting segmentation to native space: {segmentation_path} → {output_path}")
+    _log_nifti_shape(segmentation_path, "Native convert input (seg)", log_fn)
+    _log_nifti_shape(reference_path, "Native convert reference", log_fn)
 
     if not mri_vol2vol.exists():
         log_fn("ERROR: mri_vol2vol not found")
@@ -102,5 +122,6 @@ def convert_to_native(
         log_fn("ERROR: Native space output missing after conversion")
         return False
 
+    _log_nifti_shape(output_path, "Native convert output", log_fn)
     log_fn(f"Native space conversion complete: {output_path}")
     return True

@@ -27,10 +27,18 @@ def roast_download():
 
 @roast.command("info")
 def roast_info():
-    """Show ROAST build location and status."""
+    """Show ROAST build and FreeSurfer status."""
     cfg = load_config()
     build_dir = resolve_roast_build_dir(cfg)
     if build_dir:
         console.print(f"[green]ROAST found:[/green] {build_dir}")
     else:
         console.print("[red]ROAST not found.[/red] Run 'crown roast download'.")
+
+    mri_convert = cfg.freesurfer_home / "bin" / "mri_convert"
+    if mri_convert.exists():
+        console.print(f"[green]FreeSurfer found:[/green] {cfg.freesurfer_home}")
+    else:
+        console.print(f"[yellow]FreeSurfer not found[/yellow] (looked in {cfg.freesurfer_home}). "
+                      "Set freesurfer_home in ~/.crown/config.toml or FREESURFER_HOME env var. "
+                      "Required for -fs models.")

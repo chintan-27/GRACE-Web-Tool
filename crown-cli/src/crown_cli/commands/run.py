@@ -37,7 +37,8 @@ def _parse_recipe(recipe_str: str) -> list:
 
 @click.command()
 @click.argument("inputs", nargs=-1, required=True)
-@click.option("--models", "-m", multiple=True, default=["grace-native"])
+@click.option("--model", "-m", multiple=True, default=["grace-native"],
+              help="Models to run. Repeat or use 'all'.")
 @click.option("--out", "-o", default=None, help="Output directory (default: current working directory).")
 @click.option("--gpu", "-g", default=0, show_default=True)
 @click.option("--space", type=click.Choice(["native", "freesurfer"]),
@@ -49,7 +50,7 @@ def _parse_recipe(recipe_str: str) -> list:
 @click.option("--quality", default="standard", show_default=True,
               type=click.Choice(["fast", "standard"]), help="ROAST mesh quality preset.")
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quality, yes):
+def run(inputs, model, out, gpu, space, simulate, recipe, electrode_type, quality, yes):
     """Run the full CROWN pipeline (segmentation + optional simulation)."""
     import os
     out = out or os.getcwd()
@@ -63,9 +64,10 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
             raise click.UsageError("--recipe is required when --simulate roast is set.")
 
     available = caps.available_models()
+    models = available if (len(model) == 1 and model[0] == "all") else list(model)
     for m in models:
         if m not in available:
-            console.print(f"[red]Error:[/red] Model '{m}' not available. Run 'crown models list'.")
+            console.print(f"[red]Error:[/red] Model '{m}' not available. Run 'crown models --list'.")
             raise SystemExit(1)
 
     roast_meta = None
@@ -76,6 +78,7 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
             console.print(f"[red]Invalid recipe:[/red] {e}")
             raise SystemExit(1)
         roast_meta = {
+            "space": space,
             "recipe": recipe_list,
             "electrode_type": electrode_type.split() if electrode_type else None,
             "quality": quality,
@@ -102,6 +105,8 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
         job_id = store.create_job(job_type, [str(input_files[0])], out, list(models), gpu)
         if roast_meta:
             store.update_meta(job_id, roast_meta)
+        else:
+            store.update_meta(job_id, {"space": space})
         pid = spawn_job(job_id, job_type)
         store.update_status(job_id, "queued", pid=pid)
         console.print(f"Job [cyan]{job_id}[/cyan] started.")
@@ -115,6 +120,8 @@ def run(inputs, models, out, gpu, space, simulate, recipe, electrode_type, quali
                 # Each child gets a unique run_id
                 child_meta = {**roast_meta, "run_id": uuid.uuid4().hex[:12]}
                 store.update_meta(child_id, child_meta)
+            else:
+                store.update_meta(child_id, {"space": space})
             pid = spawn_job(child_id, job_type)
             store.update_status(child_id, "queued", pid=pid)
             child_ids.append(child_id)

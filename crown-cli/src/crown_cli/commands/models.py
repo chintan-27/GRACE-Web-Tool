@@ -9,32 +9,29 @@ from crown_cli.inference.registry import list_models, get_model_config
 console = Console()
 
 
-@click.group()
-def models():
+@click.group(invoke_without_command=True)
+@click.option("--list", "do_list", is_flag=True, help="List all available models and their download status.")
+@click.pass_context
+def models(ctx, do_list):
     """Manage CROWN model checkpoints."""
+    if do_list or ctx.invoked_subcommand is None:
+        cfg = load_config()
+        table = Table(title="CROWN Models")
+        table.add_column("Model", style="cyan")
+        table.add_column("Type")
+        table.add_column("Space")
+        table.add_column("Cached", style="green")
 
-
-@models.command("list")
-def models_list():
-    """List all available models and their download status."""
-    cfg = load_config()
-    table = Table(title="CROWN Models")
-    table.add_column("Model", style="cyan")
-    table.add_column("Type")
-    table.add_column("Space")
-    table.add_column("Cached", style="green")
-
-    for name in list_models():
-        mc = get_model_config(name)
-        # Simple heuristic: check if filename appears in cache dir
-        is_cached = any(cfg.model_cache.rglob(mc["hf_filename"])) if cfg.model_cache.exists() else False
-        table.add_row(
-            name,
-            mc["type"],
-            mc["space"],
-            "[green]yes[/green]" if is_cached else "[red]no[/red]",
-        )
-    console.print(table)
+        for name in list_models():
+            mc = get_model_config(name)
+            is_cached = any(cfg.model_cache.rglob(mc["hf_filename"])) if cfg.model_cache.exists() else False
+            table.add_row(
+                name,
+                mc["type"],
+                mc["space"],
+                "[green]yes[/green]" if is_cached else "[red]no[/red]",
+            )
+        console.print(table)
 
 
 @models.command("download")

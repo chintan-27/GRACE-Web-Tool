@@ -123,16 +123,17 @@ Jobs DB and progress logs are stored under `~/.crown/`:
 ### `crown segment` — MRI segmentation only
 
 ```bash
-crown segment T1.nii.gz --models grace-native --gpu 0
+crown segment T1.nii.gz --model grace-native --gpu 0
 # or specify output dir explicitly:
-crown segment T1.nii.gz --models grace-native --out /my/output --gpu 0
+crown segment T1.nii.gz --model grace-native --out /my/output --gpu 0
 ```
 
 Input can be a file or directory (all `.nii`/`.nii.gz` files discovered).
-Multiple models: repeat `--models`:
+Multiple models: repeat `--model`, or use `all`:
 
 ```bash
-crown segment T1.nii.gz --models grace-native --models domino-native --out /output
+crown segment T1.nii.gz --model grace-native --model domino-native --out /output
+crown segment T1.nii.gz --model all --out /output
 ```
 
 Output structure:
@@ -199,7 +200,7 @@ Runs segmentation then ROAST in a single job.
 
 ```bash
 crown run T1.nii.gz \
-  --models grace-native \
+  --model grace-native \
   --out /output \
   --gpu 0 \
   --simulate roast \
@@ -209,7 +210,7 @@ crown run T1.nii.gz \
 Multiple inputs launch a batch:
 
 ```bash
-crown run /data/*.nii.gz --models grace-native --out /output --yes
+crown run /data/*.nii.gz --model grace-native --out /output --yes
 ```
 
 ### `crown status` — job monitoring
@@ -241,7 +242,7 @@ Works on both `queued` and `running` jobs. For queued jobs, writes a sentinel fi
 ### `crown models` — list available models
 
 ```bash
-crown models list
+crown models --list
 ```
 
 | Model | Architecture | Space |
@@ -263,13 +264,13 @@ Download the ROAST build from HuggingFace to `~/.crown/roast-build/`:
 crown roast download
 ```
 
-Check which build is active:
+Check which build is active and verify FreeSurfer:
 
 ```bash
 crown roast info
 ```
 
-ROAST is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists there) → `roast_cache` (auto-downloaded). On HPC clusters without internet, run `crown roast download` on a head node first, then set `ROAST_CACHE` to the shared path.
+Shows ROAST build path and whether `mri_convert` is found (required for `-fs` models). ROAST is resolved in order: `roast_build_dir` (if `run_roast_run.sh` exists there) → `roast_cache` (auto-downloaded). On HPC clusters without internet, run `crown roast download` on a head node first, then set `ROAST_CACHE` to the shared path.
 
 ## Tissue Labels (segmentation output)
 

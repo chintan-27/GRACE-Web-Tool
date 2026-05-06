@@ -21,12 +21,13 @@ class CLIModelRunner:
     """ModelRunner adapted for CLI: writes progress to progress.jsonl instead of Redis/SSE."""
 
     def __init__(self, model_name: str, job_dir: Path, gpu_id: int, cfg: CrownConfig,
-                 input_space: str = "native"):
+                 input_space: str = "native", native_reference_path: Path | None = None):
         self.model_name = model_name
         self.job_dir = job_dir
         self.gpu_id = gpu_id
         self.cfg = cfg
         self.input_space = input_space
+        self.native_reference_path = native_reference_path
 
         self.config = get_model_config(model_name)
         self.spatial_size = self.config["spatial_size"]
@@ -88,6 +89,7 @@ class CLIModelRunner:
     @torch.no_grad()
     def infer(self, tensor):
         self._emit("inference_start", progress=30)
+        self._log(f"Inference input shape: {tuple(tensor.shape)}")
         preds = None
         for sw_batch_size in [2, 1]:
             try:
@@ -103,17 +105,20 @@ class CLIModelRunner:
                 raise
         if preds is None:
             raise RuntimeError(f"Inference failed for {self.model_name}")
+        self._log(f"Inference output shape: {tuple(preds.shape)}")
         self._emit("inference_mid", progress=65)
         return preds
 
     def save_output(self, preds, input_img, out_dir: Path) -> Path:
         self._emit("save_start", progress=70)
         preds_np = torch.argmax(preds, dim=1).cpu().numpy().squeeze()
+        self._log(f"Predictions shape after argmax+squeeze: {preds_np.shape}")
         is_fs_model = self.config.get("space") == "freesurfer"
 
         if not is_fs_model:
             resize_back = ResizeWithPadOrCrop(spatial_size=input_img.shape, mode="constant")
             preds_np = resize_back(preds_np[np.newaxis, ...])[0]
+            self._log(f"Predictions shape after resize back to input: {preds_np.shape}")
 
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / self.model_name / "output.nii.gz"
@@ -133,8 +138,7 @@ class CLIModelRunner:
         cfg = self.cfg
         mri_vol2vol = cfg.freesurfer_home / "bin" / "mri_vol2vol"
         native_output = out_path.parent / "output_native.nii.gz"
-        # native_input is the original uploaded file — stored as input.nii.gz in job dir
-        native_input = self.job_dir / "input.nii.gz"
+        native_input = self.native_reference_path or (self.job_dir / "input.nii.gz")
         ok = convert_to_native(out_path, native_input, native_output, mri_vol2vol, self._log)
         if ok:
             out_path.rename(out_path.parent / "output_fs.nii.gz")
