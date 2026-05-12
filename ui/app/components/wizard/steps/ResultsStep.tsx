@@ -23,9 +23,9 @@ export default function ResultsStep() {
       const raw = localStorage.getItem(ACTIVE_SIM_KEY);
       if (!raw) return;
       const s = JSON.parse(raw) as SavedSim;
-      if (Date.now() - s.startedAt < 4 * 3600 * 1000) setActiveSim(s);
+      if (s.sessionId === sessionId && Date.now() - s.startedAt < 4 * 3600 * 1000) setActiveSim(s);
     } catch {}
-  }, []);
+  }, [sessionId]);
 
   const handleDeleteSession = async () => {
     if (!sessionId) return;
@@ -33,6 +33,7 @@ export default function ResultsStep() {
     try {
       await deleteSession(sessionId);
     } catch { /* best-effort */ }
+    try { localStorage.removeItem(ACTIVE_SIM_KEY); } catch {}
     setDeleting(false);
     setDeleteConfirm(false);
     resetJob();
