@@ -277,14 +277,21 @@ export function JobProvider({ children }: { children: React.ReactNode }) {
     const modelList = getSelectedModelList();
     const shouldConvertToFs = selectedSpace === "freesurfer" && convertToFs;
 
-    const resp: PredictResponse = await startPrediction(
-      selectedFile,
-      modelList,
-      selectedSpace,
-      shouldConvertToFs,
-      opts?.workspaceJwt,
-      opts?.notifyEmail,
-    );
+    let resp: PredictResponse;
+    try {
+      resp = await startPrediction(
+        selectedFile,
+        modelList,
+        selectedSpace,
+        shouldConvertToFs,
+        opts?.workspaceJwt,
+        opts?.notifyEmail,
+      );
+    } catch (err) {
+      setStatus("idle");
+      setError(err instanceof Error ? err.message : "Failed to connect to server. Please try again.");
+      return;
+    }
 
     setSessionId(resp.session_id);
     setModels(resp.models);
