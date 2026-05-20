@@ -14,12 +14,19 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
 ### 2. Install CROWN CLI
 
+1. PyPI index
 ```bash
-cd crown_cli
+pip install crown-cli
+```
+
+2. Github repo, clone https://github.com/lab-smile/CROWN.git
+```bash
+git clone https://github.com/lab-smile/CROWN.git
+cd CROWN/crown-cli
 pip install -e ".[dev]"
 ```
 
-Requires Python ≥ 3.8.
+Requires Python ≥ 3.10.
 
 ### 3. Request HuggingFace access
 

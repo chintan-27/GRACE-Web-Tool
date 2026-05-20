@@ -45,9 +45,9 @@ dependencies = [
 dev = ["pytest>=8.0", "pytest-mock>=3.12"]
 
 [project.urls]
-Homepage = "https://github.com/smile-lab/crown"
-Repository = "https://github.com/smile-lab/crown"
-"Bug Tracker" = "https://github.com/smile-lab/crown/issues"
+Homepage = "https://github.com/lab-smile/CROWN"
+Repository = "https://github.com/lab-smile/CROWN"
+"Bug Tracker" = "https://github.com/lab-smile/CROWN/issues"
 
 [project.scripts]
 crown = "crown_cli.cli:main"
